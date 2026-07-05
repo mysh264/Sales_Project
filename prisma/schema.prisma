@@ -117,6 +117,7 @@ model Customer {
   branchId      String
   name          String
   phone         String?
+  address       String?
   phoneCode     String?
   vatNumber     String?
   taxRate       Decimal?    @db.Decimal(7, 4)
@@ -177,6 +178,7 @@ model ProductPriceRule {
 model Invoice {
   id                String        @id @default(cuid())
   invoiceNumber     String        @unique
+  invoiceSerial     String?       @unique
   branchId          String
   customerId        String
   salesmanId        String

@@ -1,9 +1,12 @@
 "use server";
 
 import { CylinderMovementType, InvoiceStatus, PaymentMethod, Prisma } from "@prisma/client";
+import { mkdir, writeFile } from "node:fs/promises";
+import path from "node:path";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import { buildInvoiceSerial } from "@/lib/invoice";
 import { getCurrentUser } from "@/lib/session";
 
 function text(formData: FormData, key: string) {
@@ -11,44 +14,88 @@ function text(formData: FormData, key: string) {
   return typeof value === "string" ? value.trim() : "";
 }
 
-function intValue(formData: FormData, key: string) {
-  const value = Number.parseInt(text(formData, key) || "0", 10);
-  return Number.isFinite(value) && value > 0 ? value : 0;
-}
-
 function moneyValue(formData: FormData, key: string) {
   const value = text(formData, key);
   return value ? new Prisma.Decimal(value) : new Prisma.Decimal(0);
+}
+
+function decimalValue(formData: FormData, key: string, fallback: Prisma.Decimal) {
+  const value = text(formData, key);
+  return value ? new Prisma.Decimal(value) : fallback;
+}
+
+function parseDate(value: string) {
+  if (!value) {
+    return null;
+  }
+
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
 }
 
 function decimalMax(value: Prisma.Decimal, floor: Prisma.Decimal) {
   return value.greaterThan(floor) ? value : floor;
 }
 
+async function storeUpload(file: FormDataEntryValue | null, folder: string) {
+  if (!(file instanceof File) || file.size === 0) {
+    return null;
+  }
+
+  const bytes = Buffer.from(await file.arrayBuffer());
+  const safeName = file.name.replace(/[^a-zA-Z0-9._-]+/g, "_");
+  const fileName = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${safeName}`;
+  const publicDir = path.join(process.cwd(), "public", "uploads", folder);
+  await mkdir(publicDir, { recursive: true });
+  await writeFile(path.join(publicDir, fileName), bytes);
+  return `/uploads/${folder}/${fileName}`;
+}
+
 export async function createOrder(formData: FormData) {
   const currentUser = await getCurrentUser();
-  const customerName = text(formData, "customerName");
-  const customerPhone = text(formData, "customerPhone");
-  const productIds = formData.getAll("productId").filter((value): value is string => typeof value === "string");
 
   if (!currentUser || currentUser.role !== "SALESMAN" || !currentUser.branchId) {
     throw new Error("Salesman session is required.");
   }
 
-  if (!customerName && !customerPhone) {
+  const branch = currentUser.branch;
+  const branchId = currentUser.branchId;
+  const customerId = text(formData, "customerId");
+  const customerName = text(formData, "customerName");
+  const customerPhone = text(formData, "customerPhone");
+  const customerAddress = text(formData, "customerAddress");
+  const customerVatNumber = text(formData, "customerVatNumber");
+  const invoiceSerial = text(formData, "invoiceSerial") || buildInvoiceSerial();
+  const currency = text(formData, "currency") || branch?.defaultCurrency || "OMR";
+  const taxRate = decimalValue(formData, "taxRate", branch?.defaultTaxRate ?? new Prisma.Decimal(0));
+
+  const rowProductIds = formData.getAll("rowProductId").filter((value): value is string => typeof value === "string");
+  const rowFulls = formData.getAll("rowFull").filter((value): value is string => typeof value === "string");
+  const rowEmpties = formData.getAll("rowEmpty").filter((value): value is string => typeof value === "string");
+  const rowPrices = formData.getAll("rowPrice").filter((value): value is string => typeof value === "string");
+
+  if (!customerId && !customerName && !customerPhone) {
     throw new Error("Enter a customer name or phone number.");
   }
 
-  const branchId = currentUser.branchId;
-
   const invoice = await prisma.$transaction(async (tx) => {
-    const branch = await tx.branch.findUniqueOrThrow({ where: { id: branchId } });
+    const branchRow = await tx.branch.findUniqueOrThrow({ where: { id: branchId } });
     const salesman = await tx.user.findUniqueOrThrow({ where: { id: currentUser.id } });
 
+    const existingCustomer = customerId
+      ? await tx.customer.findFirst({
+          where: {
+            id: customerId,
+            branchId: branchRow.id,
+          },
+        })
+      : null;
+
     const customer =
+      existingCustomer ??
       (await tx.customer.findFirst({
         where: {
-          branchId: branch.id,
+          branchId: branchRow.id,
           OR: [
             customerPhone ? { phone: customerPhone } : undefined,
             customerName ? { name: { equals: customerName, mode: "insensitive" } } : undefined,
@@ -57,20 +104,23 @@ export async function createOrder(formData: FormData) {
       })) ??
       (await tx.customer.create({
         data: {
-          branchId: branch.id,
+          branchId: branchRow.id,
           name: customerName || customerPhone,
           phone: customerPhone || null,
-          phoneCode: branch.defaultPhoneCode,
-          taxRate: branch.defaultTaxRate,
+          address: customerAddress || null,
+          vatNumber: customerVatNumber || null,
+          phoneCode: branchRow.defaultPhoneCode,
+          taxRate,
         },
       }));
 
     const lines = [];
 
-    for (const productId of productIds) {
-      const fullQty = intValue(formData, `product-${productId}-full`);
-      const emptyQty = intValue(formData, `product-${productId}-empty`);
-      const unitPrice = moneyValue(formData, `product-${productId}-price`);
+    for (let index = 0; index < rowProductIds.length; index += 1) {
+      const productId = rowProductIds[index];
+      const fullQty = Number.parseInt(rowFulls[index] || "0", 10) || 0;
+      const emptyQty = Number.parseInt(rowEmpties[index] || "0", 10) || 0;
+      const unitPrice = new Prisma.Decimal(rowPrices[index] || "0");
 
       if (fullQty === 0 && emptyQty === 0) {
         continue;
@@ -84,7 +134,7 @@ export async function createOrder(formData: FormData) {
         where: { id: productId },
         include: {
           priceRules: {
-            where: { branchId: branch.id, endsAt: null },
+            where: { branchId: branchRow.id, endsAt: null },
             orderBy: { startsAt: "desc" },
             take: 1,
           },
@@ -114,7 +164,7 @@ export async function createOrder(formData: FormData) {
     }
 
     const subtotal = lines.reduce((sum, line) => sum.add(line.lineSubtotal), new Prisma.Decimal(0));
-    const taxAmount = subtotal.mul(branch.defaultTaxRate);
+    const taxAmount = subtotal.mul(taxRate);
     const totalAmount = subtotal.add(taxAmount);
     const cashAmount = moneyValue(formData, "cashAmount");
     const checkAmount = moneyValue(formData, "checkAmount");
@@ -129,13 +179,14 @@ export async function createOrder(formData: FormData) {
 
     const createdInvoice = await tx.invoice.create({
       data: {
-        invoiceNumber: `INV-${Date.now()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`,
-        branchId: branch.id,
+        invoiceNumber: invoiceSerial,
+        invoiceSerial,
+        branchId: branchRow.id,
         customerId: customer.id,
         salesmanId: salesman.id,
         status: InvoiceStatus.ISSUED,
-        currency: branch.defaultCurrency,
-        taxRate: branch.defaultTaxRate,
+        currency,
+        taxRate,
         subtotalAmount: subtotal,
         taxAmount,
         totalAmount,
@@ -153,30 +204,45 @@ export async function createOrder(formData: FormData) {
       },
     });
 
-    const paymentRows = [
-      cashAmount.greaterThan(0)
-        ? { invoiceId: createdInvoice.id, method: PaymentMethod.CASH, amount: cashAmount }
-        : null,
-      checkAmount.greaterThan(0)
-        ? {
-            invoiceId: createdInvoice.id,
-            method: PaymentMethod.CHECK,
-            amount: checkAmount,
-            referenceNumber: text(formData, "checkReference") || null,
-          }
-        : null,
-      transferAmount.greaterThan(0)
-        ? {
-            invoiceId: createdInvoice.id,
-            method: PaymentMethod.BANK_TRANSFER,
-            amount: transferAmount,
-            referenceNumber: text(formData, "transferReference") || null,
-          }
-        : null,
-    ].filter(Boolean) as Prisma.PaymentCreateManyInput[];
+    const transferAttachment = await storeUpload(formData.get("transferReceipt"), "transfers");
+    const checkAttachment = await storeUpload(formData.get("checkReceipt"), "checks");
+    const checkDate = parseDate(text(formData, "checkDate"));
+    const checkNumber = text(formData, "checkNumber");
+    const transferReference = text(formData, "transferReference");
 
-    if (paymentRows.length > 0) {
-      await tx.payment.createMany({ data: paymentRows });
+    if (cashAmount.greaterThan(0)) {
+      await tx.payment.create({
+        data: {
+          invoiceId: createdInvoice.id,
+          method: PaymentMethod.CASH,
+          amount: cashAmount,
+        },
+      });
+    }
+
+    if (checkAmount.greaterThan(0)) {
+      await tx.payment.create({
+        data: {
+          invoiceId: createdInvoice.id,
+          method: PaymentMethod.CHECK,
+          amount: checkAmount,
+          referenceNumber: checkNumber || null,
+          attachmentUrl: checkAttachment,
+          checkDate,
+        },
+      });
+    }
+
+    if (transferAmount.greaterThan(0)) {
+      await tx.payment.create({
+        data: {
+          invoiceId: createdInvoice.id,
+          method: PaymentMethod.BANK_TRANSFER,
+          amount: transferAmount,
+          referenceNumber: transferReference || null,
+          attachmentUrl: transferAttachment,
+        },
+      });
     }
 
     if (debtAmount.greaterThan(0)) {
@@ -194,7 +260,7 @@ export async function createOrder(formData: FormData) {
       if (line.fullQty > 0) {
         await tx.cylinderMovement.create({
           data: {
-            branchId: branch.id,
+            branchId: branchRow.id,
             productId: line.productId,
             invoiceId: createdInvoice.id,
             type: CylinderMovementType.SALE_FULL_DELIVERED,
@@ -206,7 +272,7 @@ export async function createOrder(formData: FormData) {
       if (line.emptyQty > 0) {
         await tx.cylinderMovement.create({
           data: {
-            branchId: branch.id,
+            branchId: branchRow.id,
             productId: line.productId,
             invoiceId: createdInvoice.id,
             type: CylinderMovementType.CUSTOMER_EMPTY_RETURNED,
@@ -216,13 +282,13 @@ export async function createOrder(formData: FormData) {
       }
 
       await tx.inventoryBalance.upsert({
-        where: { branchId_productId: { branchId: branch.id, productId: line.productId } },
+        where: { branchId_productId: { branchId: branchRow.id, productId: line.productId } },
         update: {
           fullCount: { decrement: line.fullQty },
           emptyCount: { increment: line.emptyQty },
         },
         create: {
-          branchId: branch.id,
+          branchId: branchRow.id,
           productId: line.productId,
           fullCount: -line.fullQty,
           emptyCount: line.emptyQty,
@@ -235,5 +301,6 @@ export async function createOrder(formData: FormData) {
 
   revalidatePath("/salesman");
   revalidatePath("/salesman/new-order");
+  revalidatePath("/salesman/history");
   redirect(`/salesman/receipt/${invoice.id}`);
 }

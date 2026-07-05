@@ -1,0 +1,638 @@
+"use client";
+
+import Link from "next/link";
+import { useMemo, useState } from "react";
+
+type CustomerOption = {
+  id: string;
+  name: string;
+  phone: string;
+  address: string;
+  vatNumber: string;
+};
+
+type ProductOption = {
+  id: string;
+  name: string;
+  cylinderSize: string;
+  pressure: string | null;
+  minPrice: string;
+  maxPrice: string;
+  defaultPrice: string;
+};
+
+type NewInvoiceFormProps = {
+  salesmanName: string;
+  branchName: string;
+  defaultCurrency: string;
+  defaultTaxRate: string;
+  invoiceSerial: string;
+  action: (formData: FormData) => Promise<void>;
+  customers: CustomerOption[];
+  products: ProductOption[];
+};
+
+type ProductRow = {
+  id: string;
+  productId: string;
+  full: string;
+  empty: string;
+  price: string;
+};
+
+type CustomerDraft = {
+  name: string;
+  phone: string;
+  address: string;
+  vatNumber: string;
+};
+
+function makeId() {
+  return globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2);
+}
+
+export function NewInvoiceForm({
+  salesmanName,
+  branchName,
+  defaultCurrency,
+  defaultTaxRate,
+  invoiceSerial,
+  action,
+  customers,
+  products,
+}: NewInvoiceFormProps) {
+  const [customerQuery, setCustomerQuery] = useState("");
+  const [selectedCustomer, setSelectedCustomer] = useState<CustomerOption | null>(null);
+  const [showCustomerPicker, setShowCustomerPicker] = useState(false);
+  const [showCustomerModal, setShowCustomerModal] = useState(false);
+  const [customerDraft, setCustomerDraft] = useState<CustomerDraft>({
+    name: "",
+    phone: "",
+    address: "",
+    vatNumber: "",
+  });
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [currency, setCurrency] = useState(defaultCurrency);
+  const [taxRate, setTaxRate] = useState(defaultTaxRate);
+  const [useCheck, setUseCheck] = useState(false);
+  const [useTransfer, setUseTransfer] = useState(false);
+  const [productRows, setProductRows] = useState<ProductRow[]>(
+    products.length > 0
+      ? [
+          {
+            id: makeId(),
+            productId: products[0].id,
+            full: "",
+            empty: "",
+            price: products[0].defaultPrice,
+          },
+        ]
+      : [
+          {
+            id: makeId(),
+            productId: "",
+            full: "",
+            empty: "",
+            price: "",
+          },
+        ],
+  );
+
+  const filteredCustomers = useMemo(() => {
+    const query = customerQuery.trim().toLowerCase();
+
+    if (!query) {
+      return customers.slice(0, 8);
+    }
+
+    return customers.filter((customer) => {
+      const haystack = `${customer.name} ${customer.phone}`.toLowerCase();
+      return haystack.includes(query);
+    }).slice(0, 8);
+  }, [customerQuery, customers]);
+
+  function selectCustomer(customer: CustomerOption) {
+    setSelectedCustomer(customer);
+    setCustomerQuery(customer.name);
+    setShowCustomerPicker(false);
+    setCustomerDraft({
+      name: customer.name,
+      phone: customer.phone,
+      address: customer.address,
+      vatNumber: customer.vatNumber,
+    });
+  }
+
+  function createCustomer() {
+    setSelectedCustomer({
+      id: "new",
+      name: customerDraft.name || customerQuery || "New Customer",
+      phone: customerDraft.phone,
+      address: customerDraft.address,
+      vatNumber: customerDraft.vatNumber,
+    });
+    setCustomerQuery(customerDraft.name || customerQuery);
+    setShowCustomerModal(false);
+    setShowCustomerPicker(false);
+  }
+
+  function updateRow(id: string, patch: Partial<ProductRow>) {
+    setProductRows((current) =>
+      current.map((row) => {
+        if (row.id !== id) {
+          return row;
+        }
+
+        const nextProductId = patch.productId ?? row.productId;
+        const product = products.find((item) => item.id === nextProductId);
+
+        return {
+          ...row,
+          ...patch,
+          price: patch.productId && product ? product.defaultPrice : patch.price ?? row.price,
+        };
+      }),
+    );
+  }
+
+  function addRow() {
+    setProductRows((current) => [
+      ...current,
+      {
+        id: makeId(),
+        productId: products[0]?.id ?? "",
+        full: "",
+        empty: "",
+        price: products[0]?.defaultPrice ?? "",
+      },
+    ]);
+  }
+
+  function removeRow(id: string) {
+    setProductRows((current) => (current.length > 1 ? current.filter((row) => row.id !== id) : current));
+  }
+
+  const selectedCustomerName = selectedCustomer?.name || customerQuery;
+  const selectedCustomerPhone = selectedCustomer?.phone || customerDraft.phone;
+  const selectedCustomerAddress = selectedCustomer?.address || customerDraft.address;
+  const selectedCustomerVat = selectedCustomer?.vatNumber || customerDraft.vatNumber;
+
+  return (
+    <form action={action} encType="multipart/form-data" className="mx-auto flex max-w-7xl flex-col gap-6">
+      <input type="hidden" name="invoiceSerial" value={invoiceSerial} />
+      <input type="hidden" name="customerId" value={selectedCustomer?.id === "new" ? "" : selectedCustomer?.id ?? ""} />
+      <input type="hidden" name="customerName" value={selectedCustomerName} />
+      <input type="hidden" name="customerPhone" value={selectedCustomerPhone} />
+      <input type="hidden" name="customerAddress" value={selectedCustomerAddress} />
+      <input type="hidden" name="customerVatNumber" value={selectedCustomerVat} />
+      <input type="hidden" name="currency" value={currency} />
+      <input type="hidden" name="taxRate" value={taxRate} />
+
+      <header className="rounded-lg bg-ink p-5 text-white shadow-lg">
+        <p className="text-sm font-bold uppercase tracking-wide text-slate-300">{branchName}</p>
+        <h1 className="mt-1 text-3xl font-black leading-tight">New Invoice</h1>
+        <p className="mt-2 text-base font-semibold text-slate-200">Salesman: {salesmanName}</p>
+      </header>
+
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <section className="flex flex-col gap-6">
+          <section className="rounded-lg bg-white p-5 shadow-sm">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-lg font-black text-slate-950">Customer</p>
+                <p className="text-sm font-bold text-slate-500">Search existing customer or create a new one.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setCustomerDraft((current) => ({ ...current, name: current.name || customerQuery }));
+                  setShowCustomerModal(true);
+                }}
+                className="rounded bg-slate-950 px-3 py-2 text-xs font-black text-white"
+              >
+                Add New Customer
+              </button>
+            </div>
+
+            <div className="mt-4 relative">
+              <input
+                type="text"
+                value={customerQuery}
+                onChange={(event) => {
+                  setCustomerQuery(event.target.value);
+                  setShowCustomerPicker(true);
+                  setSelectedCustomer(null);
+                }}
+                onFocus={() => setShowCustomerPicker(true)}
+                placeholder="Search by name or phone"
+                className="h-14 w-full rounded-lg border-2 border-slate-300 px-4 text-lg font-bold outline-none focus:border-slate-950"
+              />
+
+              {showCustomerPicker ? (
+                <div className="absolute z-20 mt-2 max-h-72 w-full overflow-auto rounded-lg border border-slate-200 bg-white shadow-xl">
+                  {filteredCustomers.map((customer) => (
+                    <button
+                      key={customer.id}
+                      type="button"
+                      onClick={() => selectCustomer(customer)}
+                      className="block w-full border-b border-slate-100 px-4 py-3 text-left hover:bg-slate-50"
+                    >
+                      <p className="font-black text-slate-950">{customer.name}</p>
+                      <p className="text-xs font-bold text-slate-500">
+                        {customer.phone || "No phone"} {customer.vatNumber ? `· VAT ${customer.vatNumber}` : ""}
+                      </p>
+                    </button>
+                  ))}
+
+                  {filteredCustomers.length === 0 ? (
+                    <div className="px-4 py-4">
+                      <p className="text-sm font-bold text-slate-500">No matching customer found.</p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCustomerDraft((current) => ({ ...current, name: current.name || customerQuery }));
+                          setShowCustomerModal(true);
+                        }}
+                        className="mt-3 rounded bg-green-700 px-4 py-2 text-sm font-black text-white"
+                      >
+                        Add New Customer
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+
+            <div className="mt-4 grid grid-cols-1 gap-3">
+              <label className="block">
+                <span className="text-sm font-black text-slate-700">Address</span>
+                <input
+                  value={selectedCustomerAddress}
+                  readOnly
+                  className="mt-2 h-12 w-full rounded-lg border border-slate-300 bg-slate-50 px-3 text-sm font-bold text-slate-900"
+                />
+              </label>
+              <label className="block">
+                <span className="text-sm font-black text-slate-700">VAT Number</span>
+                <input
+                  value={selectedCustomerVat}
+                  readOnly
+                  className="mt-2 h-12 w-full rounded-lg border border-slate-300 bg-slate-50 px-3 text-sm font-bold text-slate-900"
+                />
+              </label>
+            </div>
+          </section>
+
+          <section className="rounded-lg bg-white p-5 shadow-sm">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-lg font-black text-slate-950">Invoice Settings</p>
+                <p className="text-sm font-bold text-slate-500">Values are locked once the invoice is saved.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAdvanced((current) => !current)}
+                className="rounded bg-slate-950 px-3 py-2 text-xs font-black text-white"
+              >
+                ⚙ Advanced Settings
+              </button>
+            </div>
+
+            <div className="mt-4 grid grid-cols-1 gap-4">
+              <label className="block">
+                <span className="text-sm font-black text-slate-700">Invoice Serial</span>
+                <input
+                  value={invoiceSerial}
+                  readOnly
+                  className="mt-2 h-12 w-full rounded-lg border border-slate-300 bg-slate-50 px-3 text-sm font-black text-slate-900"
+                />
+              </label>
+
+              {showAdvanced ? (
+                <div className="grid grid-cols-1 gap-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
+                  <label className="block">
+                    <span className="text-sm font-black text-slate-700">Currency</span>
+                    <select
+                      value={currency}
+                      onChange={(event) => setCurrency(event.target.value)}
+                      className="mt-2 h-12 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm font-black text-slate-900"
+                    >
+                      <option value="OMR">OMR</option>
+                      <option value="USD">USD</option>
+                      <option value="AED">AED</option>
+                    </select>
+                  </label>
+                  <label className="block">
+                    <span className="text-sm font-black text-slate-700">VAT Rate</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.0001"
+                      value={taxRate}
+                      onChange={(event) => setTaxRate(event.target.value)}
+                      className="mt-2 h-12 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm font-black text-slate-900"
+                    />
+                  </label>
+                </div>
+              ) : null}
+            </div>
+          </section>
+        </section>
+
+        <section className="rounded-lg bg-white p-5 shadow-sm">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-lg font-black text-slate-950">Product Selection</p>
+              <p className="text-sm font-bold text-slate-500">Add only the cylinders used on this invoice.</p>
+            </div>
+            <button type="button" onClick={addRow} className="rounded bg-green-700 px-3 py-2 text-xs font-black text-white">
+              Add Item
+            </button>
+          </div>
+
+          <div className="mt-4 flex flex-col gap-3">
+            {productRows.map((row, index) => (
+              <article key={row.id} className="rounded-lg border border-slate-200 p-4">
+                <input type="hidden" name="rowProductId" value={row.productId} />
+                <input type="hidden" name="rowFull" value={row.full} />
+                <input type="hidden" name="rowEmpty" value={row.empty} />
+                <input type="hidden" name="rowPrice" value={row.price} />
+
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-black uppercase tracking-wide text-slate-500">Item {index + 1}</p>
+                    <select
+                      value={row.productId}
+                      onChange={(event) => updateRow(row.id, { productId: event.target.value })}
+                      className="mt-2 h-12 w-full rounded-lg border border-slate-300 px-3 text-sm font-black text-slate-900"
+                    >
+                      {products.map((product) => (
+                        <option key={product.id} value={product.id}>
+                          {product.name} {product.cylinderSize}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => removeRow(row.id)}
+                    className="rounded bg-slate-200 px-3 py-2 text-xs font-black text-slate-700"
+                  >
+                    Remove
+                  </button>
+                </div>
+
+                <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
+                  <label className="block">
+                    <span className="text-sm font-black text-slate-700">Qty Full</span>
+                    <input
+                      type="number"
+                      min="0"
+                      value={row.full}
+                      onChange={(event) => updateRow(row.id, { full: event.target.value })}
+                      className="mt-2 h-14 w-full rounded-lg border-2 border-slate-300 px-3 text-center text-2xl font-black outline-none focus:border-green-700"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="text-sm font-black text-slate-700">Qty Empty</span>
+                    <input
+                      type="number"
+                      min="0"
+                      value={row.empty}
+                      onChange={(event) => updateRow(row.id, { empty: event.target.value })}
+                      className="mt-2 h-14 w-full rounded-lg border-2 border-slate-300 px-3 text-center text-2xl font-black outline-none focus:border-orange-700"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="text-sm font-black text-slate-700">Unit Price</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.001"
+                      value={row.price}
+                      onChange={(event) => updateRow(row.id, { price: event.target.value })}
+                      className="mt-2 h-14 w-full rounded-lg border-2 border-slate-300 px-3 text-center text-2xl font-black outline-none focus:border-slate-950"
+                    />
+                  </label>
+                </div>
+
+                <p className="mt-3 text-xs font-bold text-slate-500">
+                  Default range: {products.find((product) => product.id === row.productId)?.minPrice ?? "0.000"} -{" "}
+                  {products.find((product) => product.id === row.productId)?.maxPrice ?? "0.000"} OMR
+                </p>
+              </article>
+            ))}
+          </div>
+        </section>
+      </div>
+
+      <section className="rounded-lg bg-white p-5 shadow-sm">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="text-lg font-black text-slate-950">Payment</p>
+            <p className="text-sm font-bold text-slate-500">Cash is primary. Check and transfer details are optional.</p>
+          </div>
+        </div>
+
+        <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+          <label className="block">
+            <span className="text-sm font-black text-slate-700">Cash Amount</span>
+            <input
+              name="cashAmount"
+              type="number"
+              min="0"
+              step="0.001"
+              inputMode="decimal"
+              placeholder="0.000"
+              className="mt-2 h-16 w-full rounded-lg border-2 border-slate-300 px-4 text-2xl font-black outline-none focus:border-green-700"
+            />
+          </label>
+
+          <div className="rounded-lg border border-slate-200 p-4">
+            <label className="flex items-center gap-3">
+              <input
+                type="checkbox"
+                checked={useCheck}
+                onChange={(event) => setUseCheck(event.target.checked)}
+                className="h-5 w-5"
+              />
+              <span className="text-sm font-black text-slate-800">Use Check Payment</span>
+            </label>
+
+            {useCheck ? (
+              <div className="mt-4 grid grid-cols-1 gap-3">
+                <label className="block">
+                  <span className="text-sm font-black text-slate-700">Check Amount</span>
+                  <input
+                    name="checkAmount"
+                    type="number"
+                    min="0"
+                    step="0.001"
+                    inputMode="decimal"
+                    placeholder="0.000"
+                    className="mt-2 h-14 w-full rounded-lg border-2 border-slate-300 px-4 text-xl font-black outline-none focus:border-slate-950"
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-sm font-black text-slate-700">Check Number</span>
+                  <input
+                    name="checkNumber"
+                    type="text"
+                    placeholder="Check number"
+                    className="mt-2 h-12 w-full rounded-lg border border-slate-300 px-3 text-sm font-bold"
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-sm font-black text-slate-700">Check Date</span>
+                  <input
+                    name="checkDate"
+                    type="date"
+                    className="mt-2 h-12 w-full rounded-lg border border-slate-300 px-3 text-sm font-bold"
+                  />
+                </label>
+              </div>
+            ) : (
+              <input type="hidden" name="checkAmount" value="0" />
+            )}
+          </div>
+
+          <div className="rounded-lg border border-slate-200 p-4 md:col-span-2">
+            <label className="flex items-center gap-3">
+              <input
+                type="checkbox"
+                checked={useTransfer}
+                onChange={(event) => setUseTransfer(event.target.checked)}
+                className="h-5 w-5"
+              />
+              <span className="text-sm font-black text-slate-800">Use Bank Transfer</span>
+            </label>
+
+            {useTransfer ? (
+              <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+                <label className="block">
+                  <span className="text-sm font-black text-slate-700">Transfer Amount</span>
+                  <input
+                    name="bankTransferAmount"
+                    type="number"
+                    min="0"
+                    step="0.001"
+                    inputMode="decimal"
+                    placeholder="0.000"
+                    className="mt-2 h-14 w-full rounded-lg border-2 border-slate-300 px-4 text-xl font-black outline-none focus:border-slate-950"
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-sm font-black text-slate-700">Transfer Reference</span>
+                  <input
+                    name="transferReference"
+                    type="text"
+                    placeholder="Receipt or bank reference"
+                    className="mt-2 h-14 w-full rounded-lg border border-slate-300 px-3 text-sm font-bold"
+                  />
+                </label>
+                <label className="block md:col-span-2">
+                  <span className="text-sm font-black text-slate-700">Transfer Receipt Image</span>
+                  <input
+                    name="transferReceipt"
+                    type="file"
+                    accept="image/*"
+                    className="mt-2 block w-full rounded-lg border border-slate-300 px-3 py-3 text-sm font-bold"
+                  />
+                </label>
+              </div>
+            ) : (
+              <input type="hidden" name="bankTransferAmount" value="0" />
+            )}
+          </div>
+        </div>
+      </section>
+
+      <section className="sticky bottom-0 rounded-lg bg-slate-100 pt-2">
+        <button
+          type="submit"
+          className="h-20 w-full rounded-lg bg-success px-4 text-2xl font-black text-white shadow-xl active:scale-[0.99]"
+        >
+          Save Invoice & Print
+        </button>
+        <Link
+          href="/salesman"
+          className="mt-3 flex h-14 items-center justify-center rounded-lg bg-red-700 px-4 text-lg font-black text-white"
+        >
+          Cancel / Back to Dashboard
+        </Link>
+      </section>
+
+      {showCustomerModal ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-md rounded-lg bg-white p-5 shadow-2xl">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-lg font-black text-slate-950">Add New Customer</p>
+                <p className="text-sm font-bold text-slate-500">Enter the minimum customer details.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowCustomerModal(false)}
+                className="rounded bg-slate-200 px-3 py-2 text-xs font-black text-slate-700"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="mt-4 grid grid-cols-1 gap-3">
+              <label className="block">
+                <span className="text-sm font-black text-slate-700">Name</span>
+                <input
+                  value={customerDraft.name}
+                  onChange={(event) => setCustomerDraft((current) => ({ ...current, name: event.target.value }))}
+                  className="mt-2 h-12 w-full rounded-lg border border-slate-300 px-3 text-sm font-bold"
+                />
+              </label>
+              <label className="block">
+                <span className="text-sm font-black text-slate-700">Phone</span>
+                <input
+                  value={customerDraft.phone}
+                  onChange={(event) => setCustomerDraft((current) => ({ ...current, phone: event.target.value }))}
+                  className="mt-2 h-12 w-full rounded-lg border border-slate-300 px-3 text-sm font-bold"
+                />
+              </label>
+              <label className="block">
+                <span className="text-sm font-black text-slate-700">Address</span>
+                <textarea
+                  value={customerDraft.address}
+                  onChange={(event) => setCustomerDraft((current) => ({ ...current, address: event.target.value }))}
+                  className="mt-2 min-h-24 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-bold"
+                />
+              </label>
+              <label className="block">
+                <span className="text-sm font-black text-slate-700">VAT Number</span>
+                <input
+                  value={customerDraft.vatNumber}
+                  onChange={(event) => setCustomerDraft((current) => ({ ...current, vatNumber: event.target.value }))}
+                  className="mt-2 h-12 w-full rounded-lg border border-slate-300 px-3 text-sm font-bold"
+                />
+              </label>
+            </div>
+
+            <div className="mt-5 flex gap-3">
+              <button
+                type="button"
+                onClick={createCustomer}
+                className="flex-1 rounded bg-green-700 px-4 py-3 text-sm font-black text-white"
+              >
+                Save Customer
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowCustomerModal(false)}
+                className="rounded bg-slate-200 px-4 py-3 text-sm font-black text-slate-900"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </form>
+  );
+}

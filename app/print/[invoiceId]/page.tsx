@@ -53,6 +53,7 @@ export default async function UnifiedPrintPage({ params, searchParams }: PrintPa
     (sum, debt) => sum.add(debt.balanceAmount),
     new Prisma.Decimal(0),
   );
+  const serial = invoice.invoiceSerial ?? invoice.invoiceNumber;
 
   return (
     <main className="min-h-screen bg-slate-100 p-4 text-black print:bg-white print:p-0">
@@ -101,7 +102,7 @@ export default async function UnifiedPrintPage({ params, searchParams }: PrintPa
               </div>
               <div className="text-right">
                 <p className="text-3xl font-black uppercase">Tax Invoice</p>
-                <p className="mt-2 font-bold">{invoice.invoiceNumber}</p>
+                <p className="mt-2 font-bold">{serial}</p>
                 <p>{dateTime(invoice.createdAt)}</p>
               </div>
             </header>
@@ -111,6 +112,7 @@ export default async function UnifiedPrintPage({ params, searchParams }: PrintPa
                 <p className="text-sm font-black uppercase text-slate-600">Bill To</p>
                 <p className="mt-2 text-xl font-black">{invoice.customer.name}</p>
                 <p>{invoice.customer.phone ?? "No phone"}</p>
+                <p>{invoice.customer.address ?? ""}</p>
                 <p>{invoice.customer.vatNumber ? `VAT: ${invoice.customer.vatNumber}` : ""}</p>
               </div>
               <div>
@@ -187,7 +189,7 @@ export default async function UnifiedPrintPage({ params, searchParams }: PrintPa
             <header className="text-center">
               <h2 className="text-sm font-black uppercase">NATIONAL INDUSTRIAL GAS PLANT - OMAN</h2>
               <p>VAT: 0M1100407450</p>
-              <p>{invoice.invoiceNumber}</p>
+              <p>{serial}</p>
               <p>{dateTime(invoice.createdAt)}</p>
             </header>
 

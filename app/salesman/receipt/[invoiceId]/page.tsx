@@ -47,6 +47,7 @@ export default async function ReceiptPage({ params }: ReceiptPageProps) {
     (sum, debt) => sum.add(debt.balanceAmount),
     new Prisma.Decimal(0),
   );
+  const serial = invoice.invoiceSerial ?? invoice.invoiceNumber;
 
   return (
     <main className="min-h-screen bg-white text-black print:min-h-0">
@@ -84,7 +85,7 @@ export default async function ReceiptPage({ params }: ReceiptPageProps) {
         <section className="space-y-1">
           <div className="flex justify-between gap-2">
             <span>Invoice</span>
-            <span className="text-right">{invoice.invoiceNumber}</span>
+            <span className="text-right">{serial}</span>
           </div>
           <div className="flex justify-between gap-2">
             <span>ID</span>
@@ -98,6 +99,18 @@ export default async function ReceiptPage({ params }: ReceiptPageProps) {
             <span>Customer</span>
             <span className="text-right">{invoice.customer.name}</span>
           </div>
+          {invoice.customer.address ? (
+            <div className="flex justify-between gap-2">
+              <span>Address</span>
+              <span className="text-right">{invoice.customer.address}</span>
+            </div>
+          ) : null}
+          {invoice.customer.vatNumber ? (
+            <div className="flex justify-between gap-2">
+              <span>VAT</span>
+              <span className="text-right">{invoice.customer.vatNumber}</span>
+            </div>
+          ) : null}
           {invoice.customer.phone ? (
             <div className="flex justify-between gap-2">
               <span>Phone</span>
