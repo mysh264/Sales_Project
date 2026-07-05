@@ -133,6 +133,9 @@ export default async function ManagerDashboardPage() {
             <Link href="/manager/settings" className="rounded bg-slate-950 px-4 py-2 text-sm font-black text-white">
               Price Settings
             </Link>
+            <Link href="/manager/all-sales" className="rounded bg-green-700 px-4 py-2 text-sm font-black text-white">
+              All Sales
+            </Link>
             <Link href="/general-manager/users" className="rounded border border-slate-300 bg-white px-4 py-2 text-sm font-black text-slate-950">
               User Management
             </Link>

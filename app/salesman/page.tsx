@@ -136,7 +136,7 @@ export default async function SalesmanDashboardPage() {
             href="/salesman/new-order"
             className="flex min-h-20 items-center justify-center rounded-lg bg-success px-5 text-center text-2xl font-black text-white shadow-lg active:scale-[0.99]"
           >
-            New Invoice
+            Create New Invoice
           </Link>
           <Link
             href="/salesman/history"
