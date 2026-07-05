@@ -134,9 +134,9 @@ export default async function SalesmanDashboardPage() {
             <p className="mt-2 text-base font-semibold text-slate-200">Debt collection, order entry, and daily reconciliation.</p>
           </header>
 
-          <section className="rounded-lg bg-white p-5 shadow-sm">
+          <section className="rounded-lg bg-white p-5 shadow-sm md:p-8">
             <p className="text-sm font-black uppercase tracking-wide text-slate-500">Quick Stats</p>
-            <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
+            <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3 md:gap-4">
               {stats.map((stat) => (
                 <article key={stat.label} className={`rounded-lg p-5 shadow-sm ${stat.tone}`}>
                   <p
@@ -152,16 +152,16 @@ export default async function SalesmanDashboardPage() {
             </div>
           </section>
 
-          <div className="flex flex-col gap-3">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 md:items-stretch">
             <Link
               href="/salesman/new-order"
-              className="flex min-h-20 w-full max-w-none items-center justify-center rounded-lg bg-success px-5 text-center text-2xl font-black text-white shadow-lg active:scale-[0.99] lg:max-w-md"
+              className="flex min-h-20 w-full items-center justify-center rounded-lg bg-success px-5 text-center text-2xl font-black text-white shadow-lg active:scale-[0.99]"
             >
               Create New Invoice
             </Link>
             <Link
               href="/salesman/history"
-              className="flex min-h-20 w-full max-w-none items-center justify-center rounded-lg bg-slate-950 px-5 text-center text-2xl font-black text-white shadow-lg active:scale-[0.99] lg:max-w-md"
+              className="flex min-h-20 w-full items-center justify-center rounded-lg bg-slate-950 px-5 text-center text-2xl font-black text-white shadow-lg active:scale-[0.99]"
             >
               My Sales History
             </Link>
