@@ -1,0 +1,47 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: sales_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: sales_tracking
+      POSTGRES_USER: sales_user
+      POSTGRES_PASSWORD: sales_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sales_user -d sales_tracking"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - app_internal
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: sales_nextjs
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://sales_user:sales_password@db:5432/sales_tracking?schema=public
+      NEXT_TELEMETRY_DISABLED: "1"
+    ports:
+      - "3000:3000"
+    networks:
+      - app_internal
+      - docker_shared
+
+volumes:
+  postgres_data:
+
+networks:
+  app_internal:
+    driver: bridge
+  docker_shared:
+    external: true
+

@@ -1,0 +1,36 @@
+@media print {
+  @page {
+    margin: 0;
+  }
+
+  html,
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+
+  nav,
+  button,
+  .print-hidden,
+  .print\:hidden {
+    display: none !important;
+  }
+
+  * {
+    box-shadow: none !important;
+    text-shadow: none !important;
+  }
+
+  .print-mobile {
+    width: 80mm !important;
+    max-width: 80mm !important;
+    font-size: 12px !important;
+  }
+
+  .print-a4 {
+    width: 210mm !important;
+    min-height: 297mm !important;
+    font-size: 16px !important;
+  }
+}
+

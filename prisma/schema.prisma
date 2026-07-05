@@ -1,0 +1,366 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  GENERAL_MANAGER
+  MANAGER
+  ACCOUNTANT
+  ACCOUNTANT_MANAGER
+  LOADER
+  SALESMAN
+}
+
+enum BranchType {
+  BRANCH
+  WAREHOUSE
+}
+
+enum PaymentMethod {
+  CASH
+  CHECK
+  BANK_TRANSFER
+  DEBT
+}
+
+enum InvoiceStatus {
+  DRAFT
+  ISSUED
+  CANCELLED
+}
+
+enum DebtStatus {
+  OPEN
+  PARTIALLY_PAID
+  PAID
+  WRITTEN_OFF
+}
+
+enum CylinderMovementType {
+  TRUCK_LOAD_FULL
+  SALE_FULL_DELIVERED
+  CUSTOMER_EMPTY_RETURNED
+  TRUCK_RETURN_FULL
+  TRUCK_RETURN_EMPTY
+  STOCK_ADJUSTMENT
+}
+
+model Company {
+  id        String   @id @default(cuid())
+  name      String
+  address   String
+  vatNumber String
+  branches  Branch[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Branch {
+  id                  String    @id @default(cuid())
+  companyId           String
+  parentBranchId      String?
+  type                BranchType @default(BRANCH)
+  name                String
+  code                String    @unique
+  defaultCurrency     String    @default("OMR")
+  defaultPhoneCode    String    @default("+968")
+  defaultTaxRate      Decimal   @default(0.0000) @db.Decimal(7, 4)
+  company             Company   @relation(fields: [companyId], references: [id])
+  parentBranch        Branch?   @relation("BranchWarehouses", fields: [parentBranchId], references: [id])
+  warehouses          Branch[]  @relation("BranchWarehouses")
+  users               User[]
+  customers           Customer[]
+  products            Product[]
+  priceRules          ProductPriceRule[]
+  invoices            Invoice[]
+  trucks              Truck[]
+  inventoryBalances   InventoryBalance[]
+  cylinderMovements   CylinderMovement[]
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@index([companyId])
+  @@index([parentBranchId])
+}
+
+model User {
+  id             String             @id @default(cuid())
+  branchId       String?
+  role           UserRole
+  fullName       String
+  phone          String?
+  email          String?            @unique
+  passwordHash   String?
+  isActive       Boolean            @default(true)
+  branch         Branch?            @relation(fields: [branchId], references: [id])
+  salesInvoices  Invoice[]          @relation("SalesmanInvoices")
+  loadedTasks    TruckLoadSession[] @relation("LoaderSessions")
+  salesmanLoads  TruckLoadSession[] @relation("SalesmanLoadSessions")
+  debtPayments   DebtPayment[]
+  trucks         Truck[]
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  @@index([branchId])
+  @@index([role])
+}
+
+model Customer {
+  id            String      @id @default(cuid())
+  branchId      String
+  name          String
+  phone         String?
+  phoneCode     String?
+  vatNumber     String?
+  taxRate       Decimal?    @db.Decimal(7, 4)
+  creditLimit   Decimal?    @db.Decimal(12, 3)
+  branch        Branch      @relation(fields: [branchId], references: [id])
+  invoices      Invoice[]
+  debts         CustomerDebt[]
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@index([branchId])
+  @@index([name])
+  @@index([phone])
+}
+
+model Product {
+  id                  String              @id @default(cuid())
+  branchId            String?
+  sku                 String              @unique
+  name                String
+  gasType             String
+  cylinderSize        String
+  pressure            String?
+  unitLabel           String              @default("Cylinder")
+  isActive            Boolean             @default(true)
+  branch              Branch?             @relation(fields: [branchId], references: [id])
+  priceRules          ProductPriceRule[]
+  invoiceItems        InvoiceItem[]
+  inventoryBalances   InventoryBalance[]
+  cylinderMovements   CylinderMovement[]
+  loadItems           TruckLoadItem[]
+  returnItems         TruckReturnItem[]
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+
+  @@index([branchId])
+  @@index([gasType])
+}
+
+model ProductPriceRule {
+  id        String   @id @default(cuid())
+  branchId  String
+  productId String
+  currency  String   @default("OMR")
+  minPrice  Decimal  @db.Decimal(12, 3)
+  maxPrice  Decimal  @db.Decimal(12, 3)
+  startsAt  DateTime @default(now())
+  endsAt    DateTime?
+  branch    Branch   @relation(fields: [branchId], references: [id])
+  product   Product  @relation(fields: [productId], references: [id])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([branchId, productId])
+  @@index([startsAt, endsAt])
+}
+
+model Invoice {
+  id                String        @id @default(cuid())
+  invoiceNumber     String        @unique
+  branchId          String
+  customerId        String
+  salesmanId        String
+  status            InvoiceStatus @default(ISSUED)
+  currency          String        @default("OMR")
+  taxRate           Decimal       @db.Decimal(7, 4)
+  subtotalAmount    Decimal       @db.Decimal(12, 3)
+  taxAmount         Decimal       @db.Decimal(12, 3)
+  totalAmount       Decimal       @db.Decimal(12, 3)
+  paidAmount        Decimal       @default(0) @db.Decimal(12, 3)
+  debtAmount        Decimal       @default(0) @db.Decimal(12, 3)
+  notes             String?
+  receiptPdfUrl     String?
+  branch            Branch        @relation(fields: [branchId], references: [id])
+  customer          Customer      @relation(fields: [customerId], references: [id])
+  salesman          User          @relation("SalesmanInvoices", fields: [salesmanId], references: [id])
+  items             InvoiceItem[]
+  payments          Payment[]
+  customerDebts     CustomerDebt[]
+  cylinderMovements CylinderMovement[]
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  @@index([branchId, createdAt])
+  @@index([customerId])
+  @@index([salesmanId])
+}
+
+model InvoiceItem {
+  id                      String   @id @default(cuid())
+  invoiceId               String
+  productId               String
+  fullCylindersDelivered  Int
+  emptyCylindersReturned  Int      @default(0)
+  unitPrice               Decimal  @db.Decimal(12, 3)
+  lineSubtotal            Decimal  @db.Decimal(12, 3)
+  invoice                 Invoice  @relation(fields: [invoiceId], references: [id])
+  product                 Product  @relation(fields: [productId], references: [id])
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  @@index([invoiceId])
+  @@index([productId])
+}
+
+model Payment {
+  id               String        @id @default(cuid())
+  invoiceId        String
+  method           PaymentMethod
+  amount           Decimal       @db.Decimal(12, 3)
+  referenceNumber  String?
+  attachmentUrl    String?
+  bankName         String?
+  checkDate        DateTime?
+  invoice          Invoice       @relation(fields: [invoiceId], references: [id])
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  @@index([invoiceId])
+  @@index([method])
+}
+
+model CustomerDebt {
+  id             String      @id @default(cuid())
+  customerId     String
+  invoiceId      String
+  originalAmount Decimal     @db.Decimal(12, 3)
+  balanceAmount  Decimal     @db.Decimal(12, 3)
+  dueDate        DateTime?
+  status         DebtStatus  @default(OPEN)
+  customer       Customer    @relation(fields: [customerId], references: [id])
+  invoice        Invoice     @relation(fields: [invoiceId], references: [id])
+  payments       DebtPayment[]
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  @@index([customerId, status])
+  @@index([invoiceId])
+}
+
+model DebtPayment {
+  id             String       @id @default(cuid())
+  debtId         String
+  collectedById  String
+  method         PaymentMethod
+  amount         Decimal      @db.Decimal(12, 3)
+  referenceNumber String?
+  attachmentUrl  String?
+  debt           CustomerDebt @relation(fields: [debtId], references: [id])
+  collectedBy    User         @relation(fields: [collectedById], references: [id])
+  createdAt      DateTime     @default(now())
+
+  @@index([debtId])
+  @@index([collectedById])
+}
+
+model Truck {
+  id          String             @id @default(cuid())
+  branchId    String
+  salesmanId  String?
+  plateNumber String             @unique
+  label       String?
+  branch      Branch             @relation(fields: [branchId], references: [id])
+  salesman    User?              @relation(fields: [salesmanId], references: [id])
+  sessions    TruckLoadSession[]
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+
+  @@index([branchId])
+  @@index([salesmanId])
+}
+
+model TruckLoadSession {
+  id          String            @id @default(cuid())
+  truckId     String
+  salesmanId  String
+  loaderId    String
+  loadedAt    DateTime          @default(now())
+  returnedAt  DateTime?
+  notes       String?
+  truck       Truck             @relation(fields: [truckId], references: [id])
+  salesman    User              @relation("SalesmanLoadSessions", fields: [salesmanId], references: [id])
+  loader      User              @relation("LoaderSessions", fields: [loaderId], references: [id])
+  loadItems   TruckLoadItem[]
+  returnItems TruckReturnItem[]
+  movements   CylinderMovement[]
+
+  @@index([truckId, loadedAt])
+  @@index([salesmanId, loadedAt])
+  @@index([loaderId])
+}
+
+model TruckLoadItem {
+  id                String           @id @default(cuid())
+  sessionId         String
+  productId         String
+  fullCylindersLoad Int
+  session           TruckLoadSession @relation(fields: [sessionId], references: [id])
+  product           Product          @relation(fields: [productId], references: [id])
+
+  @@unique([sessionId, productId])
+}
+
+model TruckReturnItem {
+  id                   String           @id @default(cuid())
+  sessionId            String
+  productId            String
+  remainingFullCount   Int              @default(0)
+  collectedEmptyCount  Int              @default(0)
+  session              TruckLoadSession @relation(fields: [sessionId], references: [id])
+  product              Product          @relation(fields: [productId], references: [id])
+
+  @@unique([sessionId, productId])
+}
+
+model InventoryBalance {
+  id             String   @id @default(cuid())
+  branchId       String
+  productId      String
+  fullCount      Int      @default(0)
+  emptyCount     Int      @default(0)
+  branch         Branch   @relation(fields: [branchId], references: [id])
+  product        Product  @relation(fields: [productId], references: [id])
+  updatedAt      DateTime @updatedAt
+
+  @@unique([branchId, productId])
+}
+
+model CylinderMovement {
+  id             String               @id @default(cuid())
+  branchId       String
+  productId      String
+  invoiceId      String?
+  loadSessionId  String?
+  type           CylinderMovementType
+  fullDelta      Int                  @default(0)
+  emptyDelta     Int                  @default(0)
+  note           String?
+  branch         Branch               @relation(fields: [branchId], references: [id])
+  product        Product              @relation(fields: [productId], references: [id])
+  invoice        Invoice?             @relation(fields: [invoiceId], references: [id])
+  loadSession    TruckLoadSession?    @relation(fields: [loadSessionId], references: [id])
+  createdAt      DateTime             @default(now())
+
+  @@index([branchId, productId, createdAt])
+  @@index([invoiceId])
+  @@index([loadSessionId])
+}
