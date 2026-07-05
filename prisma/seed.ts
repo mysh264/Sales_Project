@@ -172,6 +172,7 @@ async function main() {
         fullName: user.fullName,
         phone: user.phone,
         isActive: true,
+        allowGlobalSalesView: false,
         passwordHash,
       },
       create: {
@@ -181,6 +182,7 @@ async function main() {
         phone: user.phone,
         email: user.email,
         passwordHash,
+        allowGlobalSalesView: false,
       },
     });
   }

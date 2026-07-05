@@ -1,6 +1,8 @@
 import { createOrder } from "@/app/actions/sales";
 import { prisma } from "@/lib/prisma";
 import Link from "next/link";
+import { redirect } from "next/navigation";
+import { getCurrentUser } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
@@ -11,43 +13,27 @@ const paymentFields = [
 ];
 
 export default async function NewOrderPage() {
-  const salesman = await prisma.user.findFirst({
-    where: { role: "SALESMAN", isActive: true },
-    include: { branch: true },
-    orderBy: { createdAt: "asc" },
-  });
+  const salesman = await getCurrentUser();
 
-  const products = salesman?.branchId
-    ? await prisma.product.findMany({
-        where: { branchId: salesman.branchId, isActive: true },
-        include: {
-          priceRules: {
-            where: { branchId: salesman.branchId, endsAt: null },
-            orderBy: { startsAt: "desc" },
-            take: 1,
-          },
-        },
-        orderBy: { name: "asc" },
-      })
-    : [];
-
-  if (!salesman?.branch) {
-    return (
-      <main className="flex min-h-screen items-center justify-center bg-slate-100 p-5">
-        <section className="max-w-md rounded-lg bg-white p-5 shadow-sm">
-          <h1 className="text-2xl font-black text-ink">No Salesman Found</h1>
-          <p className="mt-2 text-lg font-bold text-slate-700">Run the database seed before creating orders.</p>
-        </section>
-      </main>
-    );
+  if (!salesman || salesman.role !== "SALESMAN" || !salesman.branch) {
+    redirect("/login");
   }
+
+  const products = await prisma.product.findMany({
+    where: { branchId: salesman.branchId, isActive: true },
+    include: {
+      priceRules: {
+        where: { branchId: salesman.branchId!, endsAt: null },
+        orderBy: { startsAt: "desc" },
+        take: 1,
+      },
+    },
+    orderBy: { name: "asc" },
+  });
 
   return (
     <main className="min-h-screen bg-slate-100 px-4 py-5">
       <form action={createOrder} className="mx-auto flex max-w-md flex-col gap-4">
-        <input type="hidden" name="branchId" value={salesman.branch.id} />
-        <input type="hidden" name="salesmanId" value={salesman.id} />
-
         <header className="rounded-lg bg-ink p-5 text-white shadow-lg">
           <p className="text-sm font-bold uppercase tracking-wide text-slate-300">{salesman.branch.name}</p>
           <h1 className="mt-1 text-3xl font-black leading-tight">Customer & Cylinders</h1>

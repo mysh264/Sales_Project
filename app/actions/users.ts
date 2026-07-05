@@ -49,10 +49,12 @@ export async function createUser(formData: FormData) {
       role,
       branchId,
       isActive: true,
+      allowGlobalSalesView: false,
     },
   });
 
   revalidatePath("/general-manager/users");
+  revalidatePath("/admin");
 }
 
 export async function toggleUserStatus(formData: FormData) {
@@ -69,6 +71,7 @@ export async function toggleUserStatus(formData: FormData) {
   });
 
   revalidatePath("/general-manager/users");
+  revalidatePath("/admin");
 }
 
 export async function updateUserRole(formData: FormData) {
@@ -95,5 +98,23 @@ export async function updateUserRole(formData: FormData) {
   revalidatePath("/general-manager/users");
   revalidatePath("/manager");
   revalidatePath("/loader");
+  revalidatePath("/admin");
 }
 
+export async function toggleGlobalSalesView(formData: FormData) {
+  const userId = text(formData, "userId");
+  const currentStatus = text(formData, "currentStatus") === "true";
+
+  if (!userId) {
+    throw new Error("Missing user.");
+  }
+
+  await prisma.user.update({
+    where: { id: userId },
+    data: { allowGlobalSalesView: !currentStatus },
+  });
+
+  revalidatePath("/general-manager/users");
+  revalidatePath("/manager");
+  revalidatePath("/admin");
+}

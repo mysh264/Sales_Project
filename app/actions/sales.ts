@@ -4,6 +4,7 @@ import { CylinderMovementType, InvoiceStatus, PaymentMethod, Prisma } from "@pri
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import { getCurrentUser } from "@/lib/session";
 
 function text(formData: FormData, key: string) {
   const value = formData.get(key);
@@ -25,27 +26,24 @@ function decimalMax(value: Prisma.Decimal, floor: Prisma.Decimal) {
 }
 
 export async function createOrder(formData: FormData) {
-  const branchId = text(formData, "branchId");
-  const salesmanId = text(formData, "salesmanId");
+  const currentUser = await getCurrentUser();
   const customerName = text(formData, "customerName");
   const customerPhone = text(formData, "customerPhone");
   const productIds = formData.getAll("productId").filter((value): value is string => typeof value === "string");
 
-  if (!branchId || !salesmanId) {
-    throw new Error("Missing branch or salesman.");
+  if (!currentUser || currentUser.role !== "SALESMAN" || !currentUser.branchId) {
+    throw new Error("Salesman session is required.");
   }
 
   if (!customerName && !customerPhone) {
     throw new Error("Enter a customer name or phone number.");
   }
 
+  const branchId = currentUser.branchId;
+
   const invoice = await prisma.$transaction(async (tx) => {
     const branch = await tx.branch.findUniqueOrThrow({ where: { id: branchId } });
-    const salesman = await tx.user.findUniqueOrThrow({ where: { id: salesmanId } });
-
-    if (salesman.branchId !== branch.id) {
-      throw new Error("Salesman does not belong to this branch.");
-    }
+    const salesman = await tx.user.findUniqueOrThrow({ where: { id: currentUser.id } });
 
     const customer =
       (await tx.customer.findFirst({

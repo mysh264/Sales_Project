@@ -1,8 +1,12 @@
-import { Prisma } from "@prisma/client";
+import { DebtStatus, Prisma } from "@prisma/client";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import { getCurrentUser, hasGlobalSalesAccess } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
+
+const activeDebtStatuses: DebtStatus[] = ["OPEN", "PARTIALLY_PAID"];
 
 function startOfMonth() {
   const now = new Date();
@@ -38,44 +42,63 @@ function statusBadge(status: string) {
 }
 
 export default async function ManagerDashboardPage() {
-  const monthStart = startOfMonth();
-  const branch = await prisma.branch.findFirst({ orderBy: { createdAt: "asc" } });
+  const currentUser = await getCurrentUser();
 
-  if (!branch) {
+  if (!currentUser) {
+    redirect("/login");
+  }
+
+  const monthStart = startOfMonth();
+  const hasGlobalAccess = hasGlobalSalesAccess(currentUser);
+  const branchId = !hasGlobalAccess ? currentUser.branchId ?? null : null;
+  const branch =
+    currentUser.branch ??
+    (branchId
+      ? await prisma.branch.findUnique({
+          where: { id: branchId },
+        })
+      : null);
+
+  if (!hasGlobalAccess && !branch) {
     return (
       <main className="min-h-screen bg-slate-50 p-8">
         <div className="mx-auto max-w-7xl rounded-lg bg-white p-6 text-xl font-black text-slate-900 shadow-sm">
-          No branch is configured.
+          No branch is configured for this account.
         </div>
       </main>
     );
   }
 
-  const [monthlyRevenue, outstandingDebt, movementCount, latestInvoices] = await Promise.all([
+  const invoiceWhere = hasGlobalAccess ? { createdAt: { gte: monthStart } } : { branchId: branchId ?? "", createdAt: { gte: monthStart } };
+  const debtWhere = hasGlobalAccess
+    ? {
+        balanceAmount: { gt: new Prisma.Decimal(0) },
+        status: { in: activeDebtStatuses },
+      }
+    : {
+        customer: { branchId: branch?.id ?? "" },
+        balanceAmount: { gt: new Prisma.Decimal(0) },
+        status: { in: activeDebtStatuses },
+      };
+  const movementWhere = hasGlobalAccess ? { createdAt: { gte: monthStart } } : { branchId: branch?.id ?? "", createdAt: { gte: monthStart } };
+
+  const [monthlyRevenue, outstandingDebt, movementCount, latestInvoices, globalViewUsers, userCount] = await Promise.all([
     prisma.invoice.aggregate({
       _sum: { totalAmount: true },
       where: {
-        branchId: branch.id,
+        ...invoiceWhere,
         status: "ISSUED",
-        createdAt: { gte: monthStart },
       },
     }),
     prisma.customerDebt.aggregate({
       _sum: { balanceAmount: true },
-      where: {
-        customer: { branchId: branch.id },
-        balanceAmount: { gt: new Prisma.Decimal(0) },
-        status: { in: ["OPEN", "PARTIALLY_PAID"] },
-      },
+      where: debtWhere,
     }),
     prisma.cylinderMovement.count({
-      where: {
-        branchId: branch.id,
-        createdAt: { gte: monthStart },
-      },
+      where: movementWhere,
     }),
     prisma.invoice.findMany({
-      where: { branchId: branch.id },
+      where: hasGlobalAccess ? { createdAt: { gte: monthStart } } : { branchId: branch?.id ?? "" },
       include: {
         customer: true,
         salesman: true,
@@ -83,25 +106,37 @@ export default async function ManagerDashboardPage() {
       orderBy: { createdAt: "desc" },
       take: 10,
     }),
+    prisma.user.count({ where: { allowGlobalSalesView: true } }),
+    prisma.user.count(),
   ]);
+
+  const outstandingDebtValue = outstandingDebt._sum?.balanceAmount ?? new Prisma.Decimal(0);
 
   const stats = [
     { label: "Revenue This Month", value: formatOmr(monthlyRevenue._sum.totalAmount), tone: "text-green-700" },
-    { label: "Outstanding Debt", value: formatOmr(outstandingDebt._sum.balanceAmount), tone: "text-red-700" },
+    { label: "Outstanding Debt", value: formatOmr(outstandingDebtValue), tone: "text-red-700" },
     { label: "Cylinder Movements", value: movementCount.toLocaleString("en-OM"), tone: "text-slate-900" },
   ];
 
   return (
     <main className="min-h-screen bg-slate-50 p-8">
       <div className="mx-auto max-w-7xl">
-        <header className="mb-6 flex items-center justify-between">
+        <header className="mb-6 flex items-center justify-between gap-4">
           <div>
             <p className="text-sm font-black uppercase tracking-wide text-slate-500">Branch Manager</p>
-            <h1 className="text-3xl font-black text-slate-950">{branch.name}</h1>
+            <h1 className="text-3xl font-black text-slate-950">{branch?.name ?? "All Branches"}</h1>
+            <p className="mt-1 text-sm font-bold text-slate-600">
+              {hasGlobalAccess ? "Global sales visibility is enabled for this account." : "Branch-level view only."}
+            </p>
           </div>
-          <Link href="/manager/settings" className="rounded bg-slate-950 px-4 py-2 text-sm font-black text-white">
-            Price Settings
-          </Link>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <Link href="/manager/settings" className="rounded bg-slate-950 px-4 py-2 text-sm font-black text-white">
+              Price Settings
+            </Link>
+            <Link href="/general-manager/users" className="rounded border border-slate-300 bg-white px-4 py-2 text-sm font-black text-slate-950">
+              User Management
+            </Link>
+          </div>
         </header>
 
         <section className="grid grid-cols-1 gap-4 md:grid-cols-3">
@@ -172,6 +207,27 @@ export default async function ManagerDashboardPage() {
                 ) : null}
               </tbody>
             </table>
+          </div>
+        </section>
+
+        <section className="mt-6 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+          <div className="border-b border-slate-200 px-4 py-3">
+            <h2 className="text-lg font-black text-slate-950">User Management</h2>
+          </div>
+          <div className="grid grid-cols-1 gap-4 p-4 md:grid-cols-3">
+            <article className="rounded-lg border border-slate-200 p-4">
+              <p className="text-xs font-black uppercase tracking-wide text-slate-500">Users</p>
+              <p className="mt-2 text-3xl font-black text-slate-950">{userCount}</p>
+            </article>
+            <article className="rounded-lg border border-slate-200 p-4">
+              <p className="text-xs font-black uppercase tracking-wide text-slate-500">Global Sales View</p>
+              <p className="mt-2 text-3xl font-black text-slate-950">{globalViewUsers}</p>
+            </article>
+            <div className="flex items-center">
+              <Link href="/general-manager/users" className="rounded bg-slate-950 px-4 py-3 text-sm font-black text-white">
+                Open Employee Directory
+              </Link>
+            </div>
           </div>
         </section>
       </div>

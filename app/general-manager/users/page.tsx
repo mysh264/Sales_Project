@@ -1,6 +1,6 @@
 import { UserRole } from "@prisma/client";
 import Link from "next/link";
-import { createUser, toggleUserStatus, updateUserRole } from "@/app/actions/users";
+import { createUser, toggleGlobalSalesView, toggleUserStatus, updateUserRole } from "@/app/actions/users";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -149,6 +149,7 @@ export default async function GeneralManagerUsersPage() {
                   <th className="px-4 py-2">Role</th>
                   <th className="px-4 py-2">Branch</th>
                   <th className="px-4 py-2">Contact</th>
+                  <th className="px-4 py-2">Global Sales</th>
                   <th className="px-4 py-2">Status</th>
                   <th className="px-4 py-2 text-right">Actions</th>
                 </tr>
@@ -171,6 +172,20 @@ export default async function GeneralManagerUsersPage() {
                     <td className="px-4 py-2">
                       <p className="font-bold text-slate-900">{user.email ?? "No email"}</p>
                       <p className="text-xs font-bold text-slate-500">{user.phone ?? "No phone"}</p>
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-2">
+                      <form action={toggleGlobalSalesView}>
+                        <input type="hidden" name="userId" value={user.id} />
+                        <input type="hidden" name="currentStatus" value={String(user.allowGlobalSalesView)} />
+                        <button
+                          type="submit"
+                          className={`rounded px-3 py-2 text-xs font-black text-white ${
+                            user.allowGlobalSalesView ? "bg-indigo-700" : "bg-slate-500"
+                          }`}
+                        >
+                          {user.allowGlobalSalesView ? "Enabled" : "Disabled"}
+                        </button>
+                      </form>
                     </td>
                     <td className="whitespace-nowrap px-4 py-2">
                       <span
@@ -231,7 +246,7 @@ export default async function GeneralManagerUsersPage() {
                 ))}
                 {users.length === 0 ? (
                   <tr>
-                    <td className="px-4 py-4 text-center font-bold text-slate-500" colSpan={6}>
+                    <td className="px-4 py-4 text-center font-bold text-slate-500" colSpan={7}>
                       No users found.
                     </td>
                   </tr>

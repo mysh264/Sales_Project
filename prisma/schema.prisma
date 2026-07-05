@@ -98,6 +98,7 @@ model User {
   email          String?            @unique
   passwordHash   String?
   isActive       Boolean            @default(true)
+  allowGlobalSalesView Boolean      @default(false)
   branch         Branch?            @relation(fields: [branchId], references: [id])
   salesInvoices  Invoice[]          @relation("SalesmanInvoices")
   loadedTasks    TruckLoadSession[] @relation("LoaderSessions")

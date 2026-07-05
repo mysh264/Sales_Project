@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { getCurrentUser } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
@@ -28,11 +29,23 @@ function formatDate(value: Date) {
 
 export default async function CustomerDebtPage({ params }: CustomerPageProps) {
   const { id } = await params;
+  const currentUser = await getCurrentUser();
 
-  const customer = await prisma.customer.findUnique({
-    where: { id },
+  if (!currentUser || currentUser.role !== "SALESMAN" || !currentUser.branchId) {
+    notFound();
+  }
+
+  const customer = await prisma.customer.findFirst({
+    where: {
+      id,
+      branchId: currentUser.branchId,
+      invoices: {
+        some: { salesmanId: currentUser.id },
+      },
+    },
     include: {
       invoices: {
+        where: { salesmanId: currentUser.id },
         include: {
           payments: true,
           items: {
@@ -42,6 +55,11 @@ export default async function CustomerDebtPage({ params }: CustomerPageProps) {
         orderBy: { createdAt: "desc" },
       },
       debts: {
+        where: {
+          invoice: {
+            salesmanId: currentUser.id,
+          },
+        },
         include: {
           invoice: true,
         },
