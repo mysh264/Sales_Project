@@ -2,6 +2,7 @@
 
 import { DebtStatus, PaymentMethod, Prisma } from "@prisma/client";
 import { revalidatePath } from "next/cache";
+import { auditSnapshot, logAction } from "@/lib/audit";
 import { prisma } from "@/lib/prisma";
 
 function text(formData: FormData, key: string) {
@@ -35,9 +36,22 @@ export async function updatePriceRule(formData: FormData) {
     throw new Error("Price limits are invalid.");
   }
 
-  await prisma.productPriceRule.update({
-    where: { id: ruleId },
-    data: { minPrice, maxPrice },
+  await prisma.$transaction(async (tx) => {
+    const rule = await tx.productPriceRule.findUniqueOrThrow({ where: { id: ruleId } });
+    const updatedRule = await tx.productPriceRule.update({
+      where: { id: ruleId },
+      data: { minPrice, maxPrice },
+    });
+
+    await logAction(
+      rule.branchId,
+      "UPDATE_PRICE_RULE",
+      "ProductPriceRule",
+      ruleId,
+      auditSnapshot(rule),
+      auditSnapshot(updatedRule),
+      { tx },
+    );
   });
 
   revalidatePath("/manager/settings");
@@ -65,6 +79,8 @@ export async function collectDebt(formData: FormData) {
         invoice: true,
       },
     });
+    const debtBefore = auditSnapshot(debt);
+    const invoiceBefore = auditSnapshot(debt.invoice);
 
     if (debt.balanceAmount.lessThanOrEqualTo(0)) {
       throw new Error("Debt is already paid.");
@@ -95,7 +111,7 @@ export async function collectDebt(formData: FormData) {
       },
     });
 
-    await tx.customerDebt.update({
+    const updatedDebt = await tx.customerDebt.update({
       where: { id: debt.id },
       data: {
         balanceAmount: newBalance,
@@ -103,16 +119,35 @@ export async function collectDebt(formData: FormData) {
       },
     });
 
-    await tx.invoice.update({
+    const updatedInvoice = await tx.invoice.update({
       where: { id: debt.invoiceId },
       data: {
         paidAmount: { increment: amount },
         debtAmount: { decrement: amount },
       },
     });
+
+    await logAction(
+      collector.id,
+      "COLLECT_DEBT",
+      "CustomerDebt",
+      debt.id,
+      debtBefore,
+      auditSnapshot(updatedDebt),
+      { tx },
+    );
+
+    await logAction(
+      collector.id,
+      "COLLECT_DEBT",
+      "Invoice",
+      debt.invoiceId,
+      invoiceBefore,
+      auditSnapshot(updatedInvoice),
+      { tx },
+    );
   });
 
   revalidatePath("/manager");
   revalidatePath("/salesman");
 }
-

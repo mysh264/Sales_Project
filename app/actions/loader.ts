@@ -3,6 +3,7 @@
 import { CylinderMovementType } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { auditSnapshot, logAction } from "@/lib/audit";
 import { prisma } from "@/lib/prisma";
 
 function text(formData: FormData, key: string) {
@@ -93,6 +94,22 @@ export async function processMorningLoad(formData: FormData) {
       },
     });
 
+    await logAction(
+      loader.id,
+      "PROCESS_MORNING_LOAD",
+      "TruckLoadSession",
+      session.id,
+      null,
+      auditSnapshot({
+        id: session.id,
+        truckId: session.truckId,
+        salesmanId: session.salesmanId,
+        loaderId: session.loaderId,
+        loadedAt: session.loadedAt,
+      }),
+      { tx },
+    );
+
     await tx.truckLoadItem.createMany({
       data: loadItems.map((item) => ({
         sessionId: session.id,
@@ -102,6 +119,10 @@ export async function processMorningLoad(formData: FormData) {
     });
 
     for (const item of loadItems) {
+      const inventoryBefore = await tx.inventoryBalance.findUnique({
+        where: { branchId_productId: { branchId: truck.branchId, productId: item.productId } },
+      });
+
       await tx.cylinderMovement.create({
         data: {
           branchId: truck.branchId,
@@ -124,6 +145,20 @@ export async function processMorningLoad(formData: FormData) {
           emptyCount: 0,
         },
       });
+
+      const inventoryAfter = await tx.inventoryBalance.findUniqueOrThrow({
+        where: { branchId_productId: { branchId: truck.branchId, productId: item.productId } },
+      });
+
+      await logAction(
+        loader.id,
+        "UPDATE_INVENTORY",
+        "InventoryBalance",
+        inventoryAfter.id,
+        auditSnapshot(inventoryBefore),
+        auditSnapshot(inventoryAfter),
+        { tx },
+      );
     }
   });
 
@@ -161,10 +196,25 @@ export async function processEveningReturn(formData: FormData) {
       throw new Error("Enter at least one return quantity.");
     }
 
+    const returnedAt = new Date();
+
     await tx.truckLoadSession.update({
       where: { id: session.id },
-      data: { returnedAt: new Date() },
+      data: { returnedAt },
     });
+
+    await logAction(
+      session.loaderId,
+      "PROCESS_EVENING_RETURN",
+      "TruckLoadSession",
+      session.id,
+      auditSnapshot(session),
+      auditSnapshot({
+        ...session,
+        returnedAt,
+      }),
+      { tx },
+    );
 
     await tx.truckReturnItem.createMany({
       data: returnItems.map((item) => ({
@@ -176,6 +226,10 @@ export async function processEveningReturn(formData: FormData) {
     });
 
     for (const item of returnItems) {
+      const inventoryBefore = await tx.inventoryBalance.findUnique({
+        where: { branchId_productId: { branchId: session.truck.branchId, productId: item.productId } },
+      });
+
       if (item.remainingFullCount > 0) {
         await tx.cylinderMovement.create({
           data: {
@@ -213,10 +267,23 @@ export async function processEveningReturn(formData: FormData) {
           emptyCount: item.collectedEmptyCount,
         },
       });
+
+      const inventoryAfter = await tx.inventoryBalance.findUniqueOrThrow({
+        where: { branchId_productId: { branchId: session.truck.branchId, productId: item.productId } },
+      });
+
+      await logAction(
+        session.loaderId,
+        "UPDATE_INVENTORY",
+        "InventoryBalance",
+        inventoryAfter.id,
+        auditSnapshot(inventoryBefore),
+        auditSnapshot(inventoryAfter),
+        { tx },
+      );
     }
   });
 
   revalidatePath("/loader");
   redirect("/loader");
 }
-

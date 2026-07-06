@@ -3,6 +3,7 @@
 import { UserRole } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { revalidatePath } from "next/cache";
+import { logAction, auditSnapshot } from "@/lib/audit";
 import { prisma } from "@/lib/prisma";
 
 function text(formData: FormData, key: string) {
@@ -40,17 +41,39 @@ export async function createUser(formData: FormData) {
 
   const passwordHash = await bcrypt.hash(password, 12);
 
-  await prisma.user.create({
-    data: {
-      fullName,
-      phone: phone || null,
-      email,
-      passwordHash,
-      role,
-      branchId,
-      isActive: true,
-      allowGlobalSalesView: false,
-    },
+  await prisma.$transaction(async (tx) => {
+    const user = await tx.user.create({
+      data: {
+        fullName,
+        phone: phone || null,
+        email,
+        passwordHash,
+        role,
+        branchId,
+        isActive: true,
+        allowGlobalSalesView: false,
+      },
+    });
+
+    await logAction(
+      user.id,
+      "CREATE_USER",
+      "User",
+      user.id,
+      null,
+      auditSnapshot({
+        id: user.id,
+        fullName: user.fullName,
+        phone: user.phone,
+        email: user.email,
+        role: user.role,
+        branchId: user.branchId,
+        isActive: user.isActive,
+        allowGlobalSalesView: user.allowGlobalSalesView,
+      }),
+      { tx },
+    );
+
   });
 
   revalidatePath("/general-manager/users");
@@ -65,9 +88,22 @@ export async function toggleUserStatus(formData: FormData) {
     throw new Error("Missing user.");
   }
 
-  await prisma.user.update({
-    where: { id: userId },
-    data: { isActive: !currentStatus },
+  await prisma.$transaction(async (tx) => {
+    const user = await tx.user.findUniqueOrThrow({ where: { id: userId } });
+    const updatedUser = await tx.user.update({
+      where: { id: userId },
+      data: { isActive: !currentStatus },
+    });
+
+    await logAction(
+      userId,
+      "UPDATE_PERMISSION",
+      "User",
+      userId,
+      auditSnapshot(user),
+      auditSnapshot(updatedUser),
+      { tx },
+    );
   });
 
   revalidatePath("/general-manager/users");
@@ -87,12 +123,25 @@ export async function updateUserRole(formData: FormData) {
     await prisma.branch.findUniqueOrThrow({ where: { id: branchId } });
   }
 
-  await prisma.user.update({
-    where: { id: userId },
-    data: {
-      role,
-      branchId,
-    },
+  await prisma.$transaction(async (tx) => {
+    const user = await tx.user.findUniqueOrThrow({ where: { id: userId } });
+    const updatedUser = await tx.user.update({
+      where: { id: userId },
+      data: {
+        role,
+        branchId,
+      },
+    });
+
+    await logAction(
+      userId,
+      "UPDATE_PERMISSION",
+      "User",
+      userId,
+      auditSnapshot(user),
+      auditSnapshot(updatedUser),
+      { tx },
+    );
   });
 
   revalidatePath("/general-manager/users");
@@ -109,9 +158,22 @@ export async function toggleGlobalSalesView(formData: FormData) {
     throw new Error("Missing user.");
   }
 
-  await prisma.user.update({
-    where: { id: userId },
-    data: { allowGlobalSalesView: !currentStatus },
+  await prisma.$transaction(async (tx) => {
+    const user = await tx.user.findUniqueOrThrow({ where: { id: userId } });
+    const updatedUser = await tx.user.update({
+      where: { id: userId },
+      data: { allowGlobalSalesView: !currentStatus },
+    });
+
+    await logAction(
+      userId,
+      "UPDATE_PERMISSION",
+      "User",
+      userId,
+      auditSnapshot(user),
+      auditSnapshot(updatedUser),
+      { tx },
+    );
   });
 
   revalidatePath("/general-manager/users");

@@ -105,11 +105,29 @@ model User {
   salesmanLoads  TruckLoadSession[] @relation("SalesmanLoadSessions")
   debtPayments   DebtPayment[]
   trucks         Truck[]
+  auditLogs      AuditLog[]
   createdAt      DateTime           @default(now())
   updatedAt      DateTime           @updatedAt
 
   @@index([branchId])
   @@index([role])
+}
+
+model AuditLog {
+  id          String   @id @default(uuid())
+  userId      String
+  action      String
+  targetModel String
+  targetId    String
+  oldValue    Json?
+  newValue    Json?
+  timestamp   DateTime @default(now())
+  ipAddress   String
+  userAgent   String
+  user        User     @relation(fields: [userId], references: [id])
+
+  @@index([userId, timestamp])
+  @@index([targetModel, targetId])
 }
 
 model Customer {

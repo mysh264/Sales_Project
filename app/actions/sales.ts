@@ -5,6 +5,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { auditSnapshot, logAction } from "@/lib/audit";
 import { prisma } from "@/lib/prisma";
 import { buildInvoiceSerial } from "@/lib/invoice";
 import { getCurrentUser } from "@/lib/session";
@@ -324,6 +325,10 @@ export async function createOrder(formData: FormData) {
     }
 
     for (const line of lines) {
+      const inventoryBefore = await tx.inventoryBalance.findUnique({
+        where: { branchId_productId: { branchId: branchRow.id, productId: line.productId } },
+      });
+
       if (line.fullQty > 0) {
         await tx.cylinderMovement.create({
           data: {
@@ -361,7 +366,40 @@ export async function createOrder(formData: FormData) {
           emptyCount: line.emptyQty,
         },
       });
+
+      const inventoryAfter = await tx.inventoryBalance.findUniqueOrThrow({
+        where: { branchId_productId: { branchId: branchRow.id, productId: line.productId } },
+      });
+
+      await logAction(
+        salesman.id,
+        "UPDATE_INVENTORY",
+        "InventoryBalance",
+        inventoryAfter.id,
+        auditSnapshot(inventoryBefore),
+        auditSnapshot(inventoryAfter),
+        { tx },
+      );
     }
+
+    const finalInvoice = await tx.invoice.findUniqueOrThrow({
+      where: { id: createdInvoice.id },
+      include: {
+        items: true,
+        payments: true,
+        customerDebts: true,
+      },
+    });
+
+    await logAction(
+      salesman.id,
+      "CREATE_INVOICE",
+      "Invoice",
+      createdInvoice.id,
+      null,
+      auditSnapshot(finalInvoice),
+      { tx },
+    );
 
     return createdInvoice;
     });
