@@ -37,6 +37,10 @@ function decimalMax(value: Prisma.Decimal, floor: Prisma.Decimal) {
   return value.greaterThan(floor) ? value : floor;
 }
 
+function percentRate(value: Prisma.Decimal) {
+  return value.div(100);
+}
+
 async function storeUpload(file: FormDataEntryValue | null, folder: string) {
   if (!(file instanceof File) || file.size === 0) {
     return null;
@@ -170,7 +174,7 @@ export async function createOrder(formData: FormData) {
     }
 
     const subtotal = lines.reduce((sum, line) => sum.add(line.lineSubtotal), new Prisma.Decimal(0));
-    const taxAmount = subtotal.mul(new Prisma.Decimal("0.05"));
+    const taxAmount = subtotal.mul(percentRate(taxRate));
     const totalAmount = subtotal.add(taxAmount);
     console.log("invoice.calculate", {
       subtotal: subtotal.toFixed(3),

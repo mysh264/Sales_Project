@@ -80,7 +80,9 @@ export default async function NewOrderPage({ searchParams }: NewOrderPageProps) 
 
   const resolvedSearchParams = (await searchParams) ?? {};
   const errorMessage = typeof resolvedSearchParams.error === "string" ? resolvedSearchParams.error : "";
-  const defaultTaxRate = salesman.branch.defaultTaxRate.toNumber() > 0 ? salesman.branch.defaultTaxRate.toFixed(4) : "5.0000";
+  const defaultTaxRate = salesman.branch.defaultTaxRate.toNumber() > 0
+    ? Math.round(salesman.branch.defaultTaxRate.toNumber()).toString()
+    : "5";
 
   return (
     <main className="min-h-screen bg-gray-50 px-4 py-5">

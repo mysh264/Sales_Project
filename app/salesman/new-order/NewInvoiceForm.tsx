@@ -67,6 +67,10 @@ function formatOmr(value: number) {
   }).format(value);
 }
 
+function percentRate(value: string) {
+  return toNumber(value) / 100;
+}
+
 function fieldClass(value: string, extra = "") {
   return [
     "w-full rounded-xl border px-3 text-sm font-bold text-slate-900 outline-none transition-colors focus:border-slate-950",
@@ -230,7 +234,7 @@ export function NewInvoiceForm({
   }, [productRows, products]);
 
   const itemsSubtotal = useMemo(() => lineItems.reduce((sum, item) => sum + item.itemTotal, 0), [lineItems]);
-  const vatRateValue = 0.05;
+  const vatRateValue = useMemo(() => percentRate(taxRate), [taxRate]);
   const vatAmount = useMemo(() => itemsSubtotal * vatRateValue, [itemsSubtotal, vatRateValue]);
   const invoiceTotal = useMemo(() => itemsSubtotal + vatAmount, [itemsSubtotal, vatAmount]);
   const paidAmount = useMemo(
@@ -436,7 +440,7 @@ export function NewInvoiceForm({
                     <input
                       type="number"
                       min="0"
-                      step="0.0001"
+                      step="1"
                       value={taxRate}
                       onChange={(event) => setTaxRate(event.target.value)}
                       className={`mt-2 h-12 ${fieldClass(taxRate)}`}
