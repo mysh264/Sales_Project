@@ -89,20 +89,20 @@ export default async function UnifiedPrintPage({ params, searchParams }: PrintPa
       <section
         className={`mx-auto bg-white text-black ${
           isA4
-            ? "print-a4 max-w-[210mm] p-10 font-sans text-base shadow-sm"
-            : "print-mobile w-[80mm] max-w-[300px] p-2 font-mono text-xs leading-tight shadow-sm"
+            ? "print-a4 max-w-[210mm] p-12 font-sans text-base shadow-sm"
+            : "print-mobile w-[80mm] max-w-[300px] p-3 font-mono text-xs leading-tight shadow-sm tabular-nums"
         }`}
       >
         {isA4 ? (
           <>
             <header className="flex items-start justify-between border-b-2 border-black pb-6">
               <div>
-                <h2 className="text-2xl font-black uppercase">NATIONAL INDUSTRIAL GAS PLANT - OMAN</h2>
+                <h2 className="text-3xl font-black uppercase leading-tight">NATIONAL INDUSTRIAL GAS PLANT - OMAN</h2>
                 <p className="mt-2 font-bold">Suhar Industrial City Phase 7, P.O.Box 1195 Zip Code 311</p>
                 <p className="font-bold">VAT/TRN: 0M1100407450</p>
               </div>
               <div className="text-right">
-                <p className="text-3xl font-black uppercase">Tax Invoice</p>
+                <p className="text-4xl font-black uppercase tracking-wide">Tax Invoice</p>
                 <p className="mt-2 font-bold">{serial}</p>
                 <p>{dateTime(invoice.createdAt)}</p>
               </div>
@@ -124,7 +124,7 @@ export default async function UnifiedPrintPage({ params, searchParams }: PrintPa
               </div>
             </section>
 
-            <h3 className="mt-8 text-sm font-black uppercase text-slate-600">Part A: New Order Items / Totals</h3>
+            <h3 className="mt-8 text-base font-black uppercase text-slate-700">Invoice Items</h3>
             <table className="mt-3 w-full border-collapse text-sm">
               <thead>
                 <tr className="border-y-2 border-black">
@@ -154,55 +154,65 @@ export default async function UnifiedPrintPage({ params, searchParams }: PrintPa
               </tbody>
             </table>
 
-            <section className="ml-auto mt-8 w-72 space-y-2">
-              <div className="flex justify-between">
-                <span>Subtotal</span>
-                <span>
+            <section className="ml-auto mt-8 w-80 space-y-2 text-sm tabular-nums">
+              <div className="grid grid-cols-[150px_1fr] gap-4">
+                <span className="font-bold">Subtotal</span>
+                <span className="text-right">
                   {money(invoice.subtotalAmount)} {invoice.currency}
                 </span>
               </div>
-              <div className="flex justify-between">
-                <span>VAT</span>
-                <span>
+              <div className="grid grid-cols-[150px_1fr] gap-4">
+                <span className="font-bold">VAT</span>
+                <span className="text-right">
                   {money(invoice.taxAmount)} {invoice.currency}
                 </span>
               </div>
-              <div className="flex justify-between border-t-2 border-black pt-2 text-xl font-black">
+              <div className="grid grid-cols-[150px_1fr] gap-4 border-t-2 border-black pt-2 text-xl font-black">
                 <span>Total</span>
-                <span>
+                <span className="text-right">
                   {money(invoice.totalAmount)} {invoice.currency}
                 </span>
               </div>
             </section>
 
-            <section className="ml-auto mt-6 w-72 space-y-2 rounded-lg border border-slate-300 p-3">
-              <h3 className="text-sm font-black uppercase text-slate-600">Part B: Debt Collection Amount</h3>
-              <div className="flex justify-between font-bold">
+            <section className="ml-auto mt-6 w-80 space-y-2 rounded-lg border border-slate-300 p-4 text-sm tabular-nums">
+              <h3 className="font-black uppercase text-slate-700">Payment Summary</h3>
+              <div className="grid grid-cols-[150px_1fr] gap-4 font-bold">
                 <span>Collected Now</span>
-                <span>
+                <span className="text-right">
                   {money(debtCollectionAmount)} {invoice.currency}
                 </span>
               </div>
+              {invoice.payments.map((payment) => (
+                <div key={payment.id} className="grid grid-cols-[150px_1fr] gap-4">
+                  <span>{payment.method.replace("_", " ")}</span>
+                  <span className="text-right">
+                    {money(payment.amount)} {invoice.currency}
+                  </span>
+                </div>
+              ))}
             </section>
 
-            <section className="ml-auto mt-4 w-72 space-y-2">
-              <div className="flex justify-between font-black text-red-700">
-                <span>Part C: Remaining Outstanding Balance</span>
-                <span>
+            <section className="ml-auto mt-4 w-80 rounded-lg border-2 border-slate-900 bg-slate-100 p-4 tabular-nums">
+              <h3 className="text-sm font-black uppercase text-slate-700">Debt Overview</h3>
+              <div className="mt-2 grid grid-cols-[190px_1fr] gap-4 text-base font-black text-red-700">
+                <span>Remaining Outstanding Balance</span>
+                <span className="text-right">
                   {money(debtBalance)} {invoice.currency}
                 </span>
               </div>
             </section>
 
-            <section className="mt-16 grid grid-cols-2 gap-16">
-              <div className="border-t border-black pt-2 text-center font-bold">Customer Signature</div>
-              <div className="border-t border-black pt-2 text-center font-bold">Authorized Signature</div>
+            <section className="mt-24 grid grid-cols-2 gap-20">
+              <div className="border-t-2 border-black pt-3 text-center font-bold">Customer</div>
+              <div className="border-t-2 border-black pt-3 text-center font-bold">Authorized</div>
             </section>
           </>
         ) : (
           <>
             <header className="text-center">
-              <h2 className="text-sm font-black uppercase">NATIONAL INDUSTRIAL GAS PLANT - OMAN</h2>
+              <h2 className="text-base font-black uppercase leading-tight">NATIONAL INDUSTRIAL GAS PLANT - OMAN</h2>
+              <p className="mt-1 text-sm font-black uppercase">Tax Invoice</p>
               <p>VAT: 0M1100407450</p>
               <p>{serial}</p>
               <p>{dateTime(invoice.createdAt)}</p>
@@ -222,7 +232,7 @@ export default async function UnifiedPrintPage({ params, searchParams }: PrintPa
             <div className="my-2 border-t border-dashed border-black" />
 
             <section className="space-y-2">
-              <p className="font-black uppercase text-slate-600">Part A: New Order Items / Totals</p>
+              <p className="font-black uppercase">Invoice Items</p>
               {invoice.items.map((item) => (
                 <div key={item.id}>
                   <p className="font-black">
@@ -251,7 +261,7 @@ export default async function UnifiedPrintPage({ params, searchParams }: PrintPa
             <div className="my-2 border-t border-dashed border-black" />
 
             <section className="space-y-1">
-              <p className="font-black uppercase text-slate-600">Part B: Debt Collection Amount</p>
+              <p className="font-black uppercase">Payment Summary</p>
               <div className="flex justify-between">
                 <span>Collected Now</span>
                 <span>
@@ -272,12 +282,19 @@ export default async function UnifiedPrintPage({ params, searchParams }: PrintPa
                   {money(invoice.totalAmount)} {invoice.currency}
                 </span>
               </div>
-              <div className="flex justify-between font-black text-red-700">
-                <span>Part C: Remaining Outstanding Balance</span>
-                <span>
-                  {money(debtBalance)} {invoice.currency}
-                </span>
+            </section>
+
+            <section className="mt-2 border border-black bg-slate-100 p-2">
+              <p className="font-black uppercase">Debt Overview</p>
+              <div className="mt-1 flex justify-between gap-2 font-black text-red-700">
+                <span>Remaining Balance</span>
+                <span>{money(debtBalance)} {invoice.currency}</span>
               </div>
+            </section>
+
+            <section className="mt-8 grid grid-cols-2 gap-6 text-center">
+              <div className="border-t border-black pt-1 font-bold">Customer</div>
+              <div className="border-t border-black pt-1 font-bold">Authorized</div>
             </section>
           </>
         )}

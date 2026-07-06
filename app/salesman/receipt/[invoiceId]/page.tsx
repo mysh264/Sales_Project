@@ -76,9 +76,10 @@ export default async function ReceiptPage({ params }: ReceiptPageProps) {
           </Link>
         </div>
       </div>
-      <section className="mx-auto w-[80mm] max-w-[300px] bg-white px-2 py-3 font-mono text-[11px] leading-tight text-black">
+      <section className="mx-auto w-[80mm] max-w-[300px] bg-white px-3 py-4 font-mono text-[11px] leading-tight text-black tabular-nums">
         <header className="text-center">
-          <h1 className="text-sm font-black uppercase">NATIONAL INDUSTRIAL GAS PLANT - OMAN</h1>
+          <h1 className="text-base font-black uppercase leading-tight">NATIONAL INDUSTRIAL GAS PLANT - OMAN</h1>
+          <p className="mt-1 text-sm font-black uppercase">Tax Invoice</p>
           <p className="mt-1">VAT: 0M1100407450</p>
           <p>Suhar Industrial City Phase 7</p>
         </header>
@@ -125,7 +126,7 @@ export default async function ReceiptPage({ params }: ReceiptPageProps) {
         <div className="my-2 border-t border-dashed border-black" />
 
         <section>
-          <p className="font-black uppercase">Part A: New Order Items / Totals</p>
+          <p className="font-black uppercase">Invoice Items</p>
           <div className="grid grid-cols-[1fr_28px_28px_48px_52px] gap-1 border-b border-black pb-1 font-bold">
             <span>Item</span>
             <span className="text-right">Full</span>
@@ -164,7 +165,7 @@ export default async function ReceiptPage({ params }: ReceiptPageProps) {
         <div className="my-2 border-t border-dashed border-black" />
 
         <section className="space-y-1">
-          <p className="font-black uppercase">Part B: Debt Collection Amount</p>
+          <p className="font-black uppercase">Payment Summary</p>
           <div className="flex justify-between">
             <span>Collected Now</span>
             <span>{money(debtCollectionAmount)} {invoice.currency}</span>
@@ -183,10 +184,19 @@ export default async function ReceiptPage({ params }: ReceiptPageProps) {
               <span>0.000 {invoice.currency}</span>
             </div>
           )}
-          <div className="flex justify-between font-black text-red-700">
-            <span>Part C: Remaining Outstanding Balance</span>
+        </section>
+
+        <section className="mt-2 border border-black bg-slate-100 p-2">
+          <p className="font-black uppercase">Debt Overview</p>
+          <div className="mt-1 flex justify-between gap-2 font-black text-red-700">
+            <span>Remaining Balance</span>
             <span>{money(debtBalance)} {invoice.currency}</span>
           </div>
+        </section>
+
+        <section className="mt-8 grid grid-cols-2 gap-6 text-center">
+          <div className="border-t border-black pt-1 font-bold">Customer</div>
+          <div className="border-t border-black pt-1 font-bold">Authorized</div>
         </section>
 
         <div className="my-2 border-t border-dashed border-black" />
