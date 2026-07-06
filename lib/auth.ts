@@ -33,6 +33,8 @@ const routePermissionMap: Array<{ prefix: string; permissions: Permission[] }> =
   { prefix: "/manager/settings", permissions: [Permissions.Products_Update] },
   { prefix: "/manager/all-sales", permissions: [Permissions.Sales_Read] },
   { prefix: "/manager", permissions: [Permissions.Finance_Read] },
+  { prefix: "/finance/reconciliation-overview", permissions: [Permissions.Finance_Read] },
+  { prefix: "/finance", permissions: [Permissions.Finance_Read] },
   { prefix: "/general-manager/users", permissions: [Permissions.Users_Update] },
   { prefix: "/general-manager/roles", permissions: [Permissions.Roles_Update] },
   { prefix: "/general-manager/branches", permissions: [Permissions.Branches_Update] },

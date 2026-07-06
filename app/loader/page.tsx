@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { SalesmanHandoffPicker } from "./SalesmanHandoffPicker";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -19,127 +20,92 @@ function formatNumber(value: number) {
   }).format(value);
 }
 
+function todayKey(date: Date) {
+  return date.toISOString().slice(0, 10);
+}
+
 export default async function LoaderDashboardPage() {
   const dayStart = startOfDay();
   const dayEnd = endOfDay();
 
-  const [trucks, activeSessionCount, todayLoadedCount, todayReturnedCount, todaySessions, recentSessions] = await Promise.all([
-    prisma.truck.findMany({
+  const [salesmen, todayReconciliations, recentReconciliations] = await Promise.all([
+    prisma.user.findMany({
+      where: { role: "SALESMAN", isActive: true },
       include: {
         branch: true,
-        salesman: true,
-        sessions: {
-          where: { returnedAt: null },
-          orderBy: { loadedAt: "desc" },
+        salesmanReconciliations: {
+          where: { reconciliationDate: dayStart },
+          include: {
+            items: true,
+          },
+          orderBy: { morningLoggedAt: "desc" },
           take: 1,
         },
       },
-      orderBy: [{ branch: { name: "asc" } }, { plateNumber: "asc" }],
+      orderBy: [{ branch: { name: "asc" } }, { fullName: "asc" }],
     }),
-    prisma.truckLoadSession.count({
-      where: { returnedAt: null },
-    }),
-    prisma.truckLoadSession.count({
+    prisma.dailyReconciliation.findMany({
       where: {
-        loadedAt: {
-          gte: dayStart,
-          lt: dayEnd,
-        },
-      },
-    }),
-    prisma.truckLoadSession.count({
-      where: {
-        returnedAt: {
-          gte: dayStart,
-          lt: dayEnd,
-        },
-      },
-    }),
-    prisma.truckLoadSession.findMany({
-      where: {
-        loadedAt: {
-          gte: dayStart,
-          lt: dayEnd,
-        },
+        reconciliationDate: dayStart,
       },
       include: {
-        truck: {
-          select: { plateNumber: true, branch: { select: { name: true } } },
-        },
-        salesman: {
-          select: { fullName: true },
-        },
-        loader: {
-          select: { fullName: true },
-        },
-        returnItems: {
-          select: { id: true },
-        },
+        salesman: { select: { fullName: true } },
+        branch: { select: { name: true } },
+        items: true,
       },
-      orderBy: { loadedAt: "desc" },
+      orderBy: [{ morningLoggedAt: "desc" }],
+    }),
+    prisma.dailyReconciliation.findMany({
+      where: {
+        morningLoggedAt: {
+          gte: dayStart,
+          lt: dayEnd,
+        },
+        status: "EVENING_RECONCILED",
+      },
+      include: {
+        salesman: { select: { fullName: true } },
+        branch: { select: { name: true } },
+        items: true,
+      },
+      orderBy: [{ eveningReconciledAt: "desc" }],
       take: 5,
-    }),
-    prisma.truckLoadSession.findMany({
-      where: {
-        returnedAt: {
-          gte: dayStart,
-          lt: dayEnd,
-        },
-      },
-      include: {
-        truck: {
-          select: { plateNumber: true, branch: { select: { name: true } } },
-        },
-        salesman: {
-          select: { fullName: true },
-        },
-        loader: {
-          select: { fullName: true },
-        },
-        returnItems: {
-          select: { id: true },
-        },
-      },
-      orderBy: { returnedAt: "desc" },
-      take: 4,
     }),
   ]);
 
-  const branchSummariesMap = trucks.reduce(
-    (map, truck) => {
-      const branchKey = truck.branch?.name ?? "Unassigned";
+  const activeSalesmenCount = salesmen.length;
+  const activeRoutesCount = todayReconciliations.filter((item) => item.status !== "EVENING_RECONCILED").length;
+  const completedRoutesCount = todayReconciliations.filter((item) => item.status === "EVENING_RECONCILED").length;
+  const loadedRowsCount = todayReconciliations.reduce(
+    (total, item) => total + item.items.reduce((sum, row) => sum + row.morningFull, 0),
+    0,
+  );
+
+  const branchStatsMap = salesmen.reduce(
+    (map, salesman) => {
+      const branchKey = salesman.branch?.name ?? "Unassigned";
       const current = map.get(branchKey) ?? {
         branchName: branchKey,
-        truckCount: 0,
-        openTruckCount: 0,
-        returnedTruckCount: 0,
+        activeSalesmen: 0,
+        openRoutes: 0,
+        completedRoutes: 0,
       };
 
-      current.truckCount += 1;
-      if (truck.sessions[0]) {
-        current.openTruckCount += 1;
+      current.activeSalesmen += 1;
+      if (salesman.salesmanReconciliations[0]?.status === "MORNING_RECORDED") {
+        current.openRoutes += 1;
+      }
+      if (salesman.salesmanReconciliations[0]?.status === "EVENING_RECONCILED") {
+        current.completedRoutes += 1;
       }
 
       map.set(branchKey, current);
       return map;
     },
-    new Map<string, { branchName: string; truckCount: number; openTruckCount: number; returnedTruckCount: number }>(),
+    new Map<string, { branchName: string; activeSalesmen: number; openRoutes: number; completedRoutes: number }>(),
   );
 
-  for (const session of recentSessions) {
-    const branchKey = session.truck.branch?.name ?? "Unassigned";
-    const current = branchSummariesMap.get(branchKey) ?? {
-      branchName: branchKey,
-      truckCount: 0,
-      openTruckCount: 0,
-      returnedTruckCount: 0,
-    };
-
-    current.returnedTruckCount += 1;
-    branchSummariesMap.set(branchKey, current);
-  }
-
-  const branchSummaries = Array.from(branchSummariesMap.values()).sort((left, right) =>
+  const branchStats = Array.from(branchStatsMap.values()).sort((left, right) =>
     left.branchName.localeCompare(right.branchName),
   );
 
@@ -150,9 +116,9 @@ export default async function LoaderDashboardPage() {
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div>
               <p className="text-sm font-black uppercase tracking-wide text-slate-500">Loader / Unloader</p>
-              <h1 className="mt-1 text-3xl font-black text-slate-950">Truck Operations Dashboard</h1>
+              <h1 className="mt-1 text-3xl font-black text-slate-950">Daily Route Dashboard</h1>
               <p className="mt-2 max-w-3xl text-sm font-bold text-slate-600">
-                Use this screen to start morning loads, finish evening returns, and see what is still open today.
+                Select a salesman, hand off the morning load, and close the route at the end of the day.
               </p>
             </div>
             <div className="flex flex-wrap gap-3">
@@ -165,57 +131,65 @@ export default async function LoaderDashboardPage() {
 
         <section className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
           <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-            <p className="text-xs font-black uppercase tracking-wide text-slate-500">Open Sessions</p>
-            <div className="mt-2 text-4xl font-black text-slate-950">{formatNumber(activeSessionCount)}</div>
-            <p className="mt-2 text-sm font-bold text-slate-600">Trucks still on the road or waiting to return.</p>
+            <p className="text-xs font-black uppercase tracking-wide text-slate-500">Active Salesmen</p>
+            <div className="mt-2 text-4xl font-black text-slate-950">{formatNumber(activeSalesmenCount)}</div>
+            <p className="mt-2 text-sm font-bold text-slate-600">Salesmen available for hand-off today.</p>
           </div>
           <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
             <p className="text-xs font-black uppercase tracking-wide text-slate-500">Morning Loads Today</p>
-            <div className="mt-2 text-4xl font-black text-emerald-700">{formatNumber(todayLoadedCount)}</div>
-            <p className="mt-2 text-sm font-bold text-slate-600">Sessions started since midnight.</p>
+            <div className="mt-2 text-4xl font-black text-emerald-700">{formatNumber(loadedRowsCount)}</div>
+            <p className="mt-2 text-sm font-bold text-slate-600">Loaded cylinder lines recorded today.</p>
           </div>
           <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-            <p className="text-xs font-black uppercase tracking-wide text-slate-500">Evening Returns Today</p>
-            <div className="mt-2 text-4xl font-black text-amber-700">{formatNumber(todayReturnedCount)}</div>
-            <p className="mt-2 text-sm font-bold text-slate-600">Returns closed during the current day.</p>
+            <p className="text-xs font-black uppercase tracking-wide text-slate-500">Active Routes</p>
+            <div className="mt-2 text-4xl font-black text-amber-700">{formatNumber(activeRoutesCount)}</div>
+            <p className="mt-2 text-sm font-bold text-slate-600">Routes waiting for evening close-out.</p>
           </div>
           <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-            <p className="text-xs font-black uppercase tracking-wide text-slate-500">Ready Trucks</p>
-            <div className="mt-2 text-4xl font-black text-sky-700">{formatNumber(trucks.length)}</div>
-            <p className="mt-2 text-sm font-bold text-slate-600">All configured trucks in the system.</p>
+            <p className="text-xs font-black uppercase tracking-wide text-slate-500">Completed Today</p>
+            <div className="mt-2 text-4xl font-black text-sky-700">{formatNumber(completedRoutesCount)}</div>
+            <p className="mt-2 text-sm font-bold text-slate-600">Routes fully reconciled since midnight.</p>
           </div>
         </section>
 
-        <section className="grid grid-cols-1 gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+        <SalesmanHandoffPicker
+          salesmen={salesmen.map((salesman) => ({
+            id: salesman.id,
+            fullName: salesman.fullName,
+            branchName: salesman.branch?.name ?? null,
+          }))}
+        />
+
+        <section className="grid grid-cols-1 gap-6 xl:grid-cols-[1.05fr_0.95fr]">
           <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
             <div className="border-b border-slate-200 px-5 py-4">
-              <h2 className="text-lg font-black text-slate-950">Active Trucks by Branch</h2>
-              <p className="mt-1 text-sm font-bold text-slate-600">Where the work is happening right now.</p>
+              <h2 className="text-lg font-black text-slate-950">Active Routes by Branch</h2>
+              <p className="mt-1 text-sm font-bold text-slate-600">Salesmen and their current route state.</p>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full border-collapse text-left text-sm">
                 <thead className="bg-slate-100 text-xs font-black uppercase tracking-wide text-slate-600">
                   <tr>
                     <th className="px-4 py-3">Branch</th>
-                    <th className="px-4 py-3">Total Trucks</th>
-                    <th className="px-4 py-3">Open Loads</th>
-                    <th className="px-4 py-3">Today Returns</th>
+                    <th className="px-4 py-3">Active Salesmen</th>
+                    <th className="px-4 py-3">Open Routes</th>
+                    <th className="px-4 py-3">Completed</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200">
-                  {branchSummaries.length === 0 ? (
+                  {branchStats.length === 0 ? (
                     <tr>
                       <td className="px-4 py-4 font-bold text-slate-600" colSpan={4}>
-                        No branches are configured yet.
+                        No salesmen are configured yet.
                       </td>
                     </tr>
                   ) : (
-                    branchSummaries.map((summary) => (
-                      <tr key={summary.branchName} className="hover:bg-slate-50">
-                        <td className="px-4 py-3 font-black text-slate-950">{summary.branchName}</td>
-                        <td className="px-4 py-3 font-bold text-slate-700">{formatNumber(summary.truckCount)}</td>
-                        <td className="px-4 py-3 font-bold text-amber-700">{formatNumber(summary.openTruckCount)}</td>
-                        <td className="px-4 py-3 font-bold text-emerald-700">{formatNumber(summary.returnedTruckCount)}</td>
+                    branchStats.map((branch) => (
+                      <tr key={branch.branchName} className="hover:bg-slate-50">
+                        <td className="px-4 py-3 font-black text-slate-950">{branch.branchName}</td>
+                        <td className="px-4 py-3 font-bold text-slate-700">{formatNumber(branch.activeSalesmen)}</td>
+                        <td className="px-4 py-3 font-bold text-amber-700">{formatNumber(branch.openRoutes)}</td>
+                        <td className="px-4 py-3 font-bold text-emerald-700">{formatNumber(branch.completedRoutes)}</td>
                       </tr>
                     ))
                   )}
@@ -227,31 +201,29 @@ export default async function LoaderDashboardPage() {
           <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <h2 className="text-lg font-black text-slate-950">Last Completed Returns</h2>
-                <p className="mt-1 text-sm font-bold text-slate-600">Recently closed sessions for quick verification.</p>
+                <h2 className="text-lg font-black text-slate-950">Recent Route Closures</h2>
+                <p className="mt-1 text-sm font-bold text-slate-600">Latest completed hand-offs for quick checking.</p>
               </div>
-              <Link href="/logistics/reconciliation" className="rounded border border-slate-300 bg-white px-3 py-2 text-xs font-black text-slate-900">
-                View All
+              <Link href="/finance/reconciliation-overview" className="rounded border border-slate-300 bg-white px-3 py-2 text-xs font-black text-slate-900">
+                Finance View
               </Link>
             </div>
 
             <div className="mt-4 space-y-3">
-              {recentSessions.length === 0 ? (
-                <p className="rounded-lg bg-slate-50 p-4 text-sm font-bold text-slate-600">No completed returns yet today.</p>
+              {recentReconciliations.length === 0 ? (
+                <p className="rounded-lg bg-slate-50 p-4 text-sm font-bold text-slate-600">No completed routes yet today.</p>
               ) : (
-                recentSessions.map((session) => (
-                  <div key={session.id} className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                recentReconciliations.map((reconciliation) => (
+                  <div key={reconciliation.id} className="rounded-lg border border-slate-200 bg-slate-50 p-4">
                     <div className="flex items-start justify-between gap-3">
                       <div>
-                        <p className="text-sm font-black text-slate-950">{session.truck.plateNumber}</p>
-                        <p className="text-xs font-bold text-slate-500">
-                          {session.truck.branch?.name ?? "No branch"} · {session.salesman.fullName}
-                        </p>
+                        <p className="text-sm font-black text-slate-950">{reconciliation.salesman.fullName}</p>
+                        <p className="text-xs font-bold text-slate-500">{reconciliation.branch?.name ?? "Unassigned branch"}</p>
                       </div>
-                      <span className="text-xs font-black uppercase text-emerald-700">{session.returnItems.length} rows</span>
+                      <span className="text-xs font-black uppercase text-emerald-700">{reconciliation.items.length} rows</span>
                     </div>
                     <p className="mt-2 text-xs font-bold text-slate-500">
-                      Returned at {session.returnedAt?.toLocaleString("en-GB") ?? "n/a"} · Loader {session.loader.fullName}
+                      Closed on {todayKey(reconciliation.eveningReconciledAt ?? reconciliation.morningLoggedAt)}
                     </p>
                   </div>
                 ))
@@ -260,144 +232,87 @@ export default async function LoaderDashboardPage() {
           </section>
         </section>
 
-        <section className="grid grid-cols-1 gap-6 xl:grid-cols-[1.25fr_0.95fr]">
-          <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
-            <div className="border-b border-slate-200 px-5 py-4">
-              <h2 className="text-lg font-black text-slate-950">Truck Queue</h2>
-              <p className="mt-1 text-sm font-bold text-slate-600">Choose a truck and go straight to morning load or evening return.</p>
-            </div>
-            {trucks.length === 0 ? (
-              <div className="p-5 text-sm font-bold text-slate-600">No trucks are configured yet.</div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[760px] border-collapse text-left text-sm">
-                  <thead className="bg-slate-100 text-xs font-black uppercase tracking-wide text-slate-600">
-                    <tr>
-                      <th className="px-4 py-3">Truck</th>
-                      <th className="px-4 py-3">Branch</th>
-                      <th className="px-4 py-3">Salesman</th>
-                      <th className="px-4 py-3">Status</th>
-                      <th className="px-4 py-3 text-right">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-200">
-                    {trucks.map((truck) => {
-                      const activeSession = truck.sessions[0];
-
-                      return (
-                        <tr key={truck.id} className="hover:bg-slate-50">
-                          <td className="px-4 py-3">
-                            <div className="font-black text-slate-950">{truck.plateNumber}</div>
-                            <div className="text-xs font-bold text-slate-500">{truck.label ?? "No label"}</div>
-                          </td>
-                          <td className="px-4 py-3 font-bold text-slate-700">{truck.branch?.name ?? "Unassigned"}</td>
-                          <td className="px-4 py-3 font-bold text-slate-700">{truck.salesman?.fullName ?? "No salesman"}</td>
-                          <td className="px-4 py-3">
-                            <span
-                              className={`rounded px-2 py-1 text-xs font-black uppercase ${
-                                activeSession ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-800"
-                              }`}
-                            >
-                              {activeSession ? "Open Load" : "Ready"}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3">
-                            <div className="flex justify-end gap-2">
-                              {activeSession ? (
-                                <Link
-                                  href={`/loader/return/${activeSession.id}`}
-                                  className="rounded bg-amber-600 px-4 py-2 text-xs font-black text-white"
-                                >
-                                  Evening Return
-                                </Link>
-                              ) : (
-                                <Link
-                                  href={`/loader/load/${truck.id}`}
-                                  className="rounded bg-emerald-700 px-4 py-2 text-xs font-black text-white"
-                                >
-                                  Morning Load
-                                </Link>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
+        <section className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+          <div className="border-b border-slate-200 px-5 py-4">
+            <h2 className="text-lg font-black text-slate-950">Salesman Queue</h2>
+            <p className="mt-1 text-sm font-bold text-slate-600">Choose the next salesman to hand off or close out.</p>
           </div>
-
-          <div className="space-y-6">
-            <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <h2 className="text-lg font-black text-slate-950">Today’s Work</h2>
-                  <p className="mt-1 text-sm font-bold text-slate-600">Recent load sessions started or returned today.</p>
-                </div>
-                <Link href="/logistics/reconciliation" className="rounded border border-slate-300 bg-white px-3 py-2 text-xs font-black text-slate-900">
-                  Reconciliation
-                </Link>
-              </div>
-              <div className="mt-4 space-y-3">
-                {todaySessions.length === 0 ? (
-                  <p className="rounded-lg bg-slate-50 p-4 text-sm font-bold text-slate-600">No sessions started today yet.</p>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[900px] border-collapse text-left text-sm">
+              <thead className="bg-slate-100 text-xs font-black uppercase tracking-wide text-slate-600">
+                <tr>
+                  <th className="px-4 py-3">Salesman</th>
+                  <th className="px-4 py-3">Branch</th>
+                  <th className="px-4 py-3">Route Status</th>
+                  <th className="px-4 py-3">Loaded Rows</th>
+                  <th className="px-4 py-3">Closed</th>
+                  <th className="px-4 py-3 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200">
+                {salesmen.length === 0 ? (
+                  <tr>
+                    <td className="px-4 py-4 font-bold text-slate-600" colSpan={6}>
+                      No active salesmen are available.
+                    </td>
+                  </tr>
                 ) : (
-                  todaySessions.map((session) => (
-                    <div key={session.id} className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <p className="text-sm font-black text-slate-950">{session.truck.plateNumber}</p>
-                          <p className="text-xs font-bold text-slate-500">
-                            {session.salesman.fullName} · Loader: {session.loader.fullName}
-                          </p>
-                        </div>
-                        <span className="text-xs font-black uppercase text-slate-500">
-                          {session.returnedAt ? "Returned" : "Open"}
-                        </span>
-                      </div>
-                      <p className="mt-2 text-xs font-bold text-slate-500">
-                        Loaded at {session.loadedAt.toLocaleString("en-GB")}
-                        {session.returnedAt ? ` · Returned at ${session.returnedAt.toLocaleString("en-GB")}` : ""}
-                      </p>
-                    </div>
-                  ))
-                )}
-              </div>
-            </section>
+                  salesmen.map((salesman) => {
+                    const route = salesman.salesmanReconciliations[0] ?? null;
+                    const routeStatus =
+                      route?.status === "EVENING_RECONCILED"
+                        ? "Closed"
+                        : route?.status === "MORNING_RECORDED"
+                          ? "Open"
+                          : "Waiting";
+                    const loadedRows = route?.items.reduce((total, item) => total + item.morningFull, 0) ?? 0;
 
-            <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-              <h2 className="text-lg font-black text-slate-950">Open Sessions</h2>
-              <p className="mt-1 text-sm font-bold text-slate-600">These trucks still need an evening return.</p>
-              <div className="mt-4 space-y-3">
-                {recentSessions.length === 0 ? (
-                  <p className="rounded-lg bg-emerald-50 p-4 text-sm font-bold text-emerald-800">No open sessions right now.</p>
-                ) : (
-                  recentSessions.map((session) => (
-                    <div key={session.id} className="rounded-lg border border-slate-200 p-4">
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <p className="text-sm font-black text-slate-950">{session.truck.plateNumber}</p>
-                          <p className="text-xs font-bold text-slate-500">
-                            {session.truck.branch?.name ?? "No branch"} · {session.salesman.fullName}
-                          </p>
-                        </div>
-                        <Link
-                          href={`/loader/return/${session.id}`}
-                          className="rounded bg-safety px-3 py-2 text-xs font-black text-white"
-                        >
-                          Return
-                        </Link>
-                      </div>
-                      <p className="mt-2 text-xs font-bold text-slate-500">
-                        Loaded {session.loadedAt.toLocaleDateString("en-GB")} at {session.loadedAt.toLocaleTimeString("en-GB")}
-                      </p>
-                    </div>
-                  ))
+                    return (
+                      <tr key={salesman.id} className="hover:bg-slate-50">
+                        <td className="px-4 py-3">
+                          <div className="font-black text-slate-950">{salesman.fullName}</div>
+                          <div className="text-xs font-bold text-slate-500">Salesman hand-off</div>
+                        </td>
+                        <td className="px-4 py-3 font-bold text-slate-700">{salesman.branch?.name ?? "Unassigned"}</td>
+                        <td className="px-4 py-3">
+                          <span
+                            className={`rounded px-2 py-1 text-xs font-black uppercase ${
+                              routeStatus === "Closed"
+                                ? "bg-emerald-100 text-emerald-800"
+                                : routeStatus === "Open"
+                                  ? "bg-amber-100 text-amber-800"
+                                  : "bg-slate-100 text-slate-700"
+                            }`}
+                          >
+                            {routeStatus}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 font-bold text-slate-700">{formatNumber(loadedRows)}</td>
+                        <td className="px-4 py-3 font-bold text-slate-700">
+                          {route?.eveningReconciledAt ? route.eveningReconciledAt.toLocaleDateString("en-GB") : "—"}
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex justify-end gap-2">
+                            <Link
+                              href={`/loader/load/${salesman.id}`}
+                              className="rounded bg-emerald-700 px-3 py-2 text-xs font-black text-white"
+                            >
+                              Morning Load
+                            </Link>
+                            <Link
+                              href={`/loader/return/${salesman.id}`}
+                              className="rounded bg-amber-600 px-3 py-2 text-xs font-black text-white"
+                            >
+                              Evening Return
+                            </Link>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
                 )}
-              </div>
-            </section>
+              </tbody>
+            </table>
           </div>
         </section>
       </div>

@@ -1,12 +1,24 @@
 "use server";
 
-import { CylinderMovementType } from "@prisma/client";
+import { ReconciliationStatus } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { auditSnapshot, logAction } from "@/lib/audit";
 import { Permissions } from "@/lib/permissions";
 import { requirePermission } from "@/lib/permission-guard";
 import { prisma } from "@/lib/prisma";
+
+type MorningLoadItem = {
+  productId: string;
+  morningFull: number;
+};
+
+type EveningReconcileItem = {
+  productId: string;
+  morningFull: number;
+  eveningReturnedFull: number;
+  eveningReturnedEmpty: number;
+};
 
 function text(formData: FormData, key: string) {
   const value = formData.get(key);
@@ -18,278 +30,358 @@ function intValue(formData: FormData, key: string) {
   return Number.isFinite(value) && value > 0 ? value : 0;
 }
 
-async function resolveBranchUser(branchId: string, preferredRole: "LOADER" | "SALESMAN") {
-  const preferred = await prisma.user.findFirst({
-    where: { branchId, role: preferredRole, isActive: true },
-    orderBy: { createdAt: "asc" },
-  });
+function dayOnly(date = new Date()) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
 
-  if (preferred) {
-    return preferred;
+function parseRows(formData: FormData, morningKey: string, returnedFullKey?: string, returnedEmptyKey?: string) {
+  const productIds = formData.getAll("productId").filter((value): value is string => typeof value === "string");
+  const morningValues = formData.getAll(morningKey).filter((value): value is string => typeof value === "string");
+  const fullValues = returnedFullKey
+    ? formData.getAll(returnedFullKey).filter((value): value is string => typeof value === "string")
+    : [];
+  const emptyValues = returnedEmptyKey
+    ? formData.getAll(returnedEmptyKey).filter((value): value is string => typeof value === "string")
+    : [];
+
+  return productIds
+    .map((productId, index) => ({
+      productId,
+      morningFull: Number.parseInt(morningValues[index] || "0", 10) || 0,
+      eveningReturnedFull: Number.parseInt(fullValues[index] || "0", 10) || 0,
+      eveningReturnedEmpty: Number.parseInt(emptyValues[index] || "0", 10) || 0,
+    }))
+    .filter((item) => item.productId);
+}
+
+function normalizeProductRows<T extends { productId: string; morningFull: number; eveningReturnedFull: number; eveningReturnedEmpty: number }>(
+  rows: T[],
+) {
+  const ordered = new Map<string, T>();
+
+  for (const row of rows) {
+    const current = ordered.get(row.productId);
+    if (!current) {
+      ordered.set(row.productId, { ...row });
+      continue;
+    }
+
+    ordered.set(row.productId, {
+      ...current,
+      morningFull: current.morningFull + row.morningFull,
+      eveningReturnedFull: current.eveningReturnedFull + row.eveningReturnedFull,
+      eveningReturnedEmpty: current.eveningReturnedEmpty + row.eveningReturnedEmpty,
+    });
   }
 
-  return prisma.user.findFirst({
-    where: { branchId, isActive: true },
-    orderBy: { createdAt: "asc" },
+  return [...ordered.values()];
+}
+
+async function resolveSalesmanContext(salesmanId: string) {
+  const salesman = await prisma.user.findUnique({
+    where: { id: salesmanId },
+    include: { branch: true },
   });
+
+  if (!salesman || salesman.role !== "SALESMAN" || !salesman.isActive) {
+    throw new Error("Select an active salesman.");
+  }
+
+  return salesman;
+}
+
+async function loadProducts(productIds: string[]) {
+  const uniqueIds = [...new Set(productIds)];
+  const products = await prisma.product.findMany({
+    where: {
+      id: { in: uniqueIds },
+      isActive: true,
+    },
+    select: { id: true, name: true },
+  });
+
+  if (products.length !== uniqueIds.length) {
+    throw new Error("One or more selected products are not available.");
+  }
+
+  return products;
 }
 
 export async function processMorningLoad(formData: FormData) {
-  const truckId = text(formData, "truckId");
+  const salesmanId = text(formData, "salesmanId");
   const productIds = formData.getAll("productId").filter((value): value is string => typeof value === "string");
 
-  if (!truckId) {
-    throw new Error("Missing truck.");
+  if (!salesmanId) {
+    throw new Error("Missing salesman.");
   }
 
-  await requirePermission(Permissions.Logistics_Update);
+  const { user: currentUser } = await requirePermission(Permissions.Logistics_Update);
+  const salesman = await resolveSalesmanContext(salesmanId);
+
+  if (currentUser.role !== "ADMIN" && currentUser.branchId !== salesman.branchId) {
+    throw new Error("You can only hand off routes within your own branch.");
+  }
+
+  const branchId = salesman.branchId ?? currentUser.branchId;
+  if (!branchId) {
+    throw new Error("Salesman must belong to a branch.");
+  }
+
+  const rows = normalizeProductRows(
+    parseRows(formData, "morningFull")
+      .filter((item) => item.morningFull > 0)
+      .map((item) => ({ ...item, eveningReturnedFull: 0, eveningReturnedEmpty: 0 })),
+  );
+
+  if (rows.length === 0) {
+    throw new Error("Enter at least one loaded cylinder quantity.");
+  }
+
+  await loadProducts(productIds);
+
+  const reconciliationDate = dayOnly();
 
   await prisma.$transaction(async (tx) => {
-    const truck = await tx.truck.findUniqueOrThrow({
-      where: { id: truckId },
-      include: { salesman: true },
+    const existing = await tx.dailyReconciliation.findUnique({
+      where: {
+        salesmanId_reconciliationDate: {
+          salesmanId,
+          reconciliationDate,
+        },
+      },
+      include: {
+        items: true,
+      },
     });
 
-    const activeSession = await tx.truckLoadSession.findFirst({
-      where: { truckId: truck.id, returnedAt: null },
+    if (existing?.status === ReconciliationStatus.EVENING_RECONCILED) {
+      throw new Error("This salesman already has a completed route for today.");
+    }
+
+    const reconciliation = existing
+      ? await tx.dailyReconciliation.update({
+          where: { id: existing.id },
+          data: {
+            branchId,
+            loaderId: currentUser.id,
+            status: ReconciliationStatus.MORNING_RECORDED,
+            morningLoggedAt: new Date(),
+            eveningReconciledAt: null,
+            notes: null,
+          },
+        })
+      : await tx.dailyReconciliation.create({
+          data: {
+            branchId,
+            salesmanId,
+            loaderId: currentUser.id,
+            reconciliationDate,
+            morningLoggedAt: new Date(),
+            status: ReconciliationStatus.MORNING_RECORDED,
+          },
+        });
+
+    await tx.dailyReconciliationItem.deleteMany({
+      where: { reconciliationId: reconciliation.id },
     });
 
-    if (activeSession) {
-      throw new Error("This truck already has an active load session.");
-    }
+    await tx.dailyReconciliationItem.createMany({
+      data: rows.map((row) => ({
+        reconciliationId: reconciliation.id,
+        productId: row.productId,
+        morningFull: row.morningFull,
+        eveningReturnedFull: 0,
+        eveningReturnedEmpty: 0,
+        soldFull: 0,
+      })),
+    });
 
-    const salesman =
-      truck.salesman ??
-      (await tx.user.findFirst({
-        where: { branchId: truck.branchId, role: "SALESMAN", isActive: true },
-        orderBy: { createdAt: "asc" },
-      }));
-
-    const loader =
-      (await tx.user.findFirst({
-        where: { branchId: truck.branchId, role: "LOADER", isActive: true },
-        orderBy: { createdAt: "asc" },
-      })) ??
-      (await tx.user.findFirst({
-        where: { branchId: truck.branchId, isActive: true },
-        orderBy: { createdAt: "asc" },
-      }));
-
-    if (!salesman || !loader) {
-      throw new Error("Truck needs an assigned salesman and loader user before loading.");
-    }
-
-    const loadItems = productIds
-      .map((productId) => ({
-        productId,
-        fullCylindersLoad: intValue(formData, `product-${productId}-loaded`),
-      }))
-      .filter((item) => item.fullCylindersLoad > 0);
-
-    if (loadItems.length === 0) {
-      throw new Error("Enter at least one loaded cylinder quantity.");
-    }
-
-    const session = await tx.truckLoadSession.create({
-      data: {
-        truckId: truck.id,
-        salesmanId: salesman.id,
-        loaderId: loader.id,
+    const reconciliationAfter = await tx.dailyReconciliation.findUniqueOrThrow({
+      where: { id: reconciliation.id },
+      include: {
+        items: {
+          include: { product: true },
+          orderBy: { productId: "asc" },
+        },
+        branch: true,
+        salesman: true,
+        loader: true,
       },
     });
 
     await logAction(
-      loader.id,
-      "PROCESS_MORNING_LOAD",
-      "TruckLoadSession",
-      session.id,
-      null,
-      auditSnapshot({
-        id: session.id,
-        truckId: session.truckId,
-        salesmanId: session.salesmanId,
-        loaderId: session.loaderId,
-        loadedAt: session.loadedAt,
-      }),
+      currentUser.id,
+      "CREATE_RECONCILIATION",
+      "DailyReconciliation",
+      reconciliation.id,
+      auditSnapshot(existing),
+      auditSnapshot(reconciliationAfter),
       { tx },
     );
-
-    await tx.truckLoadItem.createMany({
-      data: loadItems.map((item) => ({
-        sessionId: session.id,
-        productId: item.productId,
-        fullCylindersLoad: item.fullCylindersLoad,
-      })),
-    });
-
-    for (const item of loadItems) {
-      const inventoryBefore = await tx.inventoryBalance.findUnique({
-        where: { branchId_productId: { branchId: truck.branchId, productId: item.productId } },
-      });
-
-      await tx.cylinderMovement.create({
-        data: {
-          branchId: truck.branchId,
-          productId: item.productId,
-          loadSessionId: session.id,
-          type: CylinderMovementType.TRUCK_LOAD_FULL,
-          fullDelta: -item.fullCylindersLoad,
-        },
-      });
-
-      await tx.inventoryBalance.upsert({
-        where: { branchId_productId: { branchId: truck.branchId, productId: item.productId } },
-        update: {
-          fullCount: { decrement: item.fullCylindersLoad },
-        },
-        create: {
-          branchId: truck.branchId,
-          productId: item.productId,
-          fullCount: -item.fullCylindersLoad,
-          emptyCount: 0,
-        },
-      });
-
-      const inventoryAfter = await tx.inventoryBalance.findUniqueOrThrow({
-        where: { branchId_productId: { branchId: truck.branchId, productId: item.productId } },
-      });
-
-      await logAction(
-        loader.id,
-        "UPDATE_INVENTORY",
-        "InventoryBalance",
-        inventoryAfter.id,
-        auditSnapshot(inventoryBefore),
-        auditSnapshot(inventoryAfter),
-        { tx },
-      );
-    }
   });
 
   revalidatePath("/loader");
-  redirect("/loader");
+  revalidatePath("/finance/reconciliation-overview");
+  redirect(`/loader/load/${encodeURIComponent(salesmanId)}`);
 }
 
 export async function processEveningReturn(formData: FormData) {
-  const sessionId = text(formData, "sessionId");
-  const productIds = formData.getAll("productId").filter((value): value is string => typeof value === "string");
+  const salesmanId = text(formData, "salesmanId");
+  const reconciliationId = text(formData, "reconciliationId");
 
-  if (!sessionId) {
-    throw new Error("Missing load session.");
+  if (!salesmanId) {
+    throw new Error("Missing salesman.");
   }
 
-  await requirePermission(Permissions.Logistics_Update);
+  const { user: currentUser } = await requirePermission(Permissions.Logistics_Update);
+  const salesman = await resolveSalesmanContext(salesmanId);
+
+  if (currentUser.role !== "ADMIN" && currentUser.branchId !== salesman.branchId) {
+    throw new Error("You can only close routes within your own branch.");
+  }
+
+  const reconciliationDate = dayOnly();
+  const normalizedList = normalizeProductRows(
+    parseRows(formData, "morningFull", "eveningReturnedFull", "eveningReturnedEmpty").map((row) => ({
+      ...row,
+    })),
+  );
+
+  if (normalizedList.length === 0) {
+    throw new Error("Enter at least one evening reconciliation row.");
+  }
 
   await prisma.$transaction(async (tx) => {
-    const session = await tx.truckLoadSession.findUniqueOrThrow({
-      where: { id: sessionId },
-      include: { truck: true },
-    });
+    const reconciliation = reconciliationId
+      ? await tx.dailyReconciliation.findUniqueOrThrow({
+          where: { id: reconciliationId },
+          include: {
+            items: true,
+            branch: true,
+            salesman: true,
+            loader: true,
+          },
+        })
+      : await tx.dailyReconciliation.findUniqueOrThrow({
+          where: {
+            salesmanId_reconciliationDate: {
+              salesmanId,
+              reconciliationDate,
+            },
+          },
+          include: {
+            items: true,
+            branch: true,
+            salesman: true,
+            loader: true,
+          },
+        });
 
-    if (session.returnedAt) {
-      throw new Error("This truck load session has already been returned.");
+    if (reconciliation.status === ReconciliationStatus.EVENING_RECONCILED) {
+      throw new Error("This route has already been completed.");
     }
 
-    const returnItems = productIds
-      .map((productId) => ({
-        productId,
-        remainingFullCount: intValue(formData, `product-${productId}-remaining-full`),
-        collectedEmptyCount: intValue(formData, `product-${productId}-collected-empty`),
-      }))
-      .filter((item) => item.remainingFullCount > 0 || item.collectedEmptyCount > 0);
-
-    if (returnItems.length === 0) {
-      throw new Error("Enter at least one return quantity.");
-    }
-
-    const returnedAt = new Date();
-
-    await tx.truckLoadSession.update({
-      where: { id: session.id },
-      data: { returnedAt },
-    });
-
-    await logAction(
-      session.loaderId,
-      "PROCESS_EVENING_RETURN",
-      "TruckLoadSession",
-      session.id,
-      auditSnapshot(session),
-      auditSnapshot({
-        ...session,
-        returnedAt,
-      }),
-      { tx },
+    const itemMap = new Map<string, (typeof reconciliation.items)[number]>(
+      reconciliation.items.map((item) => [item.productId, item]),
     );
 
-    await tx.truckReturnItem.createMany({
-      data: returnItems.map((item) => ({
-        sessionId: session.id,
-        productId: item.productId,
-        remainingFullCount: item.remainingFullCount,
-        collectedEmptyCount: item.collectedEmptyCount,
-      })),
+    for (const row of normalizedList) {
+      const item = itemMap.get(row.productId);
+
+      if (!item) {
+        throw new Error("Evening reconciliation must include the morning load products.");
+      }
+
+      const soldFull = item.morningFull - row.eveningReturnedFull;
+      if (soldFull < 0) {
+        throw new Error("Returned full cylinders cannot exceed morning load.");
+      }
+
+      row.eveningReturnedEmpty = soldFull;
+    }
+
+    const reconciliationBefore = auditSnapshot(reconciliation);
+
+    await tx.dailyReconciliation.update({
+      where: { id: reconciliation.id },
+      data: {
+        status: ReconciliationStatus.EVENING_RECONCILED,
+        eveningReconciledAt: new Date(),
+      },
     });
 
-    for (const item of returnItems) {
-      const inventoryBefore = await tx.inventoryBalance.findUnique({
-        where: { branchId_productId: { branchId: session.truck.branchId, productId: item.productId } },
-      });
-
-      if (item.remainingFullCount > 0) {
-        await tx.cylinderMovement.create({
-          data: {
-            branchId: session.truck.branchId,
-            productId: item.productId,
-            loadSessionId: session.id,
-            type: CylinderMovementType.TRUCK_RETURN_FULL,
-            fullDelta: item.remainingFullCount,
+    for (const row of normalizedList) {
+      const currentItem = itemMap.get(row.productId)!;
+      const updatedItem = await tx.dailyReconciliationItem.update({
+        where: {
+          reconciliationId_productId: {
+            reconciliationId: reconciliation.id,
+            productId: row.productId,
           },
-        });
-      }
-
-      if (item.collectedEmptyCount > 0) {
-        await tx.cylinderMovement.create({
-          data: {
-            branchId: session.truck.branchId,
-            productId: item.productId,
-            loadSessionId: session.id,
-            type: CylinderMovementType.TRUCK_RETURN_EMPTY,
-            emptyDelta: item.collectedEmptyCount,
-          },
-        });
-      }
-
-      await tx.inventoryBalance.upsert({
-        where: { branchId_productId: { branchId: session.truck.branchId, productId: item.productId } },
-        update: {
-          fullCount: { increment: item.remainingFullCount },
-          emptyCount: { increment: item.collectedEmptyCount },
         },
-        create: {
-          branchId: session.truck.branchId,
-          productId: item.productId,
-          fullCount: item.remainingFullCount,
-          emptyCount: item.collectedEmptyCount,
+        data: {
+          eveningReturnedFull: row.eveningReturnedFull,
+          eveningReturnedEmpty: row.eveningReturnedEmpty,
+          soldFull: currentItem.morningFull - row.eveningReturnedFull,
         },
-      });
-
-      const inventoryAfter = await tx.inventoryBalance.findUniqueOrThrow({
-        where: { branchId_productId: { branchId: session.truck.branchId, productId: item.productId } },
       });
 
       await logAction(
-        session.loaderId,
-        "UPDATE_INVENTORY",
-        "InventoryBalance",
-        inventoryAfter.id,
-        auditSnapshot(inventoryBefore),
-        auditSnapshot(inventoryAfter),
+        currentUser.id,
+        "UPDATE_RECONCILIATION",
+        "DailyReconciliationItem",
+        updatedItem.id,
+        auditSnapshot(currentItem),
+        auditSnapshot(updatedItem),
         { tx },
       );
     }
+
+    const reconciliationAfter = await tx.dailyReconciliation.findUniqueOrThrow({
+      where: { id: reconciliation.id },
+      include: {
+        items: {
+          include: { product: true },
+          orderBy: { productId: "asc" },
+        },
+        branch: true,
+        salesman: true,
+        loader: true,
+      },
+    });
+
+    await logAction(
+      currentUser.id,
+      "UPDATE_RECONCILIATION",
+      "DailyReconciliation",
+      reconciliation.id,
+      reconciliationBefore,
+      auditSnapshot(reconciliationAfter),
+      { tx },
+    );
   });
 
   revalidatePath("/loader");
-  redirect("/loader");
+  revalidatePath("/finance/reconciliation-overview");
+  redirect(`/loader/return/${encodeURIComponent(salesmanId)}`);
+}
+
+export async function submitMorningLoad(formData: FormData) {
+  const salesmanId = text(formData, "salesmanId");
+
+  if (!salesmanId) {
+    throw new Error("Select a salesman.");
+  }
+
+  await processMorningLoad(formData);
+}
+
+export async function submitEveningReconcile(formData: FormData) {
+  const salesmanId = text(formData, "salesmanId");
+
+  if (!salesmanId) {
+    throw new Error("Select a salesman.");
+  }
+
+  await processEveningReturn(formData);
 }

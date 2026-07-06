@@ -1,23 +1,43 @@
-import { notFound } from "next/navigation";
 import Link from "next/link";
+import { notFound } from "next/navigation";
 import { processMorningLoad } from "@/app/actions/loader";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
 
 type MorningLoadPageProps = {
-  params: Promise<{ truckId: string }>;
+  params: Promise<{ salesmanId: string }>;
 };
 
-export default async function MorningLoadPage({ params }: MorningLoadPageProps) {
-  const { truckId } = await params;
+function todayDate() {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+}
 
-  const truck = await prisma.truck.findUnique({
-    where: { id: truckId },
-    include: { salesman: true },
+export default async function MorningLoadPage({ params }: MorningLoadPageProps) {
+  const { salesmanId } = await params;
+
+  const salesman = await prisma.user.findUnique({
+    where: { id: salesmanId },
+    include: {
+      branch: true,
+      salesmanReconciliations: {
+        where: {
+          reconciliationDate: todayDate(),
+        },
+        include: {
+          items: {
+            include: { product: true },
+            orderBy: { productId: "asc" },
+          },
+        },
+        orderBy: { morningLoggedAt: "desc" },
+        take: 1,
+      },
+    },
   });
 
-  if (!truck) {
+  if (!salesman || salesman.role !== "SALESMAN") {
     notFound();
   }
 
@@ -26,22 +46,29 @@ export default async function MorningLoadPage({ params }: MorningLoadPageProps) 
     orderBy: { name: "asc" },
   });
 
+  const existingRoute = salesman.salesmanReconciliations[0] ?? null;
+
   return (
     <main className="min-h-screen bg-slate-100 p-4 md:p-8">
       <form action={processMorningLoad} className="mx-auto flex max-w-3xl flex-col gap-4">
-        <input type="hidden" name="truckId" value={truck.id} />
+        <input type="hidden" name="salesmanId" value={salesman.id} />
 
         <header className="rounded-lg bg-ink p-5 text-white">
           <p className="text-sm font-bold uppercase tracking-wide text-slate-300">Morning Load</p>
-          <h1 className="mt-1 text-3xl font-black md:text-4xl">{truck.plateNumber}</h1>
-          <p className="mt-2 text-lg font-bold text-slate-200">{truck.salesman?.fullName ?? "No salesman assigned"}</p>
+          <h1 className="mt-1 text-3xl font-black md:text-4xl">{salesman.fullName}</h1>
+          <p className="mt-2 text-lg font-bold text-slate-200">{salesman.branch?.name ?? "No branch assigned"}</p>
+          {existingRoute ? (
+            <p className="mt-2 text-sm font-bold text-slate-300">
+              Existing route today: {existingRoute.status.replaceAll("_", " ")}
+            </p>
+          ) : null}
         </header>
 
         <Link
           href="/loader"
           className="flex min-h-20 items-center justify-center rounded-lg bg-red-700 px-5 text-center text-2xl font-black text-white shadow-lg active:scale-[0.99]"
         >
-          Cancel / Back to Truck List
+          Cancel / Back to Dashboard
         </Link>
 
         <section className="flex flex-col gap-3">
