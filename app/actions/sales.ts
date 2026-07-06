@@ -6,6 +6,8 @@ import path from "node:path";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { auditSnapshot, logAction } from "@/lib/audit";
+import { Permissions } from "@/lib/permissions";
+import { requirePermission } from "@/lib/permission-guard";
 import { prisma } from "@/lib/prisma";
 import { buildInvoiceSerial } from "@/lib/invoice";
 import { getCurrentUser } from "@/lib/session";
@@ -60,7 +62,9 @@ export async function createOrder(formData: FormData) {
   try {
     const currentUser = await getCurrentUser();
 
-    if (!currentUser || currentUser.role !== "SALESMAN" || !currentUser.branchId) {
+    await requirePermission(Permissions.INVOICE_CREATE);
+
+    if (!currentUser || !currentUser.branchId) {
       throw new Error("Salesman session is required.");
     }
 

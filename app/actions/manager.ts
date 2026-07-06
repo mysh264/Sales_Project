@@ -3,6 +3,8 @@
 import { DebtStatus, PaymentMethod, Prisma } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { auditSnapshot, logAction } from "@/lib/audit";
+import { Permissions } from "@/lib/permissions";
+import { requirePermission } from "@/lib/permission-guard";
 import { prisma } from "@/lib/prisma";
 
 function text(formData: FormData, key: string) {
@@ -35,6 +37,8 @@ export async function updatePriceRule(formData: FormData) {
   if (minPrice.lessThan(0) || maxPrice.lessThan(0) || minPrice.greaterThan(maxPrice)) {
     throw new Error("Price limits are invalid.");
   }
+
+  await requirePermission(Permissions.PRICE_RULE_UPDATE);
 
   await prisma.$transaction(async (tx) => {
     const rule = await tx.productPriceRule.findUniqueOrThrow({ where: { id: ruleId } });
@@ -70,6 +74,8 @@ export async function collectDebt(formData: FormData) {
   if (amount.lessThanOrEqualTo(0)) {
     throw new Error("Collection amount must be greater than zero.");
   }
+
+  await requirePermission(Permissions.DEBT_COLLECT);
 
   await prisma.$transaction(async (tx) => {
     const debt = await tx.customerDebt.findUniqueOrThrow({

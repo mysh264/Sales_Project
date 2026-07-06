@@ -4,6 +4,8 @@ import { CylinderMovementType } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { auditSnapshot, logAction } from "@/lib/audit";
+import { Permissions } from "@/lib/permissions";
+import { requirePermission } from "@/lib/permission-guard";
 import { prisma } from "@/lib/prisma";
 
 function text(formData: FormData, key: string) {
@@ -39,6 +41,8 @@ export async function processMorningLoad(formData: FormData) {
   if (!truckId) {
     throw new Error("Missing truck.");
   }
+
+  await requirePermission(Permissions.INVENTORY_UPDATE);
 
   await prisma.$transaction(async (tx) => {
     const truck = await tx.truck.findUniqueOrThrow({
@@ -173,6 +177,8 @@ export async function processEveningReturn(formData: FormData) {
   if (!sessionId) {
     throw new Error("Missing load session.");
   }
+
+  await requirePermission(Permissions.INVENTORY_UPDATE);
 
   await prisma.$transaction(async (tx) => {
     const session = await tx.truckLoadSession.findUniqueOrThrow({

@@ -1,6 +1,7 @@
 import { DebtStatus, Prisma } from "@prisma/client";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { formatDateTimeDMY } from "@/lib/date-format";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser, hasGlobalSalesAccess } from "@/lib/session";
 
@@ -21,13 +22,6 @@ function formatOmr(value: Prisma.Decimal | number | null | undefined) {
     minimumFractionDigits: 3,
     maximumFractionDigits: 3,
   }).format(amount);
-}
-
-function formatDate(value: Date) {
-  return new Intl.DateTimeFormat("en-GB", {
-    dateStyle: "short",
-    timeStyle: "short",
-  }).format(value);
 }
 
 function statusBadge(status: string) {
@@ -173,7 +167,7 @@ export default async function ManagerDashboardPage() {
                 {latestInvoices.map((invoice) => (
                   <tr key={invoice.id} className="hover:bg-slate-50">
                     <td className="whitespace-nowrap px-4 py-2 font-bold text-slate-900">{invoice.invoiceNumber}</td>
-                    <td className="whitespace-nowrap px-4 py-2 text-slate-700">{formatDate(invoice.createdAt)}</td>
+                    <td className="whitespace-nowrap px-4 py-2 text-slate-700">{formatDateTimeDMY(invoice.createdAt)}</td>
                     <td className="px-4 py-2 text-slate-900">{invoice.customer.name}</td>
                     <td className="px-4 py-2 text-slate-700">{invoice.salesman.fullName}</td>
                     <td className="whitespace-nowrap px-4 py-2 text-right font-bold text-slate-900">

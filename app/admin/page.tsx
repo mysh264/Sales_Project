@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import Link from "next/link";
 
 export const dynamic = "force-dynamic";
 
@@ -41,6 +42,27 @@ export default async function AdminConsolePage() {
               <p className="mt-2 text-3xl font-black text-slate-950">{card.value}</p>
             </article>
           ))}
+        </section>
+
+        <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+          <h2 className="text-lg font-black text-slate-950">Master Data</h2>
+          <p className="mt-2 text-sm font-bold text-slate-600">
+            Manage branches, products, roles, and audit trails from one place.
+          </p>
+          <div className="mt-4 flex flex-wrap gap-3">
+            <Link href="/admin/branches" className="inline-flex rounded border border-slate-300 px-4 py-2 text-sm font-black text-slate-900">
+              Branches
+            </Link>
+            <Link href="/admin/products" className="inline-flex rounded border border-slate-300 px-4 py-2 text-sm font-black text-slate-900">
+              Products
+            </Link>
+            <Link href="/admin/roles" className="inline-flex rounded border border-slate-300 px-4 py-2 text-sm font-black text-slate-900">
+              Roles
+            </Link>
+            <Link href="/admin/audit-logs" className="inline-flex rounded bg-slate-950 px-4 py-2 text-sm font-black text-white">
+              Audit Logs
+            </Link>
+          </div>
         </section>
 
         <section className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
@@ -86,9 +108,19 @@ export default async function AdminConsolePage() {
           <p className="mt-2 text-sm font-bold text-slate-600">
             Application logs are currently available through Docker with <span className="font-mono">docker logs sales_nextjs</span>.
           </p>
+          <div className="mt-4 flex flex-wrap gap-3">
+            <Link href="/admin/audit-logs" className="inline-flex rounded bg-slate-950 px-4 py-2 text-sm font-black text-white">
+              Open Audit Logs
+            </Link>
+            <Link href="/admin/products" className="inline-flex rounded border border-slate-300 px-4 py-2 text-sm font-black text-slate-900">
+              Manage Products
+            </Link>
+            <Link href="/admin/roles" className="inline-flex rounded border border-slate-300 px-4 py-2 text-sm font-black text-slate-900">
+              Manage Roles
+            </Link>
+          </div>
         </section>
       </div>
     </main>
   );
 }
-

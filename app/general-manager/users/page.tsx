@@ -30,12 +30,15 @@ function roleBadgeClass(role: UserRole) {
 }
 
 export default async function GeneralManagerUsersPage() {
-  const [users, branches] = await Promise.all([
+  const [users, branches, roles] = await Promise.all([
     prisma.user.findMany({
-      include: { branch: true },
+      include: { branch: true, roleProfile: true },
       orderBy: [{ role: "asc" }, { fullName: "asc" }],
     }),
     prisma.branch.findMany({
+      orderBy: { name: "asc" },
+    }),
+    prisma.role.findMany({
       orderBy: { name: "asc" },
     }),
   ]);
@@ -111,6 +114,22 @@ export default async function GeneralManagerUsersPage() {
                     {roleLabel(role)}
                   </option>
                 ))}
+                </select>
+              </label>
+
+            <label className="block">
+              <span className="text-sm font-black text-slate-700">Permission Profile</span>
+              <select
+                name="roleId"
+                defaultValue=""
+                className="mt-1 h-11 w-full rounded border border-slate-300 px-3 text-sm font-bold outline-none focus:border-slate-950"
+              >
+                <option value="">Use default profile for selected role</option>
+                {roles.map((role) => (
+                  <option key={role.id} value={role.id}>
+                    {role.name}
+                  </option>
+                ))}
               </select>
             </label>
 
@@ -163,7 +182,7 @@ export default async function GeneralManagerUsersPage() {
                     </td>
                     <td className="whitespace-nowrap px-4 py-2">
                       <span className={`rounded px-2 py-1 text-xs font-black uppercase ${roleBadgeClass(user.role)}`}>
-                        {roleLabel(user.role)}
+                        {user.roleProfile?.name ?? roleLabel(user.role)}
                       </span>
                     </td>
                     <td className="whitespace-nowrap px-4 py-2 font-bold text-slate-700">
@@ -220,6 +239,18 @@ export default async function GeneralManagerUsersPage() {
                             {branches.map((branch) => (
                               <option key={branch.id} value={branch.id}>
                                 {branch.code}
+                              </option>
+                            ))}
+                          </select>
+                          <select
+                            name="newRoleId"
+                            defaultValue={user.roleId ?? ""}
+                            className="h-9 rounded border border-slate-300 px-2 text-xs font-bold outline-none focus:border-slate-950"
+                          >
+                            <option value="">Built-in profile</option>
+                            {roles.map((role) => (
+                              <option key={role.id} value={role.id}>
+                                {role.name}
                               </option>
                             ))}
                           </select>

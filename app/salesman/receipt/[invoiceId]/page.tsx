@@ -1,6 +1,7 @@
 import { Prisma } from "@prisma/client";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { formatDateTimeDMY } from "@/lib/date-format";
 import { prisma } from "@/lib/prisma";
 import { ClearNewInvoiceStorage } from "./ClearNewInvoiceStorage";
 
@@ -13,13 +14,6 @@ type ReceiptPageProps = {
 function money(value: Prisma.Decimal | number | null | undefined) {
   const amount = value instanceof Prisma.Decimal ? value.toNumber() : Number(value ?? 0);
   return amount.toFixed(3);
-}
-
-function receiptDate(value: Date) {
-  return new Intl.DateTimeFormat("en-GB", {
-    dateStyle: "short",
-    timeStyle: "short",
-  }).format(value);
 }
 
 export default async function ReceiptPage({ params }: ReceiptPageProps) {
@@ -97,7 +91,7 @@ export default async function ReceiptPage({ params }: ReceiptPageProps) {
           </div>
           <div className="flex justify-between gap-2">
             <span>Date</span>
-            <span className="text-right">{receiptDate(invoice.createdAt)}</span>
+            <span className="text-right">{formatDateTimeDMY(invoice.createdAt)}</span>
           </div>
           <div className="flex justify-between gap-2">
             <span>Customer</span>

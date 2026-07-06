@@ -51,6 +51,11 @@ enum CylinderMovementType {
   STOCK_ADJUSTMENT
 }
 
+enum ReconciliationStatus {
+  MORNING_RECORDED
+  EVENING_RECONCILED
+}
+
 model Company {
   id        String   @id @default(cuid())
   name      String
@@ -67,6 +72,7 @@ model Branch {
   parentBranchId      String?
   type                BranchType @default(BRANCH)
   name                String
+  location            String?
   code                String    @unique
   defaultCurrency     String    @default("OMR")
   defaultPhoneCode    String    @default("+968")
@@ -82,6 +88,7 @@ model Branch {
   trucks              Truck[]
   inventoryBalances   InventoryBalance[]
   cylinderMovements   CylinderMovement[]
+  dailyReconciliations DailyReconciliation[]
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
 
@@ -90,27 +97,43 @@ model Branch {
 }
 
 model User {
-  id             String             @id @default(cuid())
-  branchId       String?
-  role           UserRole
-  fullName       String
-  phone          String?
-  email          String?            @unique
-  passwordHash   String?
-  isActive       Boolean            @default(true)
-  allowGlobalSalesView Boolean      @default(false)
-  branch         Branch?            @relation(fields: [branchId], references: [id])
-  salesInvoices  Invoice[]          @relation("SalesmanInvoices")
-  loadedTasks    TruckLoadSession[] @relation("LoaderSessions")
-  salesmanLoads  TruckLoadSession[] @relation("SalesmanLoadSessions")
-  debtPayments   DebtPayment[]
-  trucks         Truck[]
-  auditLogs      AuditLog[]
-  createdAt      DateTime           @default(now())
-  updatedAt      DateTime           @updatedAt
+  id                    String             @id @default(cuid())
+  branchId              String?
+  role                  UserRole
+  roleId                String?            @map("customRoleId")
+  fullName              String
+  phone                 String?
+  email                 String?            @unique
+  passwordHash          String?
+  isActive              Boolean            @default(true)
+  allowGlobalSalesView  Boolean            @default(false)
+  branch                Branch?            @relation(fields: [branchId], references: [id])
+  roleProfile           Role?              @relation(fields: [roleId], references: [id])
+  salesInvoices         Invoice[]          @relation("SalesmanInvoices")
+  loadedTasks           TruckLoadSession[] @relation("LoaderSessions")
+  salesmanLoads         TruckLoadSession[] @relation("SalesmanLoadSessions")
+  loaderReconciliations DailyReconciliation[] @relation("LoaderReconciliations")
+  salesmanReconciliations DailyReconciliation[] @relation("SalesmanReconciliations")
+  debtPayments          DebtPayment[]
+  trucks                Truck[]
+  auditLogs             AuditLog[]
+  createdAt             DateTime           @default(now())
+  updatedAt             DateTime           @updatedAt
 
   @@index([branchId])
+  @@index([roleId])
   @@index([role])
+}
+
+model Role {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  permissions String[]
+  users       User[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([name])
 }
 
 model AuditLog {
@@ -166,6 +189,7 @@ model Product {
   invoiceItems        InvoiceItem[]
   inventoryBalances   InventoryBalance[]
   cylinderMovements   CylinderMovement[]
+  dailyReconciliationItems DailyReconciliationItem[]
   loadItems           TruckLoadItem[]
   returnItems         TruckReturnItem[]
   createdAt           DateTime            @default(now())
@@ -329,6 +353,43 @@ model TruckLoadSession {
   @@index([truckId, loadedAt])
   @@index([salesmanId, loadedAt])
   @@index([loaderId])
+}
+
+model DailyReconciliation {
+  id                  String                  @id @default(cuid())
+  branchId            String
+  salesmanId          String
+  loaderId            String
+  reconciliationDate  DateTime                @db.Date
+  morningLoggedAt     DateTime                @default(now())
+  eveningReconciledAt DateTime?
+  status              ReconciliationStatus    @default(MORNING_RECORDED)
+  notes               String?
+  branch              Branch                  @relation(fields: [branchId], references: [id])
+  salesman            User                    @relation("SalesmanReconciliations", fields: [salesmanId], references: [id])
+  loader              User                    @relation("LoaderReconciliations", fields: [loaderId], references: [id])
+  items               DailyReconciliationItem[]
+  createdAt           DateTime                @default(now())
+  updatedAt           DateTime                @updatedAt
+
+  @@unique([salesmanId, reconciliationDate])
+  @@index([branchId, reconciliationDate])
+  @@index([salesmanId, reconciliationDate])
+}
+
+model DailyReconciliationItem {
+  id                  String              @id @default(cuid())
+  reconciliationId    String
+  productId           String
+  morningFull         Int                 @default(0)
+  eveningReturnedFull Int                 @default(0)
+  eveningReturnedEmpty Int                @default(0)
+  soldFull            Int                 @default(0)
+  reconciliation      DailyReconciliation @relation(fields: [reconciliationId], references: [id], onDelete: Cascade)
+  product             Product             @relation(fields: [productId], references: [id])
+
+  @@unique([reconciliationId, productId])
+  @@index([productId])
 }
 
 model TruckLoadItem {

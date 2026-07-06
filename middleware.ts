@@ -7,6 +7,10 @@ function loginRedirect(request: NextRequest) {
   return NextResponse.redirect(new URL("/login", request.url));
 }
 
+function unauthorizedResponse() {
+  return new NextResponse("Unauthorized", { status: 403 });
+}
+
 function homeForRole(role: UserRole, request: NextRequest) {
   return NextResponse.redirect(new URL(roleHome[role], request.url));
 }
@@ -44,8 +48,8 @@ export async function middleware(request: NextRequest) {
     return homeForRole(session.role, request);
   }
 
-  if (!allowedForPath(session.role, pathname)) {
-    return homeForRole(session.role, request);
+  if (!allowedForPath(session.role, pathname, session.permissions ?? [])) {
+    return unauthorizedResponse();
   }
 
   return NextResponse.next();
@@ -58,6 +62,7 @@ export const config = {
     "/admin-console/:path*",
     "/salesman/:path*",
     "/loader/:path*",
+    "/logistics/:path*",
     "/manager/:path*",
     "/general-manager/:path*",
     "/print/:path*",

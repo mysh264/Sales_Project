@@ -1,6 +1,7 @@
 import { PaymentMethod, Prisma } from "@prisma/client";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { formatDateTimeDMY } from "@/lib/date-format";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
 
@@ -19,13 +20,6 @@ function formatOmr(value: Prisma.Decimal | number | null | undefined) {
     minimumFractionDigits: 3,
     maximumFractionDigits: 3,
   }).format(amount);
-}
-
-function formatDate(value: Date) {
-  return new Intl.DateTimeFormat("en-GB", {
-    dateStyle: "short",
-    timeStyle: "short",
-  }).format(value);
 }
 
 function paymentLabel(method: PaymentMethod) {
@@ -244,7 +238,7 @@ export default async function SalesmanDashboardPage() {
                   <div className="flex items-center justify-between gap-3">
                     <div>
                       <p className="font-black text-slate-950">{payment.invoice.customer.name}</p>
-                      <p className="text-xs font-bold text-slate-500">{formatDate(payment.createdAt)}</p>
+                      <p className="text-xs font-bold text-slate-500">{formatDateTimeDMY(payment.createdAt)}</p>
                     </div>
                     <div className="text-right">
                       <p className="text-sm font-black uppercase text-slate-500">{paymentLabel(payment.method)}</p>

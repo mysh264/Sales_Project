@@ -22,6 +22,14 @@ export default async function LoaderDashboardPage() {
         <header className="mb-5 rounded-lg bg-ink p-5 text-white">
           <p className="text-sm font-bold uppercase tracking-wide text-slate-300">Loader / Unloader</p>
           <h1 className="mt-1 text-3xl font-black md:text-4xl">Truck Work</h1>
+          <div className="mt-4 flex flex-wrap gap-3">
+            <Link
+              href="/logistics/reconciliation"
+              className="rounded bg-white px-4 py-2 text-sm font-black text-ink"
+            >
+              Daily Reconciliation
+            </Link>
+          </div>
         </header>
 
         {trucks.length === 0 ? (
@@ -65,4 +73,3 @@ export default async function LoaderDashboardPage() {
     </main>
   );
 }
-

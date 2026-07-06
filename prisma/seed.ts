@@ -3,6 +3,51 @@ import bcrypt from "bcryptjs";
 
 const prisma = new PrismaClient();
 
+const DEFAULT_ROLE_PERMISSIONS: Record<UserRole, string[]> = {
+  ADMIN: [
+    "INVOICE_CREATE",
+    "INVENTORY_UPDATE",
+    "CUSTOMER_MANAGE",
+    "PRODUCT_MANAGE",
+    "PRICE_RULE_UPDATE",
+    "DEBT_COLLECT",
+    "FINANCE_VIEW",
+    "LOGISTICS_EXECUTE",
+    "USER_MANAGE",
+    "ROLE_MANAGE",
+    "AUDIT_VIEW",
+    "AUDIT_DELETE",
+    "MANAGER_VIEW_ALL_SALES",
+  ],
+  GENERAL_MANAGER: [
+    "INVOICE_CREATE",
+    "INVENTORY_UPDATE",
+    "CUSTOMER_MANAGE",
+    "PRODUCT_MANAGE",
+    "PRICE_RULE_UPDATE",
+    "DEBT_COLLECT",
+    "FINANCE_VIEW",
+    "USER_MANAGE",
+    "ROLE_MANAGE",
+    "AUDIT_VIEW",
+    "MANAGER_VIEW_ALL_SALES",
+  ],
+  MANAGER: [
+    "INVOICE_CREATE",
+    "INVENTORY_UPDATE",
+    "CUSTOMER_MANAGE",
+    "PRODUCT_MANAGE",
+    "DEBT_COLLECT",
+    "FINANCE_VIEW",
+    "AUDIT_VIEW",
+    "MANAGER_VIEW_ALL_SALES",
+  ],
+  ACCOUNTANT: ["DEBT_COLLECT", "PRICE_RULE_UPDATE", "AUDIT_VIEW", "FINANCE_VIEW"],
+  ACCOUNTANT_MANAGER: ["DEBT_COLLECT", "PRICE_RULE_UPDATE", "AUDIT_VIEW", "USER_MANAGE", "FINANCE_VIEW"],
+  LOADER: ["INVENTORY_UPDATE", "LOGISTICS_EXECUTE"],
+  SALESMAN: ["INVOICE_CREATE", "CUSTOMER_MANAGE"],
+};
+
 const companyData = {
   name: "NATIONAL INDUSTRIAL GAS PLANT - OMAN",
   address: "Suhar Industrial City Phase 7, P.O.Box 1195 Zip Code 311",
@@ -36,6 +81,42 @@ const products = [
     pressure: "200Bar",
     minPrice: "3.500",
     maxPrice: "5.000",
+  },
+  {
+    sku: "ARG-40L-150BAR",
+    name: "Argon",
+    gasType: "Argon",
+    cylinderSize: "40L",
+    pressure: "150Bar",
+    minPrice: "3.000",
+    maxPrice: "4.500",
+  },
+  {
+    sku: "NIT-40L-150BAR",
+    name: "Nitrogen",
+    gasType: "Nitrogen",
+    cylinderSize: "40L",
+    pressure: "150Bar",
+    minPrice: "2.200",
+    maxPrice: "3.500",
+  },
+  {
+    sku: "CO2-20KG",
+    name: "CO2",
+    gasType: "Carbon Dioxide",
+    cylinderSize: "20Kg",
+    pressure: null,
+    minPrice: "1.000",
+    maxPrice: "2.400",
+  },
+  {
+    sku: "CO2-30KG",
+    name: "CO2",
+    gasType: "Carbon Dioxide",
+    cylinderSize: "30Kg",
+    pressure: null,
+    minPrice: "1.500",
+    maxPrice: "3.000",
   },
 ];
 
@@ -80,6 +161,24 @@ const seedUsers = [
     phone: "+96890000014",
     needsBranch: true,
   },
+  {
+    email: "salesman-a@test.local",
+    password: "Pass123!",
+    role: UserRole.SALESMAN,
+    fullName: "Test Salesman A",
+    phone: "+96890000015",
+    needsBranch: true,
+    branchCode: "BRANCH_A",
+  },
+  {
+    email: "salesman-b@test.local",
+    password: "Pass123!",
+    role: UserRole.SALESMAN,
+    fullName: "Test Salesman B",
+    phone: "+96890000016",
+    needsBranch: true,
+    branchCode: "BRANCH_B",
+  },
 ];
 
 async function main() {
@@ -105,6 +204,65 @@ async function main() {
       defaultTaxRate: "5.0000",
     },
   });
+
+  const branchA = await prisma.branch.upsert({
+    where: { code: "BRANCH_A" },
+    update: {
+      companyId: company.id,
+      name: "Branch A",
+      location: "North Warehouse",
+      defaultCurrency: "OMR",
+      defaultPhoneCode: "+968",
+      defaultTaxRate: "5.0000",
+    },
+    create: {
+      companyId: company.id,
+      code: "BRANCH_A",
+      name: "Branch A",
+      location: "North Warehouse",
+      defaultCurrency: "OMR",
+      defaultPhoneCode: "+968",
+      defaultTaxRate: "5.0000",
+    },
+  });
+
+  const branchB = await prisma.branch.upsert({
+    where: { code: "BRANCH_B" },
+    update: {
+      companyId: company.id,
+      name: "Branch B",
+      location: "South Warehouse",
+      defaultCurrency: "OMR",
+      defaultPhoneCode: "+968",
+      defaultTaxRate: "5.0000",
+    },
+    create: {
+      companyId: company.id,
+      code: "BRANCH_B",
+      name: "Branch B",
+      location: "South Warehouse",
+      defaultCurrency: "OMR",
+      defaultPhoneCode: "+968",
+      defaultTaxRate: "5.0000",
+    },
+  });
+
+  const roleRecords: Record<UserRole, string> = {} as Record<UserRole, string>;
+
+  for (const role of Object.values(UserRole)) {
+    const record = await prisma.role.upsert({
+      where: { name: role },
+      update: {
+        permissions: DEFAULT_ROLE_PERMISSIONS[role],
+      },
+      create: {
+        name: role,
+        permissions: DEFAULT_ROLE_PERMISSIONS[role],
+      },
+    });
+
+    roleRecords[role] = record.id;
+  }
 
   for (const item of products) {
     const product = await prisma.product.upsert({
@@ -163,12 +321,14 @@ async function main() {
 
   for (const user of seedUsers) {
     const passwordHash = await bcrypt.hash(user.password, 12);
+    const targetBranch = user.branchCode === "BRANCH_A" ? branchA : user.branchCode === "BRANCH_B" ? branchB : user.needsBranch ? branch : null;
 
     await prisma.user.upsert({
       where: { email: user.email },
       update: {
-        branchId: user.needsBranch ? branch.id : null,
+        branchId: targetBranch?.id ?? null,
         role: user.role,
+        roleId: roleRecords[user.role],
         fullName: user.fullName,
         phone: user.phone,
         isActive: true,
@@ -176,8 +336,9 @@ async function main() {
         passwordHash,
       },
       create: {
-        branchId: user.needsBranch ? branch.id : null,
+        branchId: targetBranch?.id ?? null,
         role: user.role,
+        roleId: roleRecords[user.role],
         fullName: user.fullName,
         phone: user.phone,
         email: user.email,
@@ -187,7 +348,9 @@ async function main() {
     });
   }
 
-  console.log("Seed complete: company, branch, products, price rules, inventory balances, and role test accounts are ready.");
+  console.log(
+    "Seed complete: company, branch, products, price rules, inventory balances, roles, and role test accounts are ready.",
+  );
 }
 
 main()

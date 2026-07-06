@@ -1,6 +1,7 @@
 import { Prisma } from "@prisma/client";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { formatDateTimeDMY } from "@/lib/date-format";
 import { prisma } from "@/lib/prisma";
 import { PrintButton } from "./PrintButton";
 
@@ -14,13 +15,6 @@ type PrintPageProps = {
 function money(value: Prisma.Decimal | number | null | undefined) {
   const amount = value instanceof Prisma.Decimal ? value.toNumber() : Number(value ?? 0);
   return amount.toFixed(3);
-}
-
-function dateTime(value: Date) {
-  return new Intl.DateTimeFormat("en-GB", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(value);
 }
 
 export default async function UnifiedPrintPage({ params, searchParams }: PrintPageProps) {
@@ -104,7 +98,7 @@ export default async function UnifiedPrintPage({ params, searchParams }: PrintPa
               <div className="text-right">
                 <p className="text-4xl font-black uppercase tracking-wide">Tax Invoice</p>
                 <p className="mt-2 font-bold">{serial}</p>
-                <p>{dateTime(invoice.createdAt)}</p>
+                <p>{formatDateTimeDMY(invoice.createdAt)}</p>
               </div>
             </header>
 
@@ -223,7 +217,7 @@ export default async function UnifiedPrintPage({ params, searchParams }: PrintPa
               <p className="mt-1 text-sm font-black uppercase">Tax Invoice</p>
               <p>VAT: 0M1100407450</p>
               <p>{serial}</p>
-              <p>{dateTime(invoice.createdAt)}</p>
+              <p>{formatDateTimeDMY(invoice.createdAt)}</p>
             </header>
 
             <div className="my-2 border-t border-dashed border-black" />

@@ -5,6 +5,7 @@ import { SignJWT } from "jose/jwt/sign";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { getJwtSecret, sessionCookieName, type SessionPayload } from "@/lib/auth";
+import { getEffectivePermissions } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 
 function text(formData: FormData, key: string) {
@@ -20,7 +21,10 @@ export async function login(formData: FormData) {
     throw new Error("Email and password are required.");
   }
 
-  const user = await prisma.user.findUnique({ where: { email } });
+  const user = await prisma.user.findUnique({
+    where: { email },
+    include: { roleProfile: true },
+  });
 
   if (!user || !user.isActive || !user.passwordHash) {
     throw new Error("Invalid login.");
@@ -35,6 +39,7 @@ export async function login(formData: FormData) {
   const payload: SessionPayload = {
     userId: user.id,
     role: user.role,
+    permissions: getEffectivePermissions(user),
   };
 
   const token = await new SignJWT(payload)

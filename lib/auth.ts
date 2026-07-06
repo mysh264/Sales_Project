@@ -1,10 +1,12 @@
 import type { UserRole } from "@prisma/client";
+import type { Permission } from "@/lib/permissions";
 
 export const sessionCookieName = "sales_session";
 
 export type SessionPayload = {
   userId: string;
   role: UserRole;
+  permissions: Permission[];
 };
 
 export const roleHome: Record<UserRole, string> = {
@@ -22,12 +24,16 @@ export function getJwtSecret() {
   return new TextEncoder().encode(secret);
 }
 
-export function allowedForPath(role: UserRole, pathname: string) {
+export function allowedForPath(role: UserRole, pathname: string, permissions: Permission[] = []) {
   if (pathname === "/") {
     return true;
   }
 
   if (role === "ADMIN") {
+    return true;
+  }
+
+  if (pathname.startsWith("/admin/audit-logs")) {
     return true;
   }
 
@@ -41,6 +47,10 @@ export function allowedForPath(role: UserRole, pathname: string) {
 
   if (pathname.startsWith("/loader")) {
     return role === "LOADER";
+  }
+
+  if (pathname.startsWith("/logistics")) {
+    return permissions.includes("LOGISTICS_EXECUTE");
   }
 
   if (pathname.startsWith("/manager")) {

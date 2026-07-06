@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Prisma } from "@prisma/client";
+import { formatDateTimeDMY } from "@/lib/date-format";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
 
@@ -18,13 +19,6 @@ function formatOmr(value: Prisma.Decimal | number | null | undefined) {
     minimumFractionDigits: 3,
     maximumFractionDigits: 3,
   }).format(amount);
-}
-
-function formatDate(value: Date) {
-  return new Intl.DateTimeFormat("en-GB", {
-    dateStyle: "short",
-    timeStyle: "short",
-  }).format(value);
 }
 
 export default async function CustomerDebtPage({ params }: CustomerPageProps) {
@@ -96,7 +90,7 @@ export default async function CustomerDebtPage({ params }: CustomerPageProps) {
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <p className="font-black text-slate-950">{debt.invoice.invoiceNumber}</p>
-                    <p className="text-xs font-bold text-slate-500">{formatDate(debt.updatedAt)}</p>
+                    <p className="text-xs font-bold text-slate-500">{formatDateTimeDMY(debt.updatedAt)}</p>
                   </div>
                   <div className="text-right">
                     <p className="text-sm font-black uppercase text-slate-500">{debt.status.replaceAll("_", " ")}</p>
@@ -119,7 +113,7 @@ export default async function CustomerDebtPage({ params }: CustomerPageProps) {
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <p className="font-black text-slate-950">{invoice.invoiceNumber}</p>
-                    <p className="text-xs font-bold text-slate-500">{formatDate(invoice.createdAt)}</p>
+                    <p className="text-xs font-bold text-slate-500">{formatDateTimeDMY(invoice.createdAt)}</p>
                   </div>
                   <div className="text-right">
                     <p className="text-sm font-black uppercase text-slate-500">Debt</p>

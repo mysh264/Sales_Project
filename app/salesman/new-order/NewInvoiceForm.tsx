@@ -226,15 +226,17 @@ export function NewInvoiceForm({
     );
   }
 
-  function addRow() {
+  function addRow(productId?: string) {
+    const product = products.find((item) => item.id === productId) ?? products[0];
+
     setProductRows((current) => [
       ...current,
       {
         id: makeId(),
-        productId: products[0]?.id ?? "",
+        productId: product?.id ?? "",
         full: "",
         empty: "",
-        price: products[0]?.defaultPrice ?? "",
+        price: product?.defaultPrice ?? "",
       },
     ]);
   }
@@ -660,6 +662,50 @@ export function NewInvoiceForm({
               <p className="text-lg font-black text-slate-950">Product Selection</p>
               <p className="text-sm font-bold text-slate-500">Add only the cylinders used on this invoice.</p>
             </div>
+            <div className="text-right">
+              <p className="text-xs font-black uppercase tracking-wide text-slate-500">Available Products</p>
+              <p className="text-2xl font-black text-slate-950">{products.length}</p>
+            </div>
+          </div>
+
+          <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
+              <div>
+                <p className="text-sm font-black uppercase tracking-wide text-slate-500">Product Library</p>
+                <p className="text-sm font-bold text-slate-600">Tap any product to add it to the invoice.</p>
+              </div>
+              <p className="text-xs font-bold text-slate-500">All active branch products are shown here.</p>
+            </div>
+
+            <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              {products.map((product) => (
+                <button
+                  key={product.id}
+                  type="button"
+                  onClick={() => addRow(product.id)}
+                  className="flex h-full flex-col justify-between rounded-xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:border-slate-400 hover:shadow-md"
+                >
+                  <div>
+                    <p className="text-base font-black text-slate-950">{product.name}</p>
+                    <p className="mt-1 text-sm font-bold text-slate-600">
+                      {product.cylinderSize}
+                      {product.pressure ? ` / ${product.pressure}` : ""}
+                    </p>
+                  </div>
+                  <div className="mt-4 flex items-end justify-between gap-3">
+                    <div>
+                      <p className="text-[11px] font-black uppercase tracking-wide text-slate-500">Price Range</p>
+                      <p className="text-sm font-black text-slate-950">
+                        {product.minPrice} - {product.maxPrice}
+                      </p>
+                    </div>
+                    <span className="rounded-full bg-green-700 px-3 py-1 text-xs font-black uppercase tracking-wide text-white">
+                      Add
+                    </span>
+                  </div>
+                </button>
+              ))}
+            </div>
           </div>
 
           <div className="product-selection-table mt-3 max-w-full overflow-x-auto">
@@ -771,7 +817,7 @@ export function NewInvoiceForm({
           <div className="mt-5 flex justify-end">
             <button
               type="button"
-              onClick={addRow}
+              onClick={() => addRow()}
               className="w-full rounded-xl bg-green-700 px-4 py-4 text-base font-black text-white shadow-sm md:w-auto md:min-w-56"
             >
               Add Item
