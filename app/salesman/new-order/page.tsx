@@ -25,7 +25,7 @@ export default async function NewOrderPage({ searchParams }: NewOrderPageProps) 
     redirect("/login");
   }
 
-  const [customers, products] = await Promise.all([
+  const [customers, products, customerDebtRows] = await Promise.all([
     prisma.customer.findMany({
       where: { branchId },
       orderBy: { name: "asc" },
@@ -40,6 +40,16 @@ export default async function NewOrderPage({ searchParams }: NewOrderPageProps) 
         },
       },
       orderBy: { name: "asc" },
+    }),
+    prisma.customerDebt.findMany({
+      where: {
+        balanceAmount: { gt: 0 },
+        customer: { branchId },
+      },
+      select: {
+        customerId: true,
+        balanceAmount: true,
+      },
     }),
   ]);
 
@@ -61,6 +71,13 @@ export default async function NewOrderPage({ searchParams }: NewOrderPageProps) 
     vatNumber: customer.vatNumber ?? "",
   }));
 
+  const customerDebtBalances = customerDebtRows.reduce<Record<string, string>>((accumulator, debt) => {
+    const current = Number.parseFloat(accumulator[debt.customerId] ?? "0");
+    const next = current + debt.balanceAmount.toNumber();
+    accumulator[debt.customerId] = next.toFixed(3);
+    return accumulator;
+  }, {});
+
   const resolvedSearchParams = (await searchParams) ?? {};
   const errorMessage = typeof resolvedSearchParams.error === "string" ? resolvedSearchParams.error : "";
 
@@ -75,6 +92,7 @@ export default async function NewOrderPage({ searchParams }: NewOrderPageProps) 
         action={createOrder}
         customers={customerData}
         products={productData}
+        customerDebtBalances={customerDebtBalances}
         errorMessage={errorMessage}
       />
     </main>

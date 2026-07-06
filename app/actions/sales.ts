@@ -69,6 +69,8 @@ export async function createOrder(formData: FormData) {
     const invoiceSerial = text(formData, "invoiceSerial") || buildInvoiceSerial();
     const currency = text(formData, "currency") || branch?.defaultCurrency || "OMR";
     const taxRate = decimalValue(formData, "taxRate", branch?.defaultTaxRate ?? new Prisma.Decimal(0));
+    const applyDebtCollection = text(formData, "applyDebtCollection") === "true";
+    const requestedDebtCollection = moneyValue(formData, "debtCollectionAmount");
 
     const rowProductIds = formData.getAll("rowProductId").filter((value): value is string => typeof value === "string");
     const rowFulls = formData.getAll("rowFull").filter((value): value is string => typeof value === "string");
@@ -171,6 +173,7 @@ export async function createOrder(formData: FormData) {
     const checkAmount = moneyValue(formData, "checkAmount");
     const transferAmount = moneyValue(formData, "bankTransferAmount");
     const paidAmount = cashAmount.add(checkAmount).add(transferAmount);
+    const debtCollectionAmount = applyDebtCollection ? requestedDebtCollection : new Prisma.Decimal(0);
 
     const debtAmount = decimalMax(totalAmount.sub(paidAmount), new Prisma.Decimal(0));
 
@@ -189,6 +192,7 @@ export async function createOrder(formData: FormData) {
         totalAmount,
         paidAmount,
         debtAmount,
+        debtCollectionAmount,
         items: {
           create: lines.map((line) => ({
             productId: line.productId,
@@ -240,6 +244,57 @@ export async function createOrder(formData: FormData) {
           attachmentUrl: transferAttachment,
         },
       });
+    }
+
+    if (debtCollectionAmount.greaterThan(0)) {
+      let remainingCollection = debtCollectionAmount;
+      let appliedCollection = new Prisma.Decimal(0);
+
+      const openDebts = await tx.customerDebt.findMany({
+        where: {
+          customerId: customer.id,
+          balanceAmount: { gt: 0 },
+        },
+        orderBy: { createdAt: "asc" },
+      });
+
+      for (const debt of openDebts) {
+        if (remainingCollection.lessThanOrEqualTo(0)) {
+          break;
+        }
+
+        const appliedToDebt = remainingCollection.greaterThan(debt.balanceAmount) ? debt.balanceAmount : remainingCollection;
+        const newBalance = debt.balanceAmount.sub(appliedToDebt);
+
+        await tx.debtPayment.create({
+          data: {
+            debtId: debt.id,
+            collectedById: salesman.id,
+            method: PaymentMethod.CASH,
+            amount: appliedToDebt,
+          },
+        });
+
+        await tx.customerDebt.update({
+          where: { id: debt.id },
+          data: {
+            balanceAmount: newBalance,
+            status: newBalance.equals(0) ? DebtStatus.PAID : DebtStatus.PARTIALLY_PAID,
+          },
+        });
+
+        remainingCollection = remainingCollection.sub(appliedToDebt);
+        appliedCollection = appliedCollection.add(appliedToDebt);
+      }
+
+      if (appliedCollection.greaterThan(0)) {
+        await tx.invoice.update({
+          where: { id: createdInvoice.id },
+          data: {
+            debtCollectionAmount: appliedCollection,
+          },
+        });
+      }
     }
 
     if (debtAmount.greaterThan(0)) {

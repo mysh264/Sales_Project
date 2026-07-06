@@ -30,6 +30,7 @@ type NewInvoiceFormProps = {
   action: (formData: FormData) => Promise<void>;
   customers: CustomerOption[];
   products: ProductOption[];
+  customerDebtBalances: Record<string, string>;
   errorMessage?: string;
 };
 
@@ -85,6 +86,7 @@ export function NewInvoiceForm({
   action,
   customers,
   products,
+  customerDebtBalances,
   errorMessage,
 }: NewInvoiceFormProps) {
   const [customerQuery, setCustomerQuery] = useState("");
@@ -104,6 +106,8 @@ export function NewInvoiceForm({
   const [cashAmount, setCashAmount] = useState("");
   const [checkAmount, setCheckAmount] = useState("");
   const [transferAmount, setTransferAmount] = useState("");
+  const [debtCollectionAmount, setDebtCollectionAmount] = useState("");
+  const [applyDebtCollection, setApplyDebtCollection] = useState(false);
   const [useCheck, setUseCheck] = useState(false);
   const [useTransfer, setUseTransfer] = useState(false);
   const [productRows, setProductRows] = useState<ProductRow[]>(
@@ -145,6 +149,8 @@ export function NewInvoiceForm({
     setSelectedCustomer(customer);
     setCustomerQuery(customer.name);
     setShowCustomerPicker(false);
+    setDebtCollectionAmount("");
+    setApplyDebtCollection(false);
     setCustomerDraft({
       name: customer.name,
       phone: customer.phone,
@@ -162,6 +168,8 @@ export function NewInvoiceForm({
       vatNumber: customerDraft.vatNumber,
     });
     setCustomerQuery(customerDraft.name || customerQuery);
+    setDebtCollectionAmount("");
+    setApplyDebtCollection(false);
     setShowCustomerModal(false);
     setShowCustomerPicker(false);
   }
@@ -233,6 +241,24 @@ export function NewInvoiceForm({
   const overpaymentAmount = useMemo(() => Math.max(paidAmount - invoiceTotal, 0), [invoiceTotal, paidAmount]);
   const balancePaidInFull = remainingBalance === 0 && invoiceTotal > 0;
   const hasDebt = remainingBalance > 0;
+  const selectedCustomerDebt = useMemo(() => {
+    if (!selectedCustomer?.id || selectedCustomer.id === "new") {
+      return 0;
+    }
+
+    return toNumber(customerDebtBalances[selectedCustomer.id] ?? "0");
+  }, [customerDebtBalances, selectedCustomer?.id]);
+  const debtCollectionValue = useMemo(() => {
+    if (!applyDebtCollection) {
+      return 0;
+    }
+
+    return Math.min(toNumber(debtCollectionAmount), selectedCustomerDebt);
+  }, [applyDebtCollection, debtCollectionAmount, selectedCustomerDebt]);
+  const remainingDebtAfterCollection = useMemo(
+    () => Math.max(selectedCustomerDebt - debtCollectionValue, 0),
+    [debtCollectionValue, selectedCustomerDebt],
+  );
 
   const selectedCustomerName = selectedCustomer?.name || customerQuery;
   const selectedCustomerPhone = selectedCustomer?.phone || customerDraft.phone;
@@ -253,6 +279,8 @@ export function NewInvoiceForm({
       <input type="hidden" name="customerVatNumber" value={selectedCustomerVat} />
       <input type="hidden" name="currency" value={currency} />
       <input type="hidden" name="taxRate" value={taxRate} />
+      <input type="hidden" name="debtCollectionAmount" value={debtCollectionValue.toFixed(3)} />
+      <input type="hidden" name="applyDebtCollection" value={applyDebtCollection ? "true" : "false"} />
 
       <header className="rounded-lg bg-ink p-5 text-white shadow-lg">
         <p className="text-sm font-bold uppercase tracking-wide text-slate-300">{branchName}</p>
@@ -264,6 +292,14 @@ export function NewInvoiceForm({
         <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-4 text-amber-900 shadow-sm">
           <p className="text-sm font-black uppercase tracking-wide">Save Error</p>
           <p className="mt-1 text-sm font-bold leading-6">{errorMessage}</p>
+        </div>
+      ) : null}
+
+      {selectedCustomerDebt > 0 ? (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-4 text-amber-950 shadow-sm">
+          <p className="text-sm font-black uppercase tracking-wide">Debt Collection Alert</p>
+          <p className="mt-2 text-lg font-black">Existing Debt: {formatOmr(selectedCustomerDebt)}</p>
+          <p className="mt-1 text-sm font-bold text-amber-900">You can collect part of this balance while saving the invoice.</p>
         </div>
       ) : null}
 
@@ -592,6 +628,55 @@ export function NewInvoiceForm({
               {balancePaidInFull ? "Paid in full" : "Balance still due"}
             </p>
           </div>
+
+          {selectedCustomerDebt > 0 ? (
+            <section className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-black uppercase tracking-wide text-amber-900">Collect Outstanding Debt</p>
+                  <p className="text-sm font-bold text-amber-800">Current balance: {formatOmr(selectedCustomerDebt)}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setApplyDebtCollection((current) => !current)}
+                  className={`rounded-xl px-4 py-3 text-sm font-black shadow-sm ${
+                    applyDebtCollection ? "bg-green-700 text-white" : "bg-slate-950 text-white"
+                  }`}
+                >
+                  {applyDebtCollection ? "Debt Applied" : "Apply to Debt"}
+                </button>
+              </div>
+
+              <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,1fr)_auto]">
+                <label className="block">
+                  <span className="text-sm font-black text-slate-700">Debt Collection Amount</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.001"
+                    inputMode="decimal"
+                    placeholder="0.000"
+                    value={debtCollectionAmount}
+                    onChange={(event) => setDebtCollectionAmount(event.target.value)}
+                    className={`mt-2 h-14 text-xl ${fieldClass(debtCollectionAmount)}`}
+                  />
+                </label>
+                <div className="flex items-end">
+                  <button
+                    type="button"
+                    onClick={() => setApplyDebtCollection(true)}
+                    className="h-14 w-full rounded-xl bg-amber-600 px-4 text-sm font-black text-white shadow-sm md:w-44"
+                  >
+                    Apply to Debt
+                  </button>
+                </div>
+              </div>
+
+              <p className="mt-3 text-sm font-bold text-amber-900">
+                Remaining after apply: {formatOmr(remainingDebtAfterCollection)}
+              </p>
+            </section>
+          ) : null}
 
           {overpaymentAmount > 0 ? (
             <div className="rounded-xl border border-green-200 bg-green-50 px-4 py-4 text-green-800">

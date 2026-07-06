@@ -47,6 +47,7 @@ export default async function ReceiptPage({ params }: ReceiptPageProps) {
     (sum, debt) => sum.add(debt.balanceAmount),
     new Prisma.Decimal(0),
   );
+  const debtCollectionAmount = invoice.debtCollectionAmount;
   const serial = invoice.invoiceSerial ?? invoice.invoiceNumber;
 
   return (
@@ -122,6 +123,7 @@ export default async function ReceiptPage({ params }: ReceiptPageProps) {
         <div className="my-2 border-t border-dashed border-black" />
 
         <section>
+          <p className="font-black uppercase">Part A: New Order Items / Totals</p>
           <div className="grid grid-cols-[1fr_28px_28px_48px_52px] gap-1 border-b border-black pb-1 font-bold">
             <span>Item</span>
             <span className="text-right">Full</span>
@@ -160,6 +162,11 @@ export default async function ReceiptPage({ params }: ReceiptPageProps) {
         <div className="my-2 border-t border-dashed border-black" />
 
         <section className="space-y-1">
+          <p className="font-black uppercase">Part B: Debt Collection Amount</p>
+          <div className="flex justify-between">
+            <span>Collected Now</span>
+            <span>{money(debtCollectionAmount)} {invoice.currency}</span>
+          </div>
           <p className="font-bold">Payments</p>
           {invoice.payments.length > 0 ? (
             invoice.payments.map((payment) => (
@@ -174,8 +181,8 @@ export default async function ReceiptPage({ params }: ReceiptPageProps) {
               <span>0.000 {invoice.currency}</span>
             </div>
           )}
-          <div className="flex justify-between font-black">
-            <span>Outstanding Debt</span>
+          <div className="flex justify-between font-black text-red-700">
+            <span>Part C: Remaining Outstanding Balance</span>
             <span>{money(debtBalance)} {invoice.currency}</span>
           </div>
         </section>

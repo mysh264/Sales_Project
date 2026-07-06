@@ -53,6 +53,7 @@ export default async function UnifiedPrintPage({ params, searchParams }: PrintPa
     (sum, debt) => sum.add(debt.balanceAmount),
     new Prisma.Decimal(0),
   );
+  const debtCollectionAmount = invoice.debtCollectionAmount;
   const serial = invoice.invoiceSerial ?? invoice.invoiceNumber;
 
   return (
@@ -123,7 +124,8 @@ export default async function UnifiedPrintPage({ params, searchParams }: PrintPa
               </div>
             </section>
 
-            <table className="mt-8 w-full border-collapse text-sm">
+            <h3 className="mt-8 text-sm font-black uppercase text-slate-600">Part A: New Order Items / Totals</h3>
+            <table className="mt-3 w-full border-collapse text-sm">
               <thead>
                 <tr className="border-y-2 border-black">
                   <th className="py-2 text-left">Product</th>
@@ -171,8 +173,21 @@ export default async function UnifiedPrintPage({ params, searchParams }: PrintPa
                   {money(invoice.totalAmount)} {invoice.currency}
                 </span>
               </div>
+            </section>
+
+            <section className="ml-auto mt-6 w-72 space-y-2 rounded-lg border border-slate-300 p-3">
+              <h3 className="text-sm font-black uppercase text-slate-600">Part B: Debt Collection Amount</h3>
+              <div className="flex justify-between font-bold">
+                <span>Collected Now</span>
+                <span>
+                  {money(debtCollectionAmount)} {invoice.currency}
+                </span>
+              </div>
+            </section>
+
+            <section className="ml-auto mt-4 w-72 space-y-2">
               <div className="flex justify-between font-black text-red-700">
-                <span>Outstanding Debt</span>
+                <span>Part C: Remaining Outstanding Balance</span>
                 <span>
                   {money(debtBalance)} {invoice.currency}
                 </span>
@@ -207,6 +222,7 @@ export default async function UnifiedPrintPage({ params, searchParams }: PrintPa
             <div className="my-2 border-t border-dashed border-black" />
 
             <section className="space-y-2">
+              <p className="font-black uppercase text-slate-600">Part A: New Order Items / Totals</p>
               {invoice.items.map((item) => (
                 <div key={item.id}>
                   <p className="font-black">
@@ -235,6 +251,13 @@ export default async function UnifiedPrintPage({ params, searchParams }: PrintPa
             <div className="my-2 border-t border-dashed border-black" />
 
             <section className="space-y-1">
+              <p className="font-black uppercase text-slate-600">Part B: Debt Collection Amount</p>
+              <div className="flex justify-between">
+                <span>Collected Now</span>
+                <span>
+                  {money(debtCollectionAmount)} {invoice.currency}
+                </span>
+              </div>
               <div className="flex justify-between">
                 <span>Subtotal</span>
                 <span>{money(invoice.subtotalAmount)}</span>
@@ -249,8 +272,8 @@ export default async function UnifiedPrintPage({ params, searchParams }: PrintPa
                   {money(invoice.totalAmount)} {invoice.currency}
                 </span>
               </div>
-              <div className="flex justify-between font-black">
-                <span>Debt</span>
+              <div className="flex justify-between font-black text-red-700">
+                <span>Part C: Remaining Outstanding Balance</span>
                 <span>
                   {money(debtBalance)} {invoice.currency}
                 </span>
