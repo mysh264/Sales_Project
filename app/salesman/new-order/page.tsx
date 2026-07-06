@@ -56,7 +56,7 @@ export default async function NewOrderPage() {
   }));
 
   return (
-    <main className="min-h-screen bg-slate-100 px-4 py-5">
+    <main className="min-h-screen bg-gray-50 px-4 py-5">
       <NewInvoiceForm
         salesmanName={salesman.fullName}
         branchName={salesman.branch.name}

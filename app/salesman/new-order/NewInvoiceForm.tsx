@@ -65,6 +65,16 @@ function formatOmr(value: number) {
   }).format(value);
 }
 
+function fieldClass(value: string, extra = "") {
+  return [
+    "w-full rounded-xl border px-3 text-sm font-bold text-slate-900 outline-none transition-colors focus:border-slate-950",
+    value.trim() ? "border-green-200 bg-green-50/70 shadow-sm" : "border-slate-300 bg-white",
+    extra,
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
 export function NewInvoiceForm({
   salesmanName,
   branchName,
@@ -219,7 +229,6 @@ export function NewInvoiceForm({
   );
   const remainingBalance = useMemo(() => Math.max(invoiceTotal - paidAmount, 0), [invoiceTotal, paidAmount]);
   const balancePaidInFull = remainingBalance === 0 && invoiceTotal > 0;
-  const balanceTone = balancePaidInFull ? "bg-green-50 text-green-800 border-green-200" : "bg-red-50 text-red-800 border-red-200";
   const hasDebt = remainingBalance > 0;
 
   const selectedCustomerName = selectedCustomer?.name || customerQuery;
@@ -228,7 +237,11 @@ export function NewInvoiceForm({
   const selectedCustomerVat = selectedCustomer?.vatNumber || customerDraft.vatNumber;
 
   return (
-    <form action={action} encType="multipart/form-data" className="mx-auto flex max-w-7xl flex-col gap-6">
+    <form
+      action={action}
+      encType="multipart/form-data"
+      className="mx-auto flex max-w-7xl flex-col gap-8 pb-[calc(env(safe-area-inset-bottom)+2rem)]"
+    >
       <input type="hidden" name="invoiceSerial" value={invoiceSerialValue} />
       <input type="hidden" name="customerId" value={selectedCustomer?.id === "new" ? "" : selectedCustomer?.id ?? ""} />
       <input type="hidden" name="customerName" value={selectedCustomerName} />
@@ -244,9 +257,9 @@ export function NewInvoiceForm({
         <p className="mt-2 text-base font-semibold text-slate-200">Salesman: {salesmanName}</p>
       </header>
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
         <section className="flex flex-col gap-6">
-          <section className="rounded-lg bg-white p-5 shadow-sm">
+          <section className="rounded-xl bg-white p-6 shadow-sm">
             <div className="flex items-start justify-between gap-3">
               <div>
                 <p className="text-lg font-black text-slate-950">Customer</p>
@@ -265,9 +278,9 @@ export function NewInvoiceForm({
             </div>
 
             <div className="mt-4 relative">
-              <input
-                type="text"
-                value={customerQuery}
+                <input
+                  type="text"
+                  value={customerQuery}
                 onChange={(event) => {
                   setCustomerQuery(event.target.value);
                   setShowCustomerPicker(true);
@@ -275,11 +288,11 @@ export function NewInvoiceForm({
                 }}
                 onFocus={() => setShowCustomerPicker(true)}
                 placeholder="Search by name or phone"
-                className="h-14 w-full rounded-lg border-2 border-slate-300 px-4 text-lg font-bold outline-none focus:border-slate-950"
-              />
+                  className="h-14 w-full rounded-xl border-2 border-slate-300 bg-white px-4 text-lg font-bold outline-none transition-colors focus:border-slate-950"
+                />
 
               {showCustomerPicker ? (
-                <div className="absolute z-20 mt-2 max-h-72 w-full overflow-auto rounded-lg border border-slate-200 bg-white shadow-xl">
+                <div className="absolute z-20 mt-2 max-h-72 w-full overflow-auto rounded-xl border border-slate-200 bg-white shadow-xl">
                   {filteredCustomers.map((customer) => (
                     <button
                       key={customer.id}
@@ -319,7 +332,7 @@ export function NewInvoiceForm({
                 <input
                   value={selectedCustomerAddress}
                   readOnly
-                  className="mt-2 h-12 w-full rounded-lg border border-slate-300 bg-slate-50 px-3 text-sm font-bold text-slate-900"
+                  className={`mt-2 h-12 ${fieldClass(selectedCustomerAddress)}`}
                 />
               </label>
               <label className="block">
@@ -327,13 +340,13 @@ export function NewInvoiceForm({
                 <input
                   value={selectedCustomerVat}
                   readOnly
-                  className="mt-2 h-12 w-full rounded-lg border border-slate-300 bg-slate-50 px-3 text-sm font-bold text-slate-900"
+                  className={`mt-2 h-12 ${fieldClass(selectedCustomerVat)}`}
                 />
               </label>
             </div>
           </section>
 
-          <section className="rounded-lg bg-white p-5 shadow-sm">
+          <section className="rounded-xl bg-white p-6 shadow-sm">
             <div className="flex items-center justify-between gap-3">
               <div>
                 <p className="text-lg font-black text-slate-950">Invoice Settings</p>
@@ -354,18 +367,18 @@ export function NewInvoiceForm({
                 <input
                   value={invoiceSerialValue}
                   readOnly
-                  className="mt-2 h-12 w-full rounded-lg border border-slate-300 bg-slate-50 px-3 text-sm font-black text-slate-900"
+                  className={`mt-2 h-12 ${fieldClass(invoiceSerialValue)}`}
                 />
               </label>
 
               {showAdvanced ? (
-                <div className="grid grid-cols-1 gap-4 rounded-lg border border-slate-200 bg-slate-50 p-4 md:grid-cols-3">
+                <div className="grid grid-cols-1 gap-4 rounded-xl border border-slate-200 bg-slate-50 p-4 md:grid-cols-3">
                   <label className="block">
                     <span className="text-sm font-black text-slate-700">Currency</span>
                     <select
                       value={currency}
                       onChange={(event) => setCurrency(event.target.value)}
-                      className="mt-2 h-12 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm font-black text-slate-900"
+                      className={`mt-2 h-12 ${fieldClass(currency)}`}
                     >
                       <option value="OMR">OMR</option>
                       <option value="USD">USD</option>
@@ -380,7 +393,7 @@ export function NewInvoiceForm({
                       step="0.0001"
                       value={taxRate}
                       onChange={(event) => setTaxRate(event.target.value)}
-                      className="mt-2 h-12 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm font-black text-slate-900"
+                      className={`mt-2 h-12 ${fieldClass(taxRate)}`}
                     />
                   </label>
                   <label className="block md:col-span-1">
@@ -389,7 +402,7 @@ export function NewInvoiceForm({
                       type="text"
                       value={invoiceSerialValue}
                       onChange={(event) => setInvoiceSerialValue(event.target.value)}
-                      className="mt-2 h-12 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm font-black text-slate-900"
+                      className={`mt-2 h-12 ${fieldClass(invoiceSerialValue)}`}
                     />
                   </label>
                 </div>
@@ -398,41 +411,42 @@ export function NewInvoiceForm({
           </section>
         </section>
 
-        <section className="rounded-lg bg-white p-5 shadow-sm">
+        <section className="rounded-xl bg-white p-6 shadow-sm">
           <div className="flex items-center justify-between gap-3">
             <div>
               <p className="text-lg font-black text-slate-950">Product Selection</p>
               <p className="text-sm font-bold text-slate-500">Add only the cylinders used on this invoice.</p>
             </div>
-            <button type="button" onClick={addRow} className="rounded bg-green-700 px-3 py-2 text-xs font-black text-white">
-              Add Item
-            </button>
           </div>
 
-          <div className="mt-4 hidden grid-cols-6 gap-3 rounded-lg bg-slate-50 px-4 py-3 text-xs font-black uppercase tracking-wide text-slate-500 md:grid">
-            <div>Product Name</div>
-            <div>Full Cylinders Delivered</div>
-            <div>Empty Cylinders Collected</div>
-            <div>Unit Price</div>
-            <div>Item Total</div>
-            <div className="text-right">Actions</div>
+          <div className="mt-4 hidden grid-cols-[minmax(0,2.4fr)_repeat(3,minmax(0,1fr))_auto] gap-3 rounded-xl bg-slate-50 px-4 py-3 text-[11px] font-black uppercase tracking-wide text-slate-500 md:grid">
+            <div>Product</div>
+            <div className="text-center">Full</div>
+            <div className="text-center">Empty</div>
+            <div className="text-center">Unit Price</div>
+            <div className="text-right">Total</div>
           </div>
 
-          <div className="mt-4 flex flex-col gap-3">
+          <div className="mt-4 flex flex-col gap-4">
             {productRows.map((row, index) => (
-              <article key={row.id} className="rounded-lg border border-slate-200 p-4">
+              <article
+                key={row.id}
+                className={`rounded-xl border p-4 shadow-sm transition-colors ${
+                  row.productId || row.full || row.empty || row.price ? "border-green-200 bg-green-50/30" : "border-slate-200 bg-white"
+                }`}
+              >
                 <input type="hidden" name="rowProductId" value={row.productId} />
                 <input type="hidden" name="rowFull" value={row.full} />
                 <input type="hidden" name="rowEmpty" value={row.empty} />
                 <input type="hidden" name="rowPrice" value={row.price} />
 
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-6 md:items-end">
+                <div className="grid grid-cols-1 gap-4">
                   <label className="block">
-                    <span className="text-sm font-black text-slate-700 md:hidden">Product Name</span>
+                    <span className="text-sm font-black text-slate-700">Product Name</span>
                     <select
                       value={row.productId}
                       onChange={(event) => updateRow(row.id, { productId: event.target.value })}
-                      className="mt-2 h-12 w-full rounded-lg border border-slate-300 px-3 text-sm font-black text-slate-900 md:mt-0"
+                      className={`mt-2 h-12 ${fieldClass(row.productId)}`}
                     >
                       {products.map((product) => (
                         <option key={product.id} value={product.id}>
@@ -442,65 +456,79 @@ export function NewInvoiceForm({
                     </select>
                   </label>
 
-                  <label className="block">
-                    <span className="text-sm font-black text-slate-700 md:hidden">Full Cylinders Delivered</span>
-                    <input
-                      type="number"
-                      min="0"
-                      value={row.full}
-                      onChange={(event) => updateRow(row.id, { full: event.target.value })}
-                      className="mt-2 h-14 w-full rounded-lg border-2 border-slate-300 px-3 text-center text-2xl font-black outline-none focus:border-green-700 md:mt-0"
-                    />
-                  </label>
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-[repeat(3,minmax(0,1fr))_auto] md:items-end">
+                    <label className="block">
+                      <span className="text-[11px] font-black uppercase tracking-wide text-slate-500 md:hidden">Full Cylinders Delivered</span>
+                      <input
+                        type="number"
+                        min="0"
+                        value={row.full}
+                        onChange={(event) => updateRow(row.id, { full: event.target.value })}
+                        className={`mt-2 h-14 text-center text-2xl ${fieldClass(row.full)}`}
+                      />
+                    </label>
 
-                  <label className="block">
-                    <span className="text-sm font-black text-slate-700 md:hidden">Empty Cylinders Collected</span>
-                    <input
-                      type="number"
-                      min="0"
-                      value={row.empty}
-                      onChange={(event) => updateRow(row.id, { empty: event.target.value })}
-                      className="mt-2 h-14 w-full rounded-lg border-2 border-slate-300 px-3 text-center text-2xl font-black outline-none focus:border-orange-700 md:mt-0"
-                    />
-                  </label>
+                    <label className="block">
+                      <span className="text-[11px] font-black uppercase tracking-wide text-slate-500 md:hidden">Empty Cylinders Collected</span>
+                      <input
+                        type="number"
+                        min="0"
+                        value={row.empty}
+                        onChange={(event) => updateRow(row.id, { empty: event.target.value })}
+                        className={`mt-2 h-14 text-center text-2xl ${fieldClass(row.empty)}`}
+                      />
+                    </label>
 
-                  <label className="block">
-                    <span className="text-sm font-black text-slate-700 md:hidden">Unit Price</span>
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.001"
-                      value={row.price}
-                      onChange={(event) => updateRow(row.id, { price: event.target.value })}
-                      className="mt-2 h-14 w-full rounded-lg border-2 border-slate-300 px-3 text-center text-2xl font-black outline-none focus:border-slate-950 md:mt-0"
-                    />
-                  </label>
+                    <label className="block">
+                      <span className="text-[11px] font-black uppercase tracking-wide text-slate-500 md:hidden">Unit Price</span>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.001"
+                        value={row.price}
+                        onChange={(event) => updateRow(row.id, { price: event.target.value })}
+                        className={`mt-2 h-14 text-center text-2xl ${fieldClass(row.price)}`}
+                      />
+                    </label>
 
-                  <div className="rounded-lg bg-slate-50 px-3 py-3 text-right">
-                    <p className="text-xs font-black uppercase tracking-wide text-slate-500 md:hidden">Item Total</p>
-                    <p className="text-2xl font-black text-slate-950">{formatOmr(lineItems[index]?.itemTotal ?? 0)}</p>
-                  </div>
-
-                  <div className="flex items-end md:justify-end">
-                    <button
-                      type="button"
-                      onClick={() => removeRow(row.id)}
-                      className="rounded bg-slate-200 px-3 py-2 text-xs font-black text-slate-700"
-                    >
-                      Remove
-                    </button>
+                    <div className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 px-4 py-3 md:min-h-14 md:self-end">
+                      <div>
+                        <p className="text-[11px] font-black uppercase tracking-wide text-slate-500 md:hidden">Item Total</p>
+                        <p className="text-xs font-bold text-slate-500">Row Total</p>
+                      </div>
+                      <p className="text-2xl font-black text-slate-950">{formatOmr(lineItems[index]?.itemTotal ?? 0)}</p>
+                    </div>
                   </div>
                 </div>
 
-                <p className="mt-3 text-xs font-bold text-slate-500">
-                  Default range: {products.find((product) => product.id === row.productId)?.minPrice ?? "0.000"} -{" "}
-                  {products.find((product) => product.id === row.productId)?.maxPrice ?? "0.000"} OMR
-                </p>
+                <div className="mt-4 flex items-center justify-between gap-3">
+                  <p className="text-xs font-bold text-slate-500">
+                    Default range: {products.find((product) => product.id === row.productId)?.minPrice ?? "0.000"} -{" "}
+                    {products.find((product) => product.id === row.productId)?.maxPrice ?? "0.000"} OMR
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => removeRow(row.id)}
+                    className="rounded-lg bg-slate-200 px-3 py-2 text-xs font-black text-slate-700"
+                  >
+                    Remove
+                  </button>
+                </div>
               </article>
             ))}
           </div>
 
-          <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
+          <div className="mt-5 flex justify-end">
+            <button
+              type="button"
+              onClick={addRow}
+              className="w-full rounded-xl bg-green-700 px-4 py-4 text-base font-black text-white shadow-sm md:w-auto md:min-w-56"
+            >
+              Add Item
+            </button>
+          </div>
+
+          <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
             <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
               <div>
                 <p className="text-xs font-black uppercase tracking-wide text-slate-500">Items Subtotal</p>
@@ -519,7 +547,7 @@ export function NewInvoiceForm({
         </section>
       </div>
 
-      <section className="rounded-lg bg-white p-5 shadow-sm">
+      <section className="rounded-xl bg-white p-6 shadow-sm">
         <div className="flex items-center justify-between gap-3">
           <div>
             <p className="text-lg font-black text-slate-950">Payment</p>
@@ -539,13 +567,13 @@ export function NewInvoiceForm({
               placeholder="0.000"
               value={cashAmount}
               onChange={(event) => setCashAmount(event.target.value)}
-              className="mt-2 h-16 w-full rounded-lg border-2 border-slate-300 px-4 text-2xl font-black outline-none focus:border-green-700"
+              className={`mt-2 h-16 text-2xl ${fieldClass(cashAmount)}`}
             />
           </label>
 
           <div
-            className={`rounded-lg border px-4 py-4 text-center text-2xl font-black ${
-              balanceTone
+            className={`rounded-xl border px-4 py-4 text-center text-2xl font-black ${
+              balancePaidInFull ? "border-green-200 bg-green-50 text-green-800" : "border-red-200 bg-red-50 text-red-700"
             }`}
           >
             <p className="text-xs font-black uppercase tracking-wide opacity-80">Remaining Balance</p>
@@ -556,7 +584,7 @@ export function NewInvoiceForm({
           </div>
 
           {hasDebt ? (
-            <div className="rounded-lg border-2 border-amber-400 bg-amber-200 px-4 py-4 text-amber-950">
+            <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-4 text-red-700">
               <p className="text-sm font-black uppercase tracking-wide">Debt Warning</p>
               <p className="mt-2 text-lg font-black leading-tight md:text-xl">
                 Warning: Payment is incomplete. {formatOmr(remainingBalance)} will be recorded as Customer Debt.
@@ -576,7 +604,7 @@ export function NewInvoiceForm({
             </label>
 
             {useCheck ? (
-              <div className="grid grid-cols-1 gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4">
+              <div className="grid grid-cols-1 gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
                 <label className="block">
                   <span className="text-sm font-black text-slate-700">Check Amount</span>
                   <input
@@ -588,7 +616,7 @@ export function NewInvoiceForm({
                     placeholder="0.000"
                     value={checkAmount}
                     onChange={(event) => setCheckAmount(event.target.value)}
-                    className="mt-2 h-14 w-full rounded-lg border-2 border-slate-300 px-4 text-xl font-black outline-none focus:border-slate-950"
+                    className={`mt-2 h-14 text-xl ${fieldClass(checkAmount)}`}
                   />
                 </label>
                 <label className="block">
@@ -597,7 +625,7 @@ export function NewInvoiceForm({
                     name="checkNumber"
                     type="text"
                     placeholder="Check number"
-                    className="mt-2 h-12 w-full rounded-lg border border-slate-300 px-3 text-sm font-bold"
+                    className={`mt-2 h-12 ${fieldClass("")}`}
                   />
                 </label>
                 <label className="block">
@@ -605,7 +633,7 @@ export function NewInvoiceForm({
                   <input
                     name="checkDate"
                     type="date"
-                    className="mt-2 h-12 w-full rounded-lg border border-slate-300 px-3 text-sm font-bold"
+                    className={`mt-2 h-12 ${fieldClass("")}`}
                   />
                 </label>
               </div>
@@ -624,7 +652,7 @@ export function NewInvoiceForm({
             </label>
 
             {useTransfer ? (
-              <div className="grid grid-cols-1 gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4">
+              <div className="grid grid-cols-1 gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
                 <label className="block">
                   <span className="text-sm font-black text-slate-700">Transfer Amount</span>
                   <input
@@ -636,7 +664,7 @@ export function NewInvoiceForm({
                     placeholder="0.000"
                     value={transferAmount}
                     onChange={(event) => setTransferAmount(event.target.value)}
-                    className="mt-2 h-14 w-full rounded-lg border-2 border-slate-300 px-4 text-xl font-black outline-none focus:border-slate-950"
+                    className={`mt-2 h-14 text-xl ${fieldClass(transferAmount)}`}
                   />
                 </label>
                 <label className="block">
@@ -645,7 +673,7 @@ export function NewInvoiceForm({
                     name="transferReference"
                     type="text"
                     placeholder="Receipt or bank reference"
-                    className="mt-2 h-14 w-full rounded-lg border border-slate-300 px-3 text-sm font-bold"
+                    className={`mt-2 h-14 ${fieldClass("")}`}
                   />
                 </label>
                 <label className="block">
@@ -654,7 +682,7 @@ export function NewInvoiceForm({
                     name="transferReceipt"
                     type="file"
                     accept="image/*"
-                    className="mt-2 block w-full rounded-lg border border-slate-300 px-3 py-3 text-sm font-bold"
+                    className="mt-2 block w-full rounded-xl border border-slate-300 bg-white px-3 py-3 text-sm font-bold text-slate-700"
                   />
                 </label>
               </div>
@@ -665,19 +693,21 @@ export function NewInvoiceForm({
         </div>
       </section>
 
-      <section className="sticky bottom-0 rounded-lg bg-slate-100 pt-2">
-        <button
-          type="submit"
-          className="h-20 w-full rounded-lg bg-success px-4 text-2xl font-black text-white shadow-xl active:scale-[0.99]"
-        >
-          {hasDebt ? "Save & Record Debt" : "Save Invoice & Print"}
-        </button>
-        <Link
-          href="/salesman"
-          className="mt-3 flex h-14 items-center justify-center rounded-lg bg-red-700 px-4 text-lg font-black text-white"
-        >
-          Cancel / Back to Dashboard
-        </Link>
+      <section className="pb-[calc(env(safe-area-inset-bottom)+2rem)]">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+          <button
+            type="submit"
+            className="h-16 w-full rounded-xl bg-success px-4 text-xl font-black text-white shadow-sm active:scale-[0.99]"
+          >
+            {hasDebt ? "Save & Record Debt" : "Save Invoice & Print"}
+          </button>
+          <Link
+            href="/salesman"
+            className="flex h-16 w-full items-center justify-center rounded-xl bg-red-700 px-4 text-xl font-black text-white shadow-sm"
+          >
+            Cancel / Back to Dashboard
+          </Link>
+        </div>
       </section>
 
       {showCustomerModal ? (
