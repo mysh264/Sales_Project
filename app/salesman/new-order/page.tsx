@@ -7,7 +7,13 @@ import { NewInvoiceForm } from "./NewInvoiceForm";
 
 export const dynamic = "force-dynamic";
 
-export default async function NewOrderPage() {
+type NewOrderPageProps = {
+  searchParams?: Promise<{
+    error?: string;
+  }>;
+};
+
+export default async function NewOrderPage({ searchParams }: NewOrderPageProps) {
   const salesman = await getCurrentUser();
 
   if (!salesman || salesman.role !== "SALESMAN" || !salesman.branch) {
@@ -55,6 +61,9 @@ export default async function NewOrderPage() {
     vatNumber: customer.vatNumber ?? "",
   }));
 
+  const resolvedSearchParams = (await searchParams) ?? {};
+  const errorMessage = typeof resolvedSearchParams.error === "string" ? resolvedSearchParams.error : "";
+
   return (
     <main className="min-h-screen bg-gray-50 px-4 py-5">
       <NewInvoiceForm
@@ -66,6 +75,7 @@ export default async function NewOrderPage() {
         action={createOrder}
         customers={customerData}
         products={productData}
+        errorMessage={errorMessage}
       />
     </main>
   );

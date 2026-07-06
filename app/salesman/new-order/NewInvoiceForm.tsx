@@ -30,6 +30,7 @@ type NewInvoiceFormProps = {
   action: (formData: FormData) => Promise<void>;
   customers: CustomerOption[];
   products: ProductOption[];
+  errorMessage?: string;
 };
 
 type ProductRow = {
@@ -84,6 +85,7 @@ export function NewInvoiceForm({
   action,
   customers,
   products,
+  errorMessage,
 }: NewInvoiceFormProps) {
   const [customerQuery, setCustomerQuery] = useState("");
   const [selectedCustomer, setSelectedCustomer] = useState<CustomerOption | null>(null);
@@ -228,6 +230,7 @@ export function NewInvoiceForm({
     [cashAmount, checkAmount, transferAmount, useCheck, useTransfer],
   );
   const remainingBalance = useMemo(() => Math.max(invoiceTotal - paidAmount, 0), [invoiceTotal, paidAmount]);
+  const overpaymentAmount = useMemo(() => Math.max(paidAmount - invoiceTotal, 0), [invoiceTotal, paidAmount]);
   const balancePaidInFull = remainingBalance === 0 && invoiceTotal > 0;
   const hasDebt = remainingBalance > 0;
 
@@ -256,6 +259,13 @@ export function NewInvoiceForm({
         <h1 className="mt-1 text-3xl font-black leading-tight">New Invoice</h1>
         <p className="mt-2 text-base font-semibold text-slate-200">Salesman: {salesmanName}</p>
       </header>
+
+      {errorMessage ? (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-4 text-amber-900 shadow-sm">
+          <p className="text-sm font-black uppercase tracking-wide">Save Error</p>
+          <p className="mt-1 text-sm font-bold leading-6">{errorMessage}</p>
+        </div>
+      ) : null}
 
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
         <section className="flex flex-col gap-6">
@@ -582,6 +592,15 @@ export function NewInvoiceForm({
               {balancePaidInFull ? "Paid in full" : "Balance still due"}
             </p>
           </div>
+
+          {overpaymentAmount > 0 ? (
+            <div className="rounded-xl border border-green-200 bg-green-50 px-4 py-4 text-green-800">
+              <p className="text-sm font-black uppercase tracking-wide">Overpayment</p>
+              <p className="mt-2 text-lg font-black leading-tight md:text-xl">
+                Extra amount entered: {formatOmr(overpaymentAmount)}. This will be treated as customer credit/change.
+              </p>
+            </div>
+          ) : null}
 
           {hasDebt ? (
             <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-4 text-red-700">

@@ -52,33 +52,34 @@ async function storeUpload(file: FormDataEntryValue | null, folder: string) {
 }
 
 export async function createOrder(formData: FormData) {
-  const currentUser = await getCurrentUser();
+  try {
+    const currentUser = await getCurrentUser();
 
-  if (!currentUser || currentUser.role !== "SALESMAN" || !currentUser.branchId) {
-    throw new Error("Salesman session is required.");
-  }
+    if (!currentUser || currentUser.role !== "SALESMAN" || !currentUser.branchId) {
+      throw new Error("Salesman session is required.");
+    }
 
-  const branch = currentUser.branch;
-  const branchId = currentUser.branchId;
-  const customerId = text(formData, "customerId");
-  const customerName = text(formData, "customerName");
-  const customerPhone = text(formData, "customerPhone");
-  const customerAddress = text(formData, "customerAddress");
-  const customerVatNumber = text(formData, "customerVatNumber");
-  const invoiceSerial = text(formData, "invoiceSerial") || buildInvoiceSerial();
-  const currency = text(formData, "currency") || branch?.defaultCurrency || "OMR";
-  const taxRate = decimalValue(formData, "taxRate", branch?.defaultTaxRate ?? new Prisma.Decimal(0));
+    const branch = currentUser.branch;
+    const branchId = currentUser.branchId;
+    const customerId = text(formData, "customerId");
+    const customerName = text(formData, "customerName");
+    const customerPhone = text(formData, "customerPhone");
+    const customerAddress = text(formData, "customerAddress");
+    const customerVatNumber = text(formData, "customerVatNumber");
+    const invoiceSerial = text(formData, "invoiceSerial") || buildInvoiceSerial();
+    const currency = text(formData, "currency") || branch?.defaultCurrency || "OMR";
+    const taxRate = decimalValue(formData, "taxRate", branch?.defaultTaxRate ?? new Prisma.Decimal(0));
 
-  const rowProductIds = formData.getAll("rowProductId").filter((value): value is string => typeof value === "string");
-  const rowFulls = formData.getAll("rowFull").filter((value): value is string => typeof value === "string");
-  const rowEmpties = formData.getAll("rowEmpty").filter((value): value is string => typeof value === "string");
-  const rowPrices = formData.getAll("rowPrice").filter((value): value is string => typeof value === "string");
+    const rowProductIds = formData.getAll("rowProductId").filter((value): value is string => typeof value === "string");
+    const rowFulls = formData.getAll("rowFull").filter((value): value is string => typeof value === "string");
+    const rowEmpties = formData.getAll("rowEmpty").filter((value): value is string => typeof value === "string");
+    const rowPrices = formData.getAll("rowPrice").filter((value): value is string => typeof value === "string");
 
-  if (!customerId && !customerName && !customerPhone) {
-    throw new Error("Enter a customer name or phone number.");
-  }
+    if (!customerId && !customerName && !customerPhone) {
+      throw new Error("Enter a customer name or phone number.");
+    }
 
-  const invoice = await prisma.$transaction(async (tx) => {
+    const invoice = await prisma.$transaction(async (tx) => {
     const branchRow = await tx.branch.findUniqueOrThrow({ where: { id: branchId } });
     const salesman = await tx.user.findUniqueOrThrow({ where: { id: currentUser.id } });
 
@@ -170,10 +171,6 @@ export async function createOrder(formData: FormData) {
     const checkAmount = moneyValue(formData, "checkAmount");
     const transferAmount = moneyValue(formData, "bankTransferAmount");
     const paidAmount = cashAmount.add(checkAmount).add(transferAmount);
-
-    if (paidAmount.greaterThan(totalAmount)) {
-      throw new Error("Payment cannot be higher than the invoice total.");
-    }
 
     const debtAmount = decimalMax(totalAmount.sub(paidAmount), new Prisma.Decimal(0));
 
@@ -298,10 +295,24 @@ export async function createOrder(formData: FormData) {
     }
 
     return createdInvoice;
-  });
+    });
 
-  revalidatePath("/salesman");
-  revalidatePath("/salesman/new-order");
-  revalidatePath("/salesman/history");
-  redirect(`/salesman/receipt/${invoice.id}`);
+    revalidatePath("/salesman");
+    revalidatePath("/salesman/new-order");
+    revalidatePath("/salesman/history");
+    redirect(`/salesman/receipt/${invoice.id}`);
+  } catch (error) {
+    if (
+      typeof error === "object" &&
+      error !== null &&
+      "digest" in error &&
+      typeof (error as { digest?: unknown }).digest === "string" &&
+      (error as { digest: string }).digest.startsWith("NEXT_REDIRECT")
+    ) {
+      throw error;
+    }
+
+    const message = error instanceof Error ? error.message : "Unable to save invoice.";
+    redirect(`/salesman/new-order?error=${encodeURIComponent(message)}`);
+  }
 }
