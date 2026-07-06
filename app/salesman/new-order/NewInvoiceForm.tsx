@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 
 type CustomerOption = {
   id: string;
@@ -48,6 +48,26 @@ type CustomerDraft = {
   address: string;
   vatNumber: string;
 };
+
+type SavedInvoiceData = {
+  customerQuery: string;
+  selectedCustomerId: string | null;
+  customerDraft: CustomerDraft;
+  showAdvanced: boolean;
+  invoiceSerialValue: string;
+  currency: string;
+  taxRate: string;
+  cashAmount: string;
+  checkAmount: string;
+  transferAmount: string;
+  debtCollectionAmount: string;
+  applyDebtCollection: boolean;
+  useCheck: boolean;
+  useTransfer: boolean;
+  productRows: ProductRow[];
+};
+
+const STORAGE_KEY = "newInvoiceData";
 
 function makeId() {
   return globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2);
@@ -114,6 +134,8 @@ export function NewInvoiceForm({
   const [applyDebtCollection, setApplyDebtCollection] = useState(false);
   const [useCheck, setUseCheck] = useState(false);
   const [useTransfer, setUseTransfer] = useState(false);
+  const [clientError, setClientError] = useState("");
+  const [hasHydrated, setHasHydrated] = useState(false);
   const [productRows, setProductRows] = useState<ProductRow[]>(
     products.length > 0
       ? [
@@ -214,6 +236,109 @@ export function NewInvoiceForm({
     setProductRows((current) => (current.length > 1 ? current.filter((row) => row.id !== id) : current));
   }
 
+  useEffect(() => {
+    const saved = window.localStorage.getItem(STORAGE_KEY);
+
+    if (!saved) {
+      setHasHydrated(true);
+      return;
+    }
+
+    try {
+      const data = JSON.parse(saved) as Partial<SavedInvoiceData>;
+      const savedCustomer = data.selectedCustomerId
+        ? data.selectedCustomerId === "new"
+          ? {
+              id: "new",
+              name: data.customerDraft?.name || data.customerQuery || "New Customer",
+              phone: data.customerDraft?.phone ?? "",
+              address: data.customerDraft?.address ?? "",
+              vatNumber: data.customerDraft?.vatNumber ?? "",
+            }
+          : customers.find((customer) => customer.id === data.selectedCustomerId) ?? null
+        : null;
+
+      setCustomerQuery(data.customerQuery ?? "");
+      setSelectedCustomer(savedCustomer);
+      setCustomerDraft({
+        name: data.customerDraft?.name ?? "",
+        phone: data.customerDraft?.phone ?? "",
+        address: data.customerDraft?.address ?? "",
+        vatNumber: data.customerDraft?.vatNumber ?? "",
+      });
+      setShowAdvanced(Boolean(data.showAdvanced));
+      setInvoiceSerialValue(data.invoiceSerialValue ?? invoiceSerial);
+      setCurrency(data.currency ?? defaultCurrency);
+      setTaxRate(data.taxRate ? Math.round(toNumber(data.taxRate)).toString() : defaultTaxRate);
+      setCashAmount(data.cashAmount ?? "");
+      setCheckAmount(data.checkAmount ?? "");
+      setTransferAmount(data.transferAmount ?? "");
+      setDebtCollectionAmount(data.debtCollectionAmount ?? "");
+      setApplyDebtCollection(Boolean(data.applyDebtCollection));
+      setUseCheck(Boolean(data.useCheck));
+      setUseTransfer(Boolean(data.useTransfer));
+
+      if (Array.isArray(data.productRows) && data.productRows.length > 0) {
+        setProductRows(
+          data.productRows.map((row) => ({
+            id: row.id || makeId(),
+            productId: products.some((product) => product.id === row.productId) ? row.productId : products[0]?.id ?? "",
+            full: row.full ?? "",
+            empty: row.empty ?? "",
+            price: row.price ?? products[0]?.defaultPrice ?? "",
+          })),
+        );
+      }
+    } catch {
+      window.localStorage.removeItem(STORAGE_KEY);
+    } finally {
+      setHasHydrated(true);
+    }
+  }, [customers, defaultCurrency, defaultTaxRate, invoiceSerial, products]);
+
+  useEffect(() => {
+    if (!hasHydrated) {
+      return;
+    }
+
+    const data: SavedInvoiceData = {
+      customerQuery,
+      selectedCustomerId: selectedCustomer?.id ?? null,
+      customerDraft,
+      showAdvanced,
+      invoiceSerialValue,
+      currency,
+      taxRate,
+      cashAmount,
+      checkAmount,
+      transferAmount,
+      debtCollectionAmount,
+      applyDebtCollection,
+      useCheck,
+      useTransfer,
+      productRows,
+    };
+
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  }, [
+    applyDebtCollection,
+    cashAmount,
+    checkAmount,
+    currency,
+    customerDraft,
+    customerQuery,
+    debtCollectionAmount,
+    hasHydrated,
+    invoiceSerialValue,
+    productRows,
+    selectedCustomer?.id,
+    showAdvanced,
+    taxRate,
+    transferAmount,
+    useCheck,
+    useTransfer,
+  ]);
+
   const lineItems = useMemo(() => {
     return productRows.map((row) => {
       const product = products.find((item) => item.id === row.productId);
@@ -269,9 +394,20 @@ export function NewInvoiceForm({
   const selectedCustomerAddress = selectedCustomer?.address || customerDraft.address;
   const selectedCustomerVat = selectedCustomer?.vatNumber || customerDraft.vatNumber;
 
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    if (!selectedCustomerName.trim() && !selectedCustomerPhone.trim()) {
+      event.preventDefault();
+      setClientError("Enter or select a customer before saving the invoice.");
+      return;
+    }
+
+    setClientError("");
+  }
+
   return (
     <form
       action={action}
+      onSubmit={handleSubmit}
       encType="multipart/form-data"
       className="mx-auto flex max-w-7xl flex-col gap-8 pb-[calc(env(safe-area-inset-bottom)+2rem)]"
     >
@@ -296,6 +432,13 @@ export function NewInvoiceForm({
         <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-4 text-amber-900 shadow-sm">
           <p className="text-sm font-black uppercase tracking-wide">Save Error</p>
           <p className="mt-1 text-sm font-bold leading-6">{errorMessage}</p>
+        </div>
+      ) : null}
+
+      {clientError ? (
+        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-4 text-red-800 shadow-sm">
+          <p className="text-sm font-black uppercase tracking-wide">Missing Required Field</p>
+          <p className="mt-1 text-sm font-bold leading-6">{clientError}</p>
         </div>
       ) : null}
 

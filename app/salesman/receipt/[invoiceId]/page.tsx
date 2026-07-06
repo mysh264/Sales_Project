@@ -2,6 +2,7 @@ import { Prisma } from "@prisma/client";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import { ClearNewInvoiceStorage } from "./ClearNewInvoiceStorage";
 
 export const dynamic = "force-dynamic";
 
@@ -52,6 +53,7 @@ export default async function ReceiptPage({ params }: ReceiptPageProps) {
 
   return (
     <main className="min-h-screen bg-white text-black print:min-h-0">
+      <ClearNewInvoiceStorage />
       <div className="mx-auto w-full max-w-md bg-white p-4 print:hidden">
         <Link
           href="/salesman"
