@@ -184,6 +184,12 @@ export default async function ReceiptPage({ params }: ReceiptPageProps) {
               <span>0.000 {invoice.currency}</span>
             </div>
           )}
+          {invoice.customerCredit.greaterThan(0) ? (
+            <div className="flex justify-between gap-2 font-black text-green-700">
+              <span>Change Returned</span>
+              <span>{money(invoice.customerCredit)} {invoice.currency}</span>
+            </div>
+          ) : null}
         </section>
 
         <section className="mt-2 border border-black bg-slate-100 p-2">

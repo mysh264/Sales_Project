@@ -191,6 +191,14 @@ export default async function UnifiedPrintPage({ params, searchParams }: PrintPa
                   </span>
                 </div>
               ))}
+              {invoice.customerCredit.greaterThan(0) ? (
+                <div className="grid grid-cols-[150px_1fr] gap-4 border-t border-slate-300 pt-2 font-black text-green-700">
+                  <span>Change Returned</span>
+                  <span className="text-right">
+                    {money(invoice.customerCredit)} {invoice.currency}
+                  </span>
+                </div>
+              ) : null}
             </section>
 
             <section className="ml-auto mt-4 w-80 rounded-lg border-2 border-slate-900 bg-slate-100 p-4 tabular-nums">
@@ -282,6 +290,14 @@ export default async function UnifiedPrintPage({ params, searchParams }: PrintPa
                   {money(invoice.totalAmount)} {invoice.currency}
                 </span>
               </div>
+              {invoice.customerCredit.greaterThan(0) ? (
+                <div className="flex justify-between font-black text-green-700">
+                  <span>Change Returned</span>
+                  <span>
+                    {money(invoice.customerCredit)} {invoice.currency}
+                  </span>
+                </div>
+              ) : null}
             </section>
 
             <section className="mt-2 border border-black bg-slate-100 p-2">

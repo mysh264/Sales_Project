@@ -188,6 +188,7 @@ export async function createOrder(formData: FormData) {
     const debtCollectionAmount = applyDebtCollection ? requestedDebtCollection : new Prisma.Decimal(0);
 
     const debtAmount = decimalMax(totalAmount.sub(paidAmount), new Prisma.Decimal(0));
+    const customerCredit = decimalMax(paidAmount.sub(totalAmount), new Prisma.Decimal(0));
 
     const createdInvoice = await tx.invoice.create({
       data: {
@@ -205,6 +206,7 @@ export async function createOrder(formData: FormData) {
         paidAmount,
         debtAmount,
         debtCollectionAmount,
+        customerCredit,
         items: {
           create: lines.map((line) => ({
             productId: line.productId,

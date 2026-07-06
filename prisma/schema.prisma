@@ -191,6 +191,7 @@ model Invoice {
   paidAmount        Decimal       @default(0) @db.Decimal(12, 3)
   debtAmount        Decimal       @default(0) @db.Decimal(12, 3)
   debtCollectionAmount Decimal?    @default(0) @db.Decimal(12, 3)
+  customerCredit    Decimal       @default(0) @db.Decimal(12, 3)
   notes             String?
   receiptPdfUrl     String?
   branch            Branch        @relation(fields: [branchId], references: [id])

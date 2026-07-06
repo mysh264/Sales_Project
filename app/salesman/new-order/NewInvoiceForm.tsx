@@ -59,7 +59,10 @@ type SavedInvoiceData = {
   taxRate: string;
   cashAmount: string;
   checkAmount: string;
+  checkNumber: string;
+  checkDate: string;
   transferAmount: string;
+  transferReference: string;
   debtCollectionAmount: string;
   applyDebtCollection: boolean;
   useCheck: boolean;
@@ -129,13 +132,17 @@ export function NewInvoiceForm({
   const [taxRate, setTaxRate] = useState(defaultTaxRate);
   const [cashAmount, setCashAmount] = useState("");
   const [checkAmount, setCheckAmount] = useState("");
+  const [checkNumber, setCheckNumber] = useState("");
+  const [checkDate, setCheckDate] = useState("");
   const [transferAmount, setTransferAmount] = useState("");
+  const [transferReference, setTransferReference] = useState("");
   const [debtCollectionAmount, setDebtCollectionAmount] = useState("");
   const [applyDebtCollection, setApplyDebtCollection] = useState(false);
   const [useCheck, setUseCheck] = useState(false);
   const [useTransfer, setUseTransfer] = useState(false);
   const [clientError, setClientError] = useState("");
   const [hasHydrated, setHasHydrated] = useState(false);
+  const [draftSaved, setDraftSaved] = useState(false);
   const [productRows, setProductRows] = useState<ProductRow[]>(
     products.length > 0
       ? [
@@ -272,7 +279,10 @@ export function NewInvoiceForm({
       setTaxRate(data.taxRate ? Math.round(toNumber(data.taxRate)).toString() : defaultTaxRate);
       setCashAmount(data.cashAmount ?? "");
       setCheckAmount(data.checkAmount ?? "");
+      setCheckNumber(data.checkNumber ?? "");
+      setCheckDate(data.checkDate ?? "");
       setTransferAmount(data.transferAmount ?? "");
+      setTransferReference(data.transferReference ?? "");
       setDebtCollectionAmount(data.debtCollectionAmount ?? "");
       setApplyDebtCollection(Boolean(data.applyDebtCollection));
       setUseCheck(Boolean(data.useCheck));
@@ -311,7 +321,10 @@ export function NewInvoiceForm({
       taxRate,
       cashAmount,
       checkAmount,
+      checkNumber,
+      checkDate,
       transferAmount,
+      transferReference,
       debtCollectionAmount,
       applyDebtCollection,
       useCheck,
@@ -320,10 +333,16 @@ export function NewInvoiceForm({
     };
 
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    setDraftSaved(true);
+    const timeout = window.setTimeout(() => setDraftSaved(false), 1200);
+
+    return () => window.clearTimeout(timeout);
   }, [
     applyDebtCollection,
     cashAmount,
     checkAmount,
+    checkDate,
+    checkNumber,
     currency,
     customerDraft,
     customerQuery,
@@ -335,6 +354,7 @@ export function NewInvoiceForm({
     showAdvanced,
     taxRate,
     transferAmount,
+    transferReference,
     useCheck,
     useTransfer,
   ]);
@@ -369,6 +389,16 @@ export function NewInvoiceForm({
   const remainingBalance = useMemo(() => Math.max(invoiceTotal - paidAmount, 0), [invoiceTotal, paidAmount]);
   const overpaymentAmount = useMemo(() => Math.max(paidAmount - invoiceTotal, 0), [invoiceTotal, paidAmount]);
   const balancePaidInFull = remainingBalance === 0 && invoiceTotal > 0;
+  const balanceStatusMessage = invoiceTotal === 0
+    ? "Enter items to start invoice"
+    : balancePaidInFull
+      ? "Paid in full"
+      : "Balance still due";
+  const balanceStatusClass = invoiceTotal === 0
+    ? "border-slate-200 bg-slate-50 text-slate-700"
+    : balancePaidInFull
+      ? "border-green-200 bg-green-50 text-green-800"
+      : "border-red-200 bg-red-50 text-red-700";
   const hasDebt = remainingBalance > 0;
   const selectedCustomerDebt = useMemo(() => {
     if (!selectedCustomer?.id || selectedCustomer.id === "new") {
@@ -393,11 +423,20 @@ export function NewInvoiceForm({
   const selectedCustomerPhone = selectedCustomer?.phone || customerDraft.phone;
   const selectedCustomerAddress = selectedCustomer?.address || customerDraft.address;
   const selectedCustomerVat = selectedCustomer?.vatNumber || customerDraft.vatNumber;
+  const hasSelectedCustomer = Boolean(selectedCustomer);
+  const hasProductData = lineItems.some((item) => item.product?.id && (item.fullCount > 0 || item.emptyCount > 0));
+  const canSubmit = hasSelectedCustomer && hasProductData;
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    if (!selectedCustomerName.trim() && !selectedCustomerPhone.trim()) {
+    if (!hasSelectedCustomer) {
       event.preventDefault();
-      setClientError("Enter or select a customer before saving the invoice.");
+      setClientError("Select an existing customer or add a new customer before saving the invoice.");
+      return;
+    }
+
+    if (!hasProductData) {
+      event.preventDefault();
+      setClientError("Enter at least one delivered or collected cylinder before saving the invoice.");
       return;
     }
 
@@ -423,9 +462,20 @@ export function NewInvoiceForm({
       <input type="hidden" name="applyDebtCollection" value={applyDebtCollection ? "true" : "false"} />
 
       <header className="rounded-lg bg-ink p-5 text-white shadow-lg">
-        <p className="text-sm font-bold uppercase tracking-wide text-slate-300">{branchName}</p>
-        <h1 className="mt-1 text-3xl font-black leading-tight">New Invoice</h1>
-        <p className="mt-2 text-base font-semibold text-slate-200">Salesman: {salesmanName}</p>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-sm font-bold uppercase tracking-wide text-slate-300">{branchName}</p>
+            <h1 className="mt-1 text-3xl font-black leading-tight">New Invoice</h1>
+            <p className="mt-2 text-base font-semibold text-slate-200">Salesman: {salesmanName}</p>
+          </div>
+          <span
+            className={`rounded-full px-3 py-1 text-xs font-black uppercase tracking-wide transition-opacity ${
+              draftSaved ? "bg-green-100 text-green-800 opacity-100" : "bg-white/10 text-slate-300 opacity-60"
+            }`}
+          >
+            {draftSaved ? "Draft saved" : "Draft ready"}
+          </span>
+        </div>
       </header>
 
       {errorMessage ? (
@@ -771,16 +821,10 @@ export function NewInvoiceForm({
             />
           </label>
 
-          <div
-            className={`rounded-xl border px-4 py-4 text-center text-2xl font-black ${
-              balancePaidInFull ? "border-green-200 bg-green-50 text-green-800" : "border-red-200 bg-red-50 text-red-700"
-            }`}
-          >
+          <div className={`rounded-xl border px-4 py-4 text-center text-2xl font-black ${balanceStatusClass}`}>
             <p className="text-xs font-black uppercase tracking-wide opacity-80">Remaining Balance</p>
             <p className="mt-2 text-4xl font-black">{formatOmr(remainingBalance)}</p>
-            <p className="mt-2 text-sm font-bold">
-              {balancePaidInFull ? "Paid in full" : "Balance still due"}
-            </p>
+            <p className="mt-2 text-sm font-bold">{balanceStatusMessage}</p>
           </div>
 
           {selectedCustomerDebt > 0 ? (
@@ -836,7 +880,7 @@ export function NewInvoiceForm({
             <div className="rounded-xl border border-green-200 bg-green-50 px-4 py-4 text-green-800">
               <p className="text-sm font-black uppercase tracking-wide">Overpayment</p>
               <p className="mt-2 text-lg font-black leading-tight md:text-xl">
-                Extra amount entered: {formatOmr(overpaymentAmount)}. This will be treated as customer credit/change.
+                Change to be returned: {formatOmr(overpaymentAmount)}
               </p>
             </div>
           ) : null}
@@ -883,7 +927,9 @@ export function NewInvoiceForm({
                     name="checkNumber"
                     type="text"
                     placeholder="Check number"
-                    className={`mt-2 h-12 ${fieldClass("")}`}
+                    value={checkNumber}
+                    onChange={(event) => setCheckNumber(event.target.value)}
+                    className={`mt-2 h-12 ${fieldClass(checkNumber)}`}
                   />
                 </label>
                 <label className="block">
@@ -891,7 +937,9 @@ export function NewInvoiceForm({
                   <input
                     name="checkDate"
                     type="date"
-                    className={`mt-2 h-12 ${fieldClass("")}`}
+                    value={checkDate}
+                    onChange={(event) => setCheckDate(event.target.value)}
+                    className={`mt-2 h-12 ${fieldClass(checkDate)}`}
                   />
                 </label>
               </div>
@@ -931,7 +979,9 @@ export function NewInvoiceForm({
                     name="transferReference"
                     type="text"
                     placeholder="Receipt or bank reference"
-                    className={`mt-2 h-14 ${fieldClass("")}`}
+                    value={transferReference}
+                    onChange={(event) => setTransferReference(event.target.value)}
+                    className={`mt-2 h-14 ${fieldClass(transferReference)}`}
                   />
                 </label>
                 <label className="block">
@@ -955,7 +1005,8 @@ export function NewInvoiceForm({
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
           <button
             type="submit"
-            className="h-16 w-full rounded-xl bg-success px-4 text-xl font-black text-white shadow-sm active:scale-[0.99]"
+            disabled={!canSubmit}
+            className="h-16 w-full rounded-xl bg-success px-4 text-xl font-black text-white shadow-sm active:scale-[0.99] disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500"
           >
             {hasDebt ? "Save & Record Debt" : "Save Invoice & Print"}
           </button>
