@@ -13,6 +13,7 @@ export const dynamic = "force-dynamic";
 type ReconciliationPageProps = {
   searchParams?: Promise<{
     salesmanId?: string;
+    error?: string;
   }>;
 };
 
@@ -66,6 +67,7 @@ export default async function LogisticsReconciliationPage({ searchParams }: Reco
   ]);
 
   const selectedSalesmanId = params.salesmanId?.trim() || salesmen[0]?.id || "";
+  const errorMessage = params.error?.trim() || "";
   const salesman =
     salesmen.find((item) => item.id === selectedSalesmanId) ??
     salesmen[0] ??
@@ -134,7 +136,6 @@ export default async function LogisticsReconciliationPage({ searchParams }: Reco
           salesmen={salesmen.map((item) => ({
             id: item.id,
             fullName: item.fullName,
-            branchName: item.branch?.name ?? null,
           }))}
           products={products.map((item) => ({
             id: item.id,
@@ -144,6 +145,12 @@ export default async function LogisticsReconciliationPage({ searchParams }: Reco
           selectedSalesmanId={salesman.id}
           selectedSalesmanName={salesman.fullName}
         />
+
+        {errorMessage ? (
+          <section className="rounded-lg border border-amber-200 bg-amber-50 px-5 py-4 text-sm font-black text-amber-900 shadow-sm">
+            {errorMessage}
+          </section>
+        ) : null}
 
         <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
           <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">

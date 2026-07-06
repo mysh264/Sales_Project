@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { SalesmanHandoffPicker } from "./SalesmanHandoffPicker";
 import { prisma } from "@/lib/prisma";
+import { getCurrentUser, hasGlobalSalesAccess } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
@@ -16,11 +17,14 @@ function formatNumber(value: number) {
 }
 
 export default async function LoaderDashboardPage() {
+  const currentUser = await getCurrentUser();
   const dayStart = startOfDay();
+  const hasGlobalAccess = hasGlobalSalesAccess(currentUser);
+  const branchFilter = hasGlobalAccess ? {} : currentUser?.branchId ? { branchId: currentUser.branchId } : { branchId: "__no_branch__" };
 
   const [salesmen, reconciliations] = await Promise.all([
     prisma.user.findMany({
-      where: { role: "SALESMAN", isActive: true },
+      where: { role: "SALESMAN", isActive: true, ...branchFilter },
       include: {
         salesmanReconciliations: {
           where: { reconciliationDate: dayStart },
@@ -34,6 +38,7 @@ export default async function LoaderDashboardPage() {
     prisma.dailyReconciliation.findMany({
       where: {
         reconciliationDate: dayStart,
+        ...(hasGlobalAccess ? {} : currentUser?.branchId ? { branchId: currentUser.branchId } : { branchId: "__no_branch__" }),
       },
       include: {
         items: true,
@@ -55,10 +60,16 @@ export default async function LoaderDashboardPage() {
               <p className="mt-2 max-w-3xl text-sm font-bold text-slate-600">
                 Select a salesman, record the hand-off, and close the route at the end of the day.
               </p>
+              <p className="mt-2 text-xs font-black uppercase tracking-wide text-slate-500">
+                {hasGlobalAccess ? "Global view enabled" : currentUser?.branch?.name ? currentUser.branch.name : "Branch not assigned"}
+              </p>
             </div>
             <div className="flex flex-wrap gap-3">
               <Link href="/loader" className="rounded border border-slate-300 bg-white px-4 py-2 text-sm font-black text-slate-900">
                 Home
+              </Link>
+              <Link href="/logistics/reconciliation" className="rounded border border-slate-300 bg-white px-4 py-2 text-sm font-black text-slate-900">
+                Reconciliation
               </Link>
             </div>
           </div>

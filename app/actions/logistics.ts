@@ -7,6 +7,7 @@ import { auditSnapshot, logAction } from "@/lib/audit";
 import { Permissions } from "@/lib/permissions";
 import { requirePermission } from "@/lib/permission-guard";
 import { prisma } from "@/lib/prisma";
+import { hasGlobalSalesAccess } from "@/lib/session";
 
 type MorningLoadItem = {
   productId: string;
@@ -74,6 +75,32 @@ function normalizeProductRows<T extends { productId: string; morningFull: number
   return [...ordered.values()];
 }
 
+function canHandleRoute(
+  currentUser: {
+    role: string;
+    branchId: string | null;
+    hasGlobalAccess?: boolean | null;
+  },
+  salesman: {
+    branchId: string | null;
+  },
+) {
+  if (currentUser.role === "ADMIN" || hasGlobalSalesAccess(currentUser)) {
+    return true;
+  }
+
+  if (!currentUser.branchId || !salesman.branchId) {
+    return true;
+  }
+
+  return currentUser.branchId === salesman.branchId;
+}
+
+function validationRedirect(basePath: string, salesmanId: string, message: string) {
+  const params = new URLSearchParams({ error: message });
+  redirect(`${basePath}/${encodeURIComponent(salesmanId)}?${params.toString()}`);
+}
+
 export async function recordMorningLoad(salesmanId: string, productList: MorningLoadItem[]) {
   const { user: currentUser } = await requirePermission(Permissions.Logistics_Update);
   const targetSalesman = await prisma.user.findUniqueOrThrow({
@@ -81,12 +108,8 @@ export async function recordMorningLoad(salesmanId: string, productList: Morning
     include: { branch: true },
   });
 
-  if (!currentUser.branchId && currentUser.role !== "ADMIN") {
-    throw new Error("Branch-scoped logistics access is required.");
-  }
-
-  if (currentUser.role !== "ADMIN" && currentUser.branchId !== targetSalesman.branchId) {
-    throw new Error("You can only reconcile salesmen in your own branch.");
+  if (!canHandleRoute(currentUser, targetSalesman)) {
+    validationRedirect("/logistics/reconciliation", salesmanId, "You can only reconcile salesmen in your own branch.");
   }
 
   const branchId = targetSalesman.branchId ?? currentUser.branchId;
@@ -105,7 +128,7 @@ export async function recordMorningLoad(salesmanId: string, productList: Morning
   ).map((item) => ({ productId: item.productId, morningFull: item.morningFull }));
 
   if (rows.length === 0) {
-    throw new Error("Enter at least one morning load quantity.");
+    validationRedirect("/logistics/reconciliation", salesmanId, "Enter at least one morning load quantity.");
   }
 
   const reconciliationDate = dayOnly();
@@ -234,15 +257,15 @@ export async function recordEveningReconcile(salesmanId: string, reconciledList:
     include: { branch: true },
   });
 
-  if (currentUser.role !== "ADMIN" && currentUser.branchId !== targetSalesman.branchId) {
-    throw new Error("You can only reconcile salesmen in your own branch.");
+  if (!canHandleRoute(currentUser, targetSalesman)) {
+    validationRedirect("/logistics/reconciliation", salesmanId, "You can only reconcile salesmen in your own branch.");
   }
 
   const reconciliationDate = dayOnly();
   const normalizedList = normalizeProductRows(reconciledList);
 
   if (normalizedList.length === 0) {
-    throw new Error("Enter at least one evening reconciliation row.");
+    validationRedirect("/logistics/reconciliation", salesmanId, "Enter at least one evening reconciliation row.");
   }
 
   await prisma.$transaction(async (tx) => {

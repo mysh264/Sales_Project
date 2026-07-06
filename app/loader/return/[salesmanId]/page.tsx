@@ -1,13 +1,15 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { processEveningReturn } from "@/app/actions/loader";
 import { formatDateDMY } from "@/lib/date-format";
 import { prisma } from "@/lib/prisma";
+import { getCurrentUser, hasGlobalSalesAccess } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
 type EveningReturnPageProps = {
   params: Promise<{ salesmanId: string }>;
+  searchParams?: Promise<{ error?: string }>;
 };
 
 function todayDate() {
@@ -15,11 +17,20 @@ function todayDate() {
   return new Date(now.getFullYear(), now.getMonth(), now.getDate());
 }
 
-export default async function EveningReturnPage({ params }: EveningReturnPageProps) {
+export default async function EveningReturnPage({ params, searchParams }: EveningReturnPageProps) {
   const { salesmanId } = await params;
+  const query = (await searchParams) ?? {};
+  const currentUser = await getCurrentUser();
 
-  const salesman = await prisma.user.findUnique({
-    where: { id: salesmanId },
+  if (!currentUser) {
+    redirect("/login");
+  }
+
+  const hasGlobalAccess = hasGlobalSalesAccess(currentUser);
+  const branchScope = hasGlobalAccess ? {} : currentUser.branchId ? { branchId: currentUser.branchId } : { branchId: "__no_branch__" };
+
+  const salesman = await prisma.user.findFirst({
+    where: { id: salesmanId, ...branchScope },
     include: {
       branch: true,
       salesmanReconciliations: {
@@ -84,6 +95,9 @@ export default async function EveningReturnPage({ params }: EveningReturnPagePro
           <p className="mt-2 text-sm font-bold text-slate-300">
             Morning load recorded on {formatDateDMY(reconciliation.morningLoggedAt)}.
           </p>
+          {query.error ? (
+            <p className="mt-3 rounded-lg bg-amber-100 px-4 py-3 text-sm font-black text-amber-900">{query.error}</p>
+          ) : null}
         </header>
 
         <Link

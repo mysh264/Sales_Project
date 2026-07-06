@@ -7,7 +7,6 @@ import { submitMorningLoad } from "@/app/actions/logistics";
 type SalesmanOption = {
   id: string;
   fullName: string;
-  branchName: string | null;
 };
 
 type ProductOption = {

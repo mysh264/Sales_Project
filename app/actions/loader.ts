@@ -77,6 +77,11 @@ function normalizeProductRows<T extends { productId: string; morningFull: number
   return [...ordered.values()];
 }
 
+function validationRedirect(basePath: string, salesmanId: string, message: string) {
+  const params = new URLSearchParams({ error: message });
+  redirect(`${basePath}/${encodeURIComponent(salesmanId)}?${params.toString()}`);
+}
+
 function canHandleRoute(
   currentUser: {
     role: string;
@@ -133,14 +138,14 @@ export async function processMorningLoad(formData: FormData) {
   const productIds = formData.getAll("productId").filter((value): value is string => typeof value === "string");
 
   if (!salesmanId) {
-    throw new Error("Missing salesman.");
+    redirect(`/loader?error=${encodeURIComponent("Missing salesman.")}`);
   }
 
   const { user: currentUser } = await requirePermission(Permissions.Logistics_Update);
   const salesman = await resolveSalesmanContext(salesmanId);
 
   if (!canHandleRoute(currentUser, salesman)) {
-    throw new Error("You can only hand off routes within your own branch.");
+    validationRedirect("/loader/load", salesmanId, "You can only hand off routes within your own branch.");
   }
 
   const branchId = salesman.branchId ?? currentUser.branchId;
@@ -155,7 +160,7 @@ export async function processMorningLoad(formData: FormData) {
   );
 
   if (rows.length === 0) {
-    throw new Error("Enter at least one loaded cylinder quantity.");
+    validationRedirect("/loader/load", salesmanId, "Enter at least one loaded cylinder quantity.");
   }
 
   await loadProducts(productIds);
@@ -251,14 +256,14 @@ export async function processEveningReturn(formData: FormData) {
   const reconciliationId = text(formData, "reconciliationId");
 
   if (!salesmanId) {
-    throw new Error("Missing salesman.");
+    redirect(`/loader?error=${encodeURIComponent("Missing salesman.")}`);
   }
 
   const { user: currentUser } = await requirePermission(Permissions.Logistics_Update);
   const salesman = await resolveSalesmanContext(salesmanId);
 
   if (!canHandleRoute(currentUser, salesman)) {
-    throw new Error("You can only close routes within your own branch.");
+    validationRedirect("/loader/return", salesmanId, "You can only close routes within your own branch.");
   }
 
   const reconciliationDate = dayOnly();
@@ -269,7 +274,7 @@ export async function processEveningReturn(formData: FormData) {
   );
 
   if (normalizedList.length === 0) {
-    throw new Error("Enter at least one evening reconciliation row.");
+    validationRedirect("/loader/return", salesmanId, "Enter at least one evening reconciliation row.");
   }
 
   await prisma.$transaction(async (tx) => {
