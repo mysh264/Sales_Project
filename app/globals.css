@@ -23,3 +23,27 @@ textarea {
   font: inherit;
 }
 
+@media (max-width: 767px) {
+  .product-selection-table {
+    display: flex;
+    max-width: 100%;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .product-selection-table .product-selection-inner {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .product-selection-table .product-selection-header {
+    display: none;
+  }
+
+  .product-selection-table .product-row {
+    display: flex;
+    max-width: 100%;
+    flex-direction: column;
+  }
+}

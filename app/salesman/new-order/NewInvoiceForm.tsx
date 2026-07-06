@@ -67,11 +67,6 @@ function formatOmr(value: number) {
   }).format(value);
 }
 
-function normalizeTaxRate(value: string) {
-  const rate = toNumber(value);
-  return rate > 1 ? rate / 100 : rate;
-}
-
 function fieldClass(value: string, extra = "") {
   return [
     "w-full rounded-xl border px-3 text-sm font-bold text-slate-900 outline-none transition-colors focus:border-slate-950",
@@ -235,7 +230,7 @@ export function NewInvoiceForm({
   }, [productRows, products]);
 
   const itemsSubtotal = useMemo(() => lineItems.reduce((sum, item) => sum + item.itemTotal, 0), [lineItems]);
-  const vatRateValue = useMemo(() => normalizeTaxRate(taxRate), [taxRate]);
+  const vatRateValue = 0.05;
   const vatAmount = useMemo(() => itemsSubtotal * vatRateValue, [itemsSubtotal, vatRateValue]);
   const invoiceTotal = useMemo(() => itemsSubtotal + vatAmount, [itemsSubtotal, vatAmount]);
   const paidAmount = useMemo(
@@ -470,9 +465,9 @@ export function NewInvoiceForm({
             </div>
           </div>
 
-          <div className="mt-3 max-w-full overflow-x-auto">
-            <div className="min-w-[760px] max-w-full">
-              <div className="grid grid-cols-[minmax(240px,2fr)_minmax(116px,1fr)_minmax(116px,1fr)_minmax(120px,1fr)_minmax(104px,auto)] gap-2 rounded-xl bg-slate-50 px-4 py-3 text-sm font-black uppercase tracking-wide text-slate-500">
+          <div className="product-selection-table mt-3 max-w-full overflow-x-auto">
+            <div className="product-selection-inner min-w-[760px] max-w-full">
+              <div className="product-selection-header grid grid-cols-[minmax(240px,2fr)_minmax(116px,1fr)_minmax(116px,1fr)_minmax(120px,1fr)_minmax(104px,auto)] gap-2 rounded-xl bg-slate-50 px-4 py-3 text-sm font-black uppercase tracking-wide text-slate-500">
                 <div>Product</div>
                 <div className="flex-1 whitespace-nowrap text-center text-sm">Delivered</div>
                 <div className="flex-1 whitespace-nowrap text-center text-sm">Collected</div>
@@ -484,7 +479,7 @@ export function NewInvoiceForm({
                 {productRows.map((row, index) => (
                   <article
                     key={row.id}
-                    className={`rounded-xl border p-4 shadow-sm transition-colors ${
+                    className={`product-row rounded-xl border p-4 shadow-sm transition-colors ${
                       row.productId || row.full || row.empty || row.price ? "border-green-200 bg-green-50/30" : "border-slate-200 bg-white"
                     }`}
                   >
@@ -511,10 +506,11 @@ export function NewInvoiceForm({
 
                       <div className="grid grid-cols-1 gap-3 md:grid-cols-[repeat(3,minmax(0,1fr))_auto] md:items-end">
                         <label className="block">
-                          <span className="text-[11px] font-black uppercase tracking-wide text-slate-500 md:hidden">Full Cylinders Delivered</span>
+                          <span className="sr-only">Delivered</span>
                           <input
                             type="number"
                             min="0"
+                            placeholder="Delivered"
                             value={row.full}
                             onChange={(event) => updateRow(row.id, { full: event.target.value })}
                             className={`mt-2 h-14 text-center text-2xl ${fieldClass(row.full)}`}
@@ -522,10 +518,11 @@ export function NewInvoiceForm({
                         </label>
 
                         <label className="block">
-                          <span className="text-[11px] font-black uppercase tracking-wide text-slate-500 md:hidden">Empty Cylinders Collected</span>
+                          <span className="sr-only">Collected</span>
                           <input
                             type="number"
                             min="0"
+                            placeholder="Collected"
                             value={row.empty}
                             onChange={(event) => updateRow(row.id, { empty: event.target.value })}
                             className={`mt-2 h-14 text-center text-2xl ${fieldClass(row.empty)}`}
@@ -533,11 +530,12 @@ export function NewInvoiceForm({
                         </label>
 
                         <label className="block">
-                          <span className="text-[11px] font-black uppercase tracking-wide text-slate-500 md:hidden">Unit Price</span>
+                          <span className="sr-only">Unit Price</span>
                           <input
                             type="number"
                             min="0"
                             step="0.001"
+                            placeholder="Unit Price"
                             value={row.price}
                             onChange={(event) => updateRow(row.id, { price: event.target.value })}
                             className={`mt-2 h-14 text-center text-2xl ${fieldClass(row.price)}`}
