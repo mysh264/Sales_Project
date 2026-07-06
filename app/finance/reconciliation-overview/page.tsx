@@ -5,6 +5,7 @@ import { formatDateDMY } from "@/lib/date-format";
 import { Permissions } from "@/lib/permissions";
 import { checkPermission, requirePermission } from "@/lib/permission-guard";
 import { getCurrentUser } from "@/lib/session";
+import { hasGlobalSalesAccess } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -70,6 +71,12 @@ export default async function ReconciliationOverviewPage({
   const endDateInput = parseDate(params.end);
   const endDateExclusive = endDateInput ? nextDay(endDateInput) : endOfMonth();
   const endDateDisplay = endDateInput ?? new Date(endDateExclusive.getFullYear(), endDateExclusive.getMonth(), endDateExclusive.getDate() - 1);
+  const hasGlobalAccess = hasGlobalSalesAccess(currentUser);
+  const branchScope = hasGlobalAccess
+    ? {}
+    : currentUser.branchId
+      ? { branchId: currentUser.branchId }
+      : { branchId: "__no_branch__" };
 
   const [reconciliations, invoices] = await Promise.all([
     prisma.dailyReconciliation.findMany({
@@ -78,6 +85,7 @@ export default async function ReconciliationOverviewPage({
           gte: startDate,
           lt: endDateExclusive,
         },
+        ...branchScope,
       },
       include: {
         salesman: {
@@ -96,6 +104,7 @@ export default async function ReconciliationOverviewPage({
           gte: startDate,
           lt: endDateExclusive,
         },
+        ...branchScope,
       },
       select: {
         salesmanId: true,

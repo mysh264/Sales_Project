@@ -159,10 +159,9 @@ export async function createOrder(formData: FormData) {
         },
       });
 
-      const priceRule =
-        product.priceRules.find((rule) => rule.branchId === branchRow.id) ?? product.priceRules[0];
+      const priceRule = product.priceRules.find((rule) => rule.branchId === branchRow.id);
       if (!priceRule) {
-        throw new Error(`No price rule is configured for ${product.name}.`);
+        throw new Error(`No active price rule is configured for ${product.name} in ${branchRow.name}.`);
       }
 
       if (fullQty > 0 && (unitPrice.lessThan(priceRule.minPrice) || unitPrice.greaterThan(priceRule.maxPrice))) {

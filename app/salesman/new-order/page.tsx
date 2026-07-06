@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { createOrder } from "@/app/actions/sales";
 import { buildInvoiceSerial } from "@/lib/invoice";
 import { prisma } from "@/lib/prisma";
-import { getCurrentUser } from "@/lib/session";
+import { getCurrentUser, hasGlobalSalesAccess } from "@/lib/session";
 import { NewInvoiceForm } from "./NewInvoiceForm";
 
 export const dynamic = "force-dynamic";
@@ -20,14 +20,23 @@ export default async function NewOrderPage({ searchParams }: NewOrderPageProps) 
     redirect("/login");
   }
   const branchId = salesman.branchId;
+  const hasGlobalAccess = hasGlobalSalesAccess(salesman);
 
   if (!branchId) {
     redirect("/login");
   }
 
+  const customerWhere = hasGlobalAccess ? {} : { branchId };
+  const debtWhere = hasGlobalAccess
+    ? { balanceAmount: { gt: 0 } }
+    : {
+        balanceAmount: { gt: 0 },
+        customer: { branchId },
+      };
+
   const [customers, products, customerDebtRows] = await Promise.all([
     prisma.customer.findMany({
-      where: { branchId },
+      where: customerWhere,
       orderBy: { name: "asc" },
     }),
     prisma.product.findMany({
@@ -41,10 +50,7 @@ export default async function NewOrderPage({ searchParams }: NewOrderPageProps) 
       orderBy: { name: "asc" },
     }),
     prisma.customerDebt.findMany({
-      where: {
-        balanceAmount: { gt: 0 },
-        customer: { branchId },
-      },
+      where: debtWhere,
       select: {
         customerId: true,
         balanceAmount: true,

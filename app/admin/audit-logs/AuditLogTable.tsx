@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment, useState } from "react";
-import { formatDateTimeDMY } from "@/lib/date-format";
+import { formatDateDMY } from "@/lib/date-format";
 
 type AuditUser = {
   fullName: string;
@@ -84,7 +84,7 @@ export function AuditLogTable({ logs }: AuditLogTableProps) {
                 <Fragment key={log.id}>
                   <tr className="align-top hover:bg-slate-50">
                     <td className="whitespace-nowrap px-4 py-3 font-semibold text-slate-700">
-                      {formatDateTimeDMY(log.timestamp)}
+                      {formatDateDMY(log.timestamp)}
                     </td>
                     <td className="px-4 py-3">
                       <div className="font-black text-slate-950">{log.user.fullName}</div>
