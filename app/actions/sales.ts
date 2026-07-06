@@ -68,7 +68,10 @@ export async function createOrder(formData: FormData) {
     const customerVatNumber = text(formData, "customerVatNumber");
     const invoiceSerial = text(formData, "invoiceSerial") || buildInvoiceSerial();
     const currency = text(formData, "currency") || branch?.defaultCurrency || "OMR";
-    const taxRate = decimalValue(formData, "taxRate", branch?.defaultTaxRate ?? new Prisma.Decimal(0));
+    const branchTaxRate = branch?.defaultTaxRate && branch.defaultTaxRate.greaterThan(0)
+      ? branch.defaultTaxRate
+      : new Prisma.Decimal("5.0000");
+    const taxRate = decimalValue(formData, "taxRate", branchTaxRate);
     const applyDebtCollection = text(formData, "applyDebtCollection") === "true";
     const requestedDebtCollection = moneyValue(formData, "debtCollectionAmount");
 

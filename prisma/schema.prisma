@@ -70,7 +70,7 @@ model Branch {
   code                String    @unique
   defaultCurrency     String    @default("OMR")
   defaultPhoneCode    String    @default("+968")
-  defaultTaxRate      Decimal   @default(0.0000) @db.Decimal(7, 4)
+  defaultTaxRate      Decimal   @default(5.0000) @db.Decimal(7, 4)
   company             Company   @relation(fields: [companyId], references: [id])
   parentBranch        Branch?   @relation("BranchWarehouses", fields: [parentBranchId], references: [id])
   warehouses          Branch[]  @relation("BranchWarehouses")

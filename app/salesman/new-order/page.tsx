@@ -80,6 +80,7 @@ export default async function NewOrderPage({ searchParams }: NewOrderPageProps) 
 
   const resolvedSearchParams = (await searchParams) ?? {};
   const errorMessage = typeof resolvedSearchParams.error === "string" ? resolvedSearchParams.error : "";
+  const defaultTaxRate = salesman.branch.defaultTaxRate.toNumber() > 0 ? salesman.branch.defaultTaxRate.toFixed(4) : "5.0000";
 
   return (
     <main className="min-h-screen bg-gray-50 px-4 py-5">
@@ -87,7 +88,7 @@ export default async function NewOrderPage({ searchParams }: NewOrderPageProps) 
         salesmanName={salesman.fullName}
         branchName={salesman.branch.name}
         defaultCurrency={salesman.branch.defaultCurrency}
-        defaultTaxRate={salesman.branch.defaultTaxRate.toFixed(4)}
+        defaultTaxRate={defaultTaxRate}
         invoiceSerial={buildInvoiceSerial()}
         action={createOrder}
         customers={customerData}

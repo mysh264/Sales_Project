@@ -94,7 +94,7 @@ async function main() {
       name: "Suhar Main Branch",
       defaultCurrency: "OMR",
       defaultPhoneCode: "+968",
-      defaultTaxRate: "0.0000",
+      defaultTaxRate: "5.0000",
     },
     create: {
       companyId: company.id,
@@ -102,7 +102,7 @@ async function main() {
       name: "Suhar Main Branch",
       defaultCurrency: "OMR",
       defaultPhoneCode: "+968",
-      defaultTaxRate: "0.0000",
+      defaultTaxRate: "5.0000",
     },
   });
 

@@ -303,7 +303,7 @@ export function NewInvoiceForm({
         </div>
       ) : null}
 
-      <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-8 lg:grid-cols-[minmax(320px,0.95fr)_minmax(0,1.55fr)]">
         <section className="flex flex-col gap-6">
           <section className="rounded-xl bg-white p-6 shadow-sm">
             <div className="flex items-start justify-between gap-3">
@@ -465,103 +465,107 @@ export function NewInvoiceForm({
             </div>
           </div>
 
-          <div className="mt-4 hidden grid-cols-[minmax(0,2.4fr)_repeat(3,minmax(0,1fr))_auto] gap-3 rounded-xl bg-slate-50 px-4 py-3 text-[11px] font-black uppercase tracking-wide text-slate-500 md:grid">
-            <div>Product</div>
-            <div className="text-center">Full</div>
-            <div className="text-center">Empty</div>
-            <div className="text-center">Unit Price</div>
-            <div className="text-right">Total</div>
-          </div>
+          <div className="mt-4 overflow-x-auto">
+            <div className="min-w-[920px]">
+              <div className="grid grid-cols-[minmax(280px,2.2fr)_minmax(140px,1fr)_minmax(140px,1fr)_minmax(140px,1fr)_minmax(120px,auto)] gap-3 rounded-xl bg-slate-50 px-4 py-3 text-sm font-black uppercase tracking-wide text-slate-500">
+                <div>Product</div>
+                <div className="whitespace-nowrap text-center">Delivered</div>
+                <div className="whitespace-nowrap text-center">Collected</div>
+                <div className="whitespace-nowrap text-center">Unit Price</div>
+                <div className="whitespace-nowrap text-right">Total</div>
+              </div>
 
-          <div className="mt-4 flex flex-col gap-4">
-            {productRows.map((row, index) => (
-              <article
-                key={row.id}
-                className={`rounded-xl border p-4 shadow-sm transition-colors ${
-                  row.productId || row.full || row.empty || row.price ? "border-green-200 bg-green-50/30" : "border-slate-200 bg-white"
-                }`}
-              >
-                <input type="hidden" name="rowProductId" value={row.productId} />
-                <input type="hidden" name="rowFull" value={row.full} />
-                <input type="hidden" name="rowEmpty" value={row.empty} />
-                <input type="hidden" name="rowPrice" value={row.price} />
-
-                <div className="grid grid-cols-1 gap-4">
-                  <label className="block">
-                    <span className="text-sm font-black text-slate-700">Product Name</span>
-                    <select
-                      value={row.productId}
-                      onChange={(event) => updateRow(row.id, { productId: event.target.value })}
-                      className={`mt-2 h-12 ${fieldClass(row.productId)}`}
-                    >
-                      {products.map((product) => (
-                        <option key={product.id} value={product.id}>
-                          {product.name} {product.cylinderSize}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-
-                  <div className="grid grid-cols-1 gap-3 md:grid-cols-[repeat(3,minmax(0,1fr))_auto] md:items-end">
-                    <label className="block">
-                      <span className="text-[11px] font-black uppercase tracking-wide text-slate-500 md:hidden">Full Cylinders Delivered</span>
-                      <input
-                        type="number"
-                        min="0"
-                        value={row.full}
-                        onChange={(event) => updateRow(row.id, { full: event.target.value })}
-                        className={`mt-2 h-14 text-center text-2xl ${fieldClass(row.full)}`}
-                      />
-                    </label>
-
-                    <label className="block">
-                      <span className="text-[11px] font-black uppercase tracking-wide text-slate-500 md:hidden">Empty Cylinders Collected</span>
-                      <input
-                        type="number"
-                        min="0"
-                        value={row.empty}
-                        onChange={(event) => updateRow(row.id, { empty: event.target.value })}
-                        className={`mt-2 h-14 text-center text-2xl ${fieldClass(row.empty)}`}
-                      />
-                    </label>
-
-                    <label className="block">
-                      <span className="text-[11px] font-black uppercase tracking-wide text-slate-500 md:hidden">Unit Price</span>
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.001"
-                        value={row.price}
-                        onChange={(event) => updateRow(row.id, { price: event.target.value })}
-                        className={`mt-2 h-14 text-center text-2xl ${fieldClass(row.price)}`}
-                      />
-                    </label>
-
-                    <div className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 px-4 py-3 md:min-h-14 md:self-end">
-                      <div>
-                        <p className="text-[11px] font-black uppercase tracking-wide text-slate-500 md:hidden">Item Total</p>
-                        <p className="text-xs font-bold text-slate-500">Row Total</p>
-                      </div>
-                      <p className="text-2xl font-black text-slate-950">{formatOmr(lineItems[index]?.itemTotal ?? 0)}</p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="mt-4 flex items-center justify-between gap-3">
-                  <p className="text-xs font-bold text-slate-500">
-                    Default range: {products.find((product) => product.id === row.productId)?.minPrice ?? "0.000"} -{" "}
-                    {products.find((product) => product.id === row.productId)?.maxPrice ?? "0.000"} OMR
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => removeRow(row.id)}
-                    className="rounded-lg bg-slate-200 px-3 py-2 text-xs font-black text-slate-700"
+              <div className="mt-4 flex flex-col gap-4">
+                {productRows.map((row, index) => (
+                  <article
+                    key={row.id}
+                    className={`rounded-xl border p-4 shadow-sm transition-colors ${
+                      row.productId || row.full || row.empty || row.price ? "border-green-200 bg-green-50/30" : "border-slate-200 bg-white"
+                    }`}
                   >
-                    Remove
-                  </button>
-                </div>
-              </article>
-            ))}
+                    <input type="hidden" name="rowProductId" value={row.productId} />
+                    <input type="hidden" name="rowFull" value={row.full} />
+                    <input type="hidden" name="rowEmpty" value={row.empty} />
+                    <input type="hidden" name="rowPrice" value={row.price} />
+
+                    <div className="grid grid-cols-1 gap-4">
+                      <label className="block">
+                        <span className="text-sm font-black text-slate-700">Product Name</span>
+                        <select
+                          value={row.productId}
+                          onChange={(event) => updateRow(row.id, { productId: event.target.value })}
+                          className={`mt-2 h-12 ${fieldClass(row.productId)}`}
+                        >
+                          {products.map((product) => (
+                            <option key={product.id} value={product.id}>
+                              {product.name} {product.cylinderSize}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+
+                      <div className="grid grid-cols-1 gap-3 md:grid-cols-[repeat(3,minmax(0,1fr))_auto] md:items-end">
+                        <label className="block">
+                          <span className="text-[11px] font-black uppercase tracking-wide text-slate-500 md:hidden">Full Cylinders Delivered</span>
+                          <input
+                            type="number"
+                            min="0"
+                            value={row.full}
+                            onChange={(event) => updateRow(row.id, { full: event.target.value })}
+                            className={`mt-2 h-14 text-center text-2xl ${fieldClass(row.full)}`}
+                          />
+                        </label>
+
+                        <label className="block">
+                          <span className="text-[11px] font-black uppercase tracking-wide text-slate-500 md:hidden">Empty Cylinders Collected</span>
+                          <input
+                            type="number"
+                            min="0"
+                            value={row.empty}
+                            onChange={(event) => updateRow(row.id, { empty: event.target.value })}
+                            className={`mt-2 h-14 text-center text-2xl ${fieldClass(row.empty)}`}
+                          />
+                        </label>
+
+                        <label className="block">
+                          <span className="text-[11px] font-black uppercase tracking-wide text-slate-500 md:hidden">Unit Price</span>
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.001"
+                            value={row.price}
+                            onChange={(event) => updateRow(row.id, { price: event.target.value })}
+                            className={`mt-2 h-14 text-center text-2xl ${fieldClass(row.price)}`}
+                          />
+                        </label>
+
+                        <div className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 px-4 py-3 md:min-h-14 md:self-end">
+                          <div>
+                            <p className="text-[11px] font-black uppercase tracking-wide text-slate-500 md:hidden">Item Total</p>
+                            <p className="text-xs font-bold text-slate-500">Row Total</p>
+                          </div>
+                          <p className="text-2xl font-black text-slate-950">{formatOmr(lineItems[index]?.itemTotal ?? 0)}</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="mt-4 flex items-center justify-between gap-3">
+                      <p className="text-xs font-bold text-slate-500">
+                        Default range: {products.find((product) => product.id === row.productId)?.minPrice ?? "0.000"} -{" "}
+                        {products.find((product) => product.id === row.productId)?.maxPrice ?? "0.000"} OMR
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => removeRow(row.id)}
+                        className="rounded-lg bg-slate-200 px-3 py-2 text-xs font-black text-slate-700"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </div>
           </div>
 
           <div className="mt-5 flex justify-end">
