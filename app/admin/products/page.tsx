@@ -25,10 +25,9 @@ export default async function AdminProductsPage({ searchParams }: ProductsPagePr
 
   const params = (await searchParams) ?? {};
 
-  const [products, branches, productToEdit] = await Promise.all([
+  const [products, productToEdit] = await Promise.all([
     prisma.product.findMany({
       include: {
-        branch: true,
         priceRules: {
           where: { endsAt: null },
           orderBy: { startsAt: "desc" },
@@ -37,14 +36,7 @@ export default async function AdminProductsPage({ searchParams }: ProductsPagePr
       },
       orderBy: [{ isActive: "desc" }, { name: "asc" }],
     }),
-    prisma.branch.findMany({
-      orderBy: { name: "asc" },
-    }),
-    params.editId
-      ? prisma.product.findUnique({
-          where: { id: params.editId },
-        })
-      : Promise.resolve(null),
+    params.editId ? prisma.product.findUnique({ where: { id: params.editId } }) : Promise.resolve(null),
   ]);
 
   const activeCount = products.filter((product) => product.isActive).length;
@@ -89,27 +81,10 @@ export default async function AdminProductsPage({ searchParams }: ProductsPagePr
           <section className="rounded-lg border border-slate-200 bg-white shadow-sm">
             <div className="border-b border-slate-200 px-4 py-3">
               <h2 className="text-lg font-black text-slate-950">{productToEdit ? "Edit Product" : "Add Product"}</h2>
+              <p className="mt-1 text-xs font-bold text-slate-500">Products are global and visible to every branch.</p>
             </div>
             <form action={saveProduct} className="grid grid-cols-1 gap-4 p-4 md:grid-cols-2">
               {productToEdit ? <input type="hidden" name="productId" value={productToEdit.id} /> : null}
-              <label className="block">
-                <span className="text-sm font-black text-slate-700">Branch</span>
-                <select
-                  name="branchId"
-                  required
-                  defaultValue={productToEdit?.branchId ?? branches[0]?.id ?? ""}
-                  className="mt-1 h-11 w-full rounded border border-slate-300 px-3 text-sm font-bold"
-                >
-                  <option value="" disabled>
-                    Select branch
-                  </option>
-                  {branches.map((branch) => (
-                    <option key={branch.id} value={branch.id}>
-                      {branch.code} · {branch.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
               <label className="block">
                 <span className="text-sm font-black text-slate-700">SKU</span>
                 <input
@@ -184,25 +159,34 @@ export default async function AdminProductsPage({ searchParams }: ProductsPagePr
                 <thead className="bg-slate-100 text-xs font-black uppercase tracking-wide text-slate-600">
                   <tr>
                     <th className="px-4 py-2">Product</th>
-                    <th className="px-4 py-2">Branch</th>
+                    <th className="px-4 py-2">Visibility</th>
                     <th className="px-4 py-2">SKU</th>
-                  <th className="px-4 py-2">Type</th>
-                  <th className="px-4 py-2">Size / Pressure</th>
-                  <th className="px-4 py-2">Status</th>
-                  <th className="px-4 py-2">Price Rule</th>
-                  <th className="px-4 py-2 text-right">Actions</th>
-                </tr>
-              </thead>
+                    <th className="px-4 py-2">Type</th>
+                    <th className="px-4 py-2">Size / Pressure</th>
+                    <th className="px-4 py-2">Status</th>
+                    <th className="px-4 py-2">Price Rule</th>
+                    <th className="px-4 py-2 text-right">Actions</th>
+                  </tr>
+                </thead>
               <tbody className="divide-y divide-slate-200">
                 {products.map((product) => {
                   const rule = product.priceRules[0];
+                  const visibility = product.branchId ? "Legacy branch-limited" : "Global";
                   return (
                     <tr key={product.id} className="hover:bg-slate-50">
                       <td className="px-4 py-2">
                         <p className="font-black text-slate-950">{product.name}</p>
                         <p className="text-xs font-bold text-slate-500">{product.id}</p>
                       </td>
-                      <td className="whitespace-nowrap px-4 py-2 font-bold text-slate-700">{product.branch?.code ?? "No Branch"}</td>
+                      <td className="px-4 py-2">
+                        <span
+                          className={`rounded px-2 py-1 text-xs font-black uppercase ${
+                            product.branchId ? "bg-amber-100 text-amber-800" : "bg-green-100 text-green-800"
+                          }`}
+                        >
+                          {visibility}
+                        </span>
+                      </td>
                       <td className="whitespace-nowrap px-4 py-2 font-mono text-xs text-slate-500">{product.sku}</td>
                       <td className="px-4 py-2 font-bold text-slate-700">{product.gasType}</td>
                       <td className="px-4 py-2 font-bold text-slate-700">
@@ -266,7 +250,7 @@ export default async function AdminProductsPage({ searchParams }: ProductsPagePr
             </table>
           </div>
         </section>
-        </div>
+      </div>
       </div>
     </main>
   );

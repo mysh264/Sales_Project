@@ -247,6 +247,10 @@ async function main() {
     },
   });
 
+  const branches = await prisma.branch.findMany({
+    orderBy: { code: "asc" },
+  });
+
   const roleRecords: Record<UserRole, string> = {} as Record<UserRole, string>;
 
   for (const role of Object.values(UserRole)) {
@@ -268,7 +272,7 @@ async function main() {
     const product = await prisma.product.upsert({
       where: { sku: item.sku },
       update: {
-        branchId: branch.id,
+        branchId: null,
         name: item.name,
         gasType: item.gasType,
         cylinderSize: item.cylinderSize,
@@ -276,7 +280,7 @@ async function main() {
         isActive: true,
       },
       create: {
-        branchId: branch.id,
+        branchId: null,
         sku: item.sku,
         name: item.name,
         gasType: item.gasType,
@@ -286,25 +290,27 @@ async function main() {
       },
     });
 
-    const existingRule = await prisma.productPriceRule.findFirst({
-      where: { branchId: branch.id, productId: product.id, endsAt: null },
-    });
+    for (const targetBranch of branches) {
+      const existingRule = await prisma.productPriceRule.findFirst({
+        where: { branchId: targetBranch.id, productId: product.id, endsAt: null },
+      });
 
-    if (existingRule) {
-      await prisma.productPriceRule.update({
-        where: { id: existingRule.id },
-        data: { currency: "OMR", minPrice: item.minPrice, maxPrice: item.maxPrice },
-      });
-    } else {
-      await prisma.productPriceRule.create({
-        data: {
-          branchId: branch.id,
-          productId: product.id,
-          currency: "OMR",
-          minPrice: item.minPrice,
-          maxPrice: item.maxPrice,
-        },
-      });
+      if (existingRule) {
+        await prisma.productPriceRule.update({
+          where: { id: existingRule.id },
+          data: { currency: "OMR", minPrice: item.minPrice, maxPrice: item.maxPrice },
+        });
+      } else {
+        await prisma.productPriceRule.create({
+          data: {
+            branchId: targetBranch.id,
+            productId: product.id,
+            currency: "OMR",
+            minPrice: item.minPrice,
+            maxPrice: item.maxPrice,
+          },
+        });
+      }
     }
 
     await prisma.inventoryBalance.upsert({

@@ -151,14 +151,14 @@ export async function createOrder(formData: FormData) {
         where: { id: productId },
         include: {
           priceRules: {
-            where: { branchId: branchRow.id, endsAt: null },
+            where: { endsAt: null },
             orderBy: { startsAt: "desc" },
-            take: 1,
           },
         },
       });
 
-      const priceRule = product.priceRules[0];
+      const priceRule =
+        product.priceRules.find((rule) => rule.branchId === branchRow.id) ?? product.priceRules[0];
       if (!priceRule) {
         throw new Error(`No price rule is configured for ${product.name}.`);
       }

@@ -16,17 +16,8 @@ function normalizeSku(value: string) {
   return value.toUpperCase().replace(/[^A-Z0-9]+/g, "-").replace(/^-+|-+$/g, "");
 }
 
-async function requireBranch(branchId: string) {
-  if (!branchId) {
-    throw new Error("Branch is required.");
-  }
-
-  await prisma.branch.findUniqueOrThrow({ where: { id: branchId } });
-}
-
 export async function saveProduct(formData: FormData) {
   const productId = text(formData, "productId") || null;
-  const branchId = text(formData, "branchId");
   const sku = normalizeSku(text(formData, "sku"));
   const name = text(formData, "name");
   const gasType = text(formData, "gasType");
@@ -38,7 +29,6 @@ export async function saveProduct(formData: FormData) {
     throw new Error("Name, gas type, and cylinder size are required.");
   }
 
-  await requireBranch(branchId);
   await requirePermission(Permissions.PRODUCT_MANAGE);
 
   await prisma.$transaction(async (tx) => {
@@ -50,7 +40,7 @@ export async function saveProduct(formData: FormData) {
       const updated = await tx.product.update({
         where: { id: productId },
         data: {
-          branchId,
+          branchId: null,
           sku: sku || existing.sku,
           name,
           gasType,
@@ -76,7 +66,7 @@ export async function saveProduct(formData: FormData) {
 
       const created = await tx.product.create({
         data: {
-          branchId,
+          branchId: null,
           sku,
           name,
           gasType,
@@ -137,4 +127,3 @@ export async function toggleProductStatus(formData: FormData) {
   revalidatePath("/admin");
   revalidatePath("/admin-console");
 }
-

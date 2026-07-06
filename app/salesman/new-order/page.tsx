@@ -31,12 +31,11 @@ export default async function NewOrderPage({ searchParams }: NewOrderPageProps) 
       orderBy: { name: "asc" },
     }),
     prisma.product.findMany({
-      where: { branchId, isActive: true },
+      where: { isActive: true },
       include: {
         priceRules: {
-          where: { branchId, endsAt: null },
           orderBy: { startsAt: "desc" },
-          take: 1,
+          where: { endsAt: null },
         },
       },
       orderBy: { name: "asc" },
@@ -58,9 +57,18 @@ export default async function NewOrderPage({ searchParams }: NewOrderPageProps) 
     name: product.name,
     cylinderSize: product.cylinderSize,
     pressure: product.pressure,
-    minPrice: product.priceRules[0]?.minPrice.toFixed(3) ?? "0.000",
-    maxPrice: product.priceRules[0]?.maxPrice.toFixed(3) ?? "0.000",
-    defaultPrice: product.priceRules[0]?.minPrice.toFixed(3) ?? "0.000",
+    minPrice:
+      product.priceRules.find((rule) => rule.branchId === branchId)?.minPrice.toFixed(3) ??
+      product.priceRules[0]?.minPrice.toFixed(3) ??
+      "0.000",
+    maxPrice:
+      product.priceRules.find((rule) => rule.branchId === branchId)?.maxPrice.toFixed(3) ??
+      product.priceRules[0]?.maxPrice.toFixed(3) ??
+      "0.000",
+    defaultPrice:
+      product.priceRules.find((rule) => rule.branchId === branchId)?.minPrice.toFixed(3) ??
+      product.priceRules[0]?.minPrice.toFixed(3) ??
+      "0.000",
   }));
 
   const customerData = customers.map((customer) => ({
