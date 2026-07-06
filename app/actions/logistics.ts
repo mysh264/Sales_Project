@@ -269,7 +269,7 @@ export async function recordEveningReconcile(salesmanId: string, reconciledList:
       reconciliation.items.map((item) => [item.productId, item]),
     );
 
-    for (const row of normalizedList) {
+    const normalizedRows = normalizedList.map((row) => {
       const item = itemMap.get(row.productId);
 
       if (!item) {
@@ -281,8 +281,22 @@ export async function recordEveningReconcile(salesmanId: string, reconciledList:
         throw new Error("Returned full cylinders cannot exceed morning load.");
       }
 
-      if (row.eveningReturnedEmpty !== soldFull) {
-        throw new Error("Empty return must match sold count for each product.");
+      return {
+        ...row,
+        eveningReturnedEmpty: soldFull,
+      };
+    });
+
+    for (const row of normalizedRows) {
+      const item = itemMap.get(row.productId);
+
+      if (!item) {
+        throw new Error("Evening reconciliation must include the morning load products.");
+      }
+
+      const soldFull = item.morningFull - row.eveningReturnedFull;
+      if (soldFull < 0) {
+        throw new Error("Returned full cylinders cannot exceed morning load.");
       }
     }
 
@@ -296,7 +310,7 @@ export async function recordEveningReconcile(salesmanId: string, reconciledList:
       },
     });
 
-    for (const row of reconciledList) {
+    for (const row of normalizedRows) {
       const currentItem = itemMap.get(row.productId)!;
       const updatedItem = await tx.dailyReconciliationItem.update({
         where: {
