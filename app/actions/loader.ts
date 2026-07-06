@@ -77,6 +77,27 @@ function normalizeProductRows<T extends { productId: string; morningFull: number
   return [...ordered.values()];
 }
 
+function canHandleRoute(
+  currentUser: {
+    role: string;
+    branchId: string | null;
+    hasGlobalAccess?: boolean | null;
+  },
+  salesman: {
+    branchId: string | null;
+  },
+) {
+  if (currentUser.role === "ADMIN" || currentUser.hasGlobalAccess) {
+    return true;
+  }
+
+  if (!currentUser.branchId || !salesman.branchId) {
+    return true;
+  }
+
+  return currentUser.branchId === salesman.branchId;
+}
+
 async function resolveSalesmanContext(salesmanId: string) {
   const salesman = await prisma.user.findUnique({
     where: { id: salesmanId },
@@ -118,7 +139,7 @@ export async function processMorningLoad(formData: FormData) {
   const { user: currentUser } = await requirePermission(Permissions.Logistics_Update);
   const salesman = await resolveSalesmanContext(salesmanId);
 
-  if (currentUser.role !== "ADMIN" && currentUser.branchId !== salesman.branchId) {
+  if (!canHandleRoute(currentUser, salesman)) {
     throw new Error("You can only hand off routes within your own branch.");
   }
 
@@ -236,7 +257,7 @@ export async function processEveningReturn(formData: FormData) {
   const { user: currentUser } = await requirePermission(Permissions.Logistics_Update);
   const salesman = await resolveSalesmanContext(salesmanId);
 
-  if (currentUser.role !== "ADMIN" && currentUser.branchId !== salesman.branchId) {
+  if (!canHandleRoute(currentUser, salesman)) {
     throw new Error("You can only close routes within your own branch.");
   }
 

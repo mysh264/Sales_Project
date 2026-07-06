@@ -5,7 +5,7 @@ import { ReconciliationWorkbench } from "./ReconciliationWorkbench";
 import { formatDateDMY } from "@/lib/date-format";
 import { Permissions } from "@/lib/permissions";
 import { checkPermission } from "@/lib/permission-guard";
-import { getCurrentUser } from "@/lib/session";
+import { getCurrentUser, hasGlobalSalesAccess } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -39,8 +39,11 @@ export default async function LogisticsReconciliationPage({ searchParams }: Reco
   }
 
   const params = (await searchParams) ?? {};
-  const branchId = currentUser.branchId ?? undefined;
-  const filter = branchId ? { branchId } : {};
+  const filter = hasGlobalSalesAccess(currentUser)
+    ? {}
+    : currentUser.branchId
+      ? { branchId: currentUser.branchId }
+      : {};
 
   const [salesmen, products] = await Promise.all([
     prisma.user.findMany({
