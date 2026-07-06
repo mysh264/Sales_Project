@@ -220,6 +220,7 @@ export function NewInvoiceForm({
   const remainingBalance = useMemo(() => Math.max(invoiceTotal - paidAmount, 0), [invoiceTotal, paidAmount]);
   const balancePaidInFull = remainingBalance === 0 && invoiceTotal > 0;
   const balanceTone = balancePaidInFull ? "bg-green-50 text-green-800 border-green-200" : "bg-red-50 text-red-800 border-red-200";
+  const hasDebt = remainingBalance > 0;
 
   const selectedCustomerName = selectedCustomer?.name || customerQuery;
   const selectedCustomerPhone = selectedCustomer?.phone || customerDraft.phone;
@@ -554,6 +555,15 @@ export function NewInvoiceForm({
             </p>
           </div>
 
+          {hasDebt ? (
+            <div className="rounded-lg border-2 border-amber-400 bg-amber-200 px-4 py-4 text-amber-950">
+              <p className="text-sm font-black uppercase tracking-wide">Debt Warning</p>
+              <p className="mt-2 text-lg font-black leading-tight md:text-xl">
+                Warning: Payment is incomplete. {formatOmr(remainingBalance)} will be recorded as Customer Debt.
+              </p>
+            </div>
+          ) : null}
+
           <div className="flex flex-col gap-3">
             <label className="flex items-center gap-3">
               <input
@@ -660,7 +670,7 @@ export function NewInvoiceForm({
           type="submit"
           className="h-20 w-full rounded-lg bg-success px-4 text-2xl font-black text-white shadow-xl active:scale-[0.99]"
         >
-          Save Invoice & Print
+          {hasDebt ? "Save & Record Debt" : "Save Invoice & Print"}
         </button>
         <Link
           href="/salesman"

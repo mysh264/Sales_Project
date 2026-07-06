@@ -1,6 +1,6 @@
 "use server";
 
-import { CylinderMovementType, InvoiceStatus, PaymentMethod, Prisma } from "@prisma/client";
+import { CylinderMovementType, DebtStatus, InvoiceStatus, PaymentMethod, Prisma } from "@prisma/client";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { revalidatePath } from "next/cache";
@@ -252,6 +252,7 @@ export async function createOrder(formData: FormData) {
           invoiceId: createdInvoice.id,
           originalAmount: debtAmount,
           balanceAmount: debtAmount,
+          status: paidAmount.greaterThan(0) ? DebtStatus.PARTIALLY_PAID : DebtStatus.OPEN,
         },
       });
     }
