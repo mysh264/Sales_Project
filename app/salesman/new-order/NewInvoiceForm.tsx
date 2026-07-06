@@ -51,6 +51,20 @@ function makeId() {
   return globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2);
 }
 
+function toNumber(value: string) {
+  const parsed = Number.parseFloat(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function formatOmr(value: number) {
+  return new Intl.NumberFormat("en-OM", {
+    style: "currency",
+    currency: "OMR",
+    minimumFractionDigits: 3,
+    maximumFractionDigits: 3,
+  }).format(value);
+}
+
 export function NewInvoiceForm({
   salesmanName,
   branchName,
@@ -72,8 +86,12 @@ export function NewInvoiceForm({
     vatNumber: "",
   });
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [invoiceSerialValue, setInvoiceSerialValue] = useState(invoiceSerial);
   const [currency, setCurrency] = useState(defaultCurrency);
   const [taxRate, setTaxRate] = useState(defaultTaxRate);
+  const [cashAmount, setCashAmount] = useState("");
+  const [checkAmount, setCheckAmount] = useState("");
+  const [transferAmount, setTransferAmount] = useState("");
   const [useCheck, setUseCheck] = useState(false);
   const [useTransfer, setUseTransfer] = useState(false);
   const [productRows, setProductRows] = useState<ProductRow[]>(
@@ -172,6 +190,37 @@ export function NewInvoiceForm({
     setProductRows((current) => (current.length > 1 ? current.filter((row) => row.id !== id) : current));
   }
 
+  const lineItems = useMemo(() => {
+    return productRows.map((row) => {
+      const product = products.find((item) => item.id === row.productId);
+      const fullCount = toNumber(row.full);
+      const emptyCount = toNumber(row.empty);
+      const unitPrice = toNumber(row.price);
+      const itemTotal = fullCount * unitPrice;
+
+      return {
+        ...row,
+        product,
+        fullCount,
+        emptyCount,
+        unitPrice,
+        itemTotal,
+      };
+    });
+  }, [productRows, products]);
+
+  const itemsSubtotal = useMemo(() => lineItems.reduce((sum, item) => sum + item.itemTotal, 0), [lineItems]);
+  const vatRateValue = useMemo(() => toNumber(taxRate), [taxRate]);
+  const vatAmount = useMemo(() => itemsSubtotal * vatRateValue, [itemsSubtotal, vatRateValue]);
+  const invoiceTotal = useMemo(() => itemsSubtotal + vatAmount, [itemsSubtotal, vatAmount]);
+  const paidAmount = useMemo(
+    () => toNumber(cashAmount) + (useCheck ? toNumber(checkAmount) : 0) + (useTransfer ? toNumber(transferAmount) : 0),
+    [cashAmount, checkAmount, transferAmount, useCheck, useTransfer],
+  );
+  const remainingBalance = useMemo(() => Math.max(invoiceTotal - paidAmount, 0), [invoiceTotal, paidAmount]);
+  const balancePaidInFull = remainingBalance === 0 && invoiceTotal > 0;
+  const balanceTone = balancePaidInFull ? "bg-green-50 text-green-800 border-green-200" : "bg-red-50 text-red-800 border-red-200";
+
   const selectedCustomerName = selectedCustomer?.name || customerQuery;
   const selectedCustomerPhone = selectedCustomer?.phone || customerDraft.phone;
   const selectedCustomerAddress = selectedCustomer?.address || customerDraft.address;
@@ -179,7 +228,7 @@ export function NewInvoiceForm({
 
   return (
     <form action={action} encType="multipart/form-data" className="mx-auto flex max-w-7xl flex-col gap-6">
-      <input type="hidden" name="invoiceSerial" value={invoiceSerial} />
+      <input type="hidden" name="invoiceSerial" value={invoiceSerialValue} />
       <input type="hidden" name="customerId" value={selectedCustomer?.id === "new" ? "" : selectedCustomer?.id ?? ""} />
       <input type="hidden" name="customerName" value={selectedCustomerName} />
       <input type="hidden" name="customerPhone" value={selectedCustomerPhone} />
@@ -302,14 +351,14 @@ export function NewInvoiceForm({
               <label className="block">
                 <span className="text-sm font-black text-slate-700">Invoice Serial</span>
                 <input
-                  value={invoiceSerial}
+                  value={invoiceSerialValue}
                   readOnly
                   className="mt-2 h-12 w-full rounded-lg border border-slate-300 bg-slate-50 px-3 text-sm font-black text-slate-900"
                 />
               </label>
 
               {showAdvanced ? (
-                <div className="grid grid-cols-1 gap-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
+                <div className="grid grid-cols-1 gap-4 rounded-lg border border-slate-200 bg-slate-50 p-4 md:grid-cols-3">
                   <label className="block">
                     <span className="text-sm font-black text-slate-700">Currency</span>
                     <select
@@ -333,6 +382,15 @@ export function NewInvoiceForm({
                       className="mt-2 h-12 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm font-black text-slate-900"
                     />
                   </label>
+                  <label className="block md:col-span-1">
+                    <span className="text-sm font-black text-slate-700">Invoice Serial Override</span>
+                    <input
+                      type="text"
+                      value={invoiceSerialValue}
+                      onChange={(event) => setInvoiceSerialValue(event.target.value)}
+                      className="mt-2 h-12 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm font-black text-slate-900"
+                    />
+                  </label>
                 </div>
               ) : null}
             </div>
@@ -350,6 +408,15 @@ export function NewInvoiceForm({
             </button>
           </div>
 
+          <div className="mt-4 hidden grid-cols-6 gap-3 rounded-lg bg-slate-50 px-4 py-3 text-xs font-black uppercase tracking-wide text-slate-500 md:grid">
+            <div>Product Name</div>
+            <div>Full Cylinders Delivered</div>
+            <div>Empty Cylinders Collected</div>
+            <div>Unit Price</div>
+            <div>Item Total</div>
+            <div className="text-right">Actions</div>
+          </div>
+
           <div className="mt-4 flex flex-col gap-3">
             {productRows.map((row, index) => (
               <article key={row.id} className="rounded-lg border border-slate-200 p-4">
@@ -358,13 +425,13 @@ export function NewInvoiceForm({
                 <input type="hidden" name="rowEmpty" value={row.empty} />
                 <input type="hidden" name="rowPrice" value={row.price} />
 
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-xs font-black uppercase tracking-wide text-slate-500">Item {index + 1}</p>
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-6 md:items-end">
+                  <label className="block">
+                    <span className="text-sm font-black text-slate-700 md:hidden">Product Name</span>
                     <select
                       value={row.productId}
                       onChange={(event) => updateRow(row.id, { productId: event.target.value })}
-                      className="mt-2 h-12 w-full rounded-lg border border-slate-300 px-3 text-sm font-black text-slate-900"
+                      className="mt-2 h-12 w-full rounded-lg border border-slate-300 px-3 text-sm font-black text-slate-900 md:mt-0"
                     >
                       {products.map((product) => (
                         <option key={product.id} value={product.id}>
@@ -372,48 +439,56 @@ export function NewInvoiceForm({
                         </option>
                       ))}
                     </select>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => removeRow(row.id)}
-                    className="rounded bg-slate-200 px-3 py-2 text-xs font-black text-slate-700"
-                  >
-                    Remove
-                  </button>
-                </div>
+                  </label>
 
-                <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
                   <label className="block">
-                    <span className="text-sm font-black text-slate-700">Qty Full</span>
+                    <span className="text-sm font-black text-slate-700 md:hidden">Full Cylinders Delivered</span>
                     <input
                       type="number"
                       min="0"
                       value={row.full}
                       onChange={(event) => updateRow(row.id, { full: event.target.value })}
-                      className="mt-2 h-14 w-full rounded-lg border-2 border-slate-300 px-3 text-center text-2xl font-black outline-none focus:border-green-700"
+                      className="mt-2 h-14 w-full rounded-lg border-2 border-slate-300 px-3 text-center text-2xl font-black outline-none focus:border-green-700 md:mt-0"
                     />
                   </label>
+
                   <label className="block">
-                    <span className="text-sm font-black text-slate-700">Qty Empty</span>
+                    <span className="text-sm font-black text-slate-700 md:hidden">Empty Cylinders Collected</span>
                     <input
                       type="number"
                       min="0"
                       value={row.empty}
                       onChange={(event) => updateRow(row.id, { empty: event.target.value })}
-                      className="mt-2 h-14 w-full rounded-lg border-2 border-slate-300 px-3 text-center text-2xl font-black outline-none focus:border-orange-700"
+                      className="mt-2 h-14 w-full rounded-lg border-2 border-slate-300 px-3 text-center text-2xl font-black outline-none focus:border-orange-700 md:mt-0"
                     />
                   </label>
+
                   <label className="block">
-                    <span className="text-sm font-black text-slate-700">Unit Price</span>
+                    <span className="text-sm font-black text-slate-700 md:hidden">Unit Price</span>
                     <input
                       type="number"
                       min="0"
                       step="0.001"
                       value={row.price}
                       onChange={(event) => updateRow(row.id, { price: event.target.value })}
-                      className="mt-2 h-14 w-full rounded-lg border-2 border-slate-300 px-3 text-center text-2xl font-black outline-none focus:border-slate-950"
+                      className="mt-2 h-14 w-full rounded-lg border-2 border-slate-300 px-3 text-center text-2xl font-black outline-none focus:border-slate-950 md:mt-0"
                     />
                   </label>
+
+                  <div className="rounded-lg bg-slate-50 px-3 py-3 text-right">
+                    <p className="text-xs font-black uppercase tracking-wide text-slate-500 md:hidden">Item Total</p>
+                    <p className="text-2xl font-black text-slate-950">{formatOmr(lineItems[index]?.itemTotal ?? 0)}</p>
+                  </div>
+
+                  <div className="flex items-end md:justify-end">
+                    <button
+                      type="button"
+                      onClick={() => removeRow(row.id)}
+                      className="rounded bg-slate-200 px-3 py-2 text-xs font-black text-slate-700"
+                    >
+                      Remove
+                    </button>
+                  </div>
                 </div>
 
                 <p className="mt-3 text-xs font-bold text-slate-500">
@@ -422,6 +497,23 @@ export function NewInvoiceForm({
                 </p>
               </article>
             ))}
+          </div>
+
+          <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+              <div>
+                <p className="text-xs font-black uppercase tracking-wide text-slate-500">Items Subtotal</p>
+                <p className="mt-1 text-2xl font-black text-slate-950">{formatOmr(itemsSubtotal)}</p>
+              </div>
+              <div>
+                <p className="text-xs font-black uppercase tracking-wide text-slate-500">VAT</p>
+                <p className="mt-1 text-2xl font-black text-slate-950">{formatOmr(vatAmount)}</p>
+              </div>
+              <div>
+                <p className="text-xs font-black uppercase tracking-wide text-slate-500">Invoice Total</p>
+                <p className="mt-1 text-3xl font-black text-slate-950">{formatOmr(invoiceTotal)}</p>
+              </div>
+            </div>
           </div>
         </section>
       </div>
@@ -434,7 +526,7 @@ export function NewInvoiceForm({
           </div>
         </div>
 
-        <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+        <div className="mt-4 grid grid-cols-1 gap-4">
           <label className="block">
             <span className="text-sm font-black text-slate-700">Cash Amount</span>
             <input
@@ -444,11 +536,25 @@ export function NewInvoiceForm({
               step="0.001"
               inputMode="decimal"
               placeholder="0.000"
+              value={cashAmount}
+              onChange={(event) => setCashAmount(event.target.value)}
               className="mt-2 h-16 w-full rounded-lg border-2 border-slate-300 px-4 text-2xl font-black outline-none focus:border-green-700"
             />
           </label>
 
-          <div className="rounded-lg border border-slate-200 p-4">
+          <div
+            className={`rounded-lg border px-4 py-4 text-center text-2xl font-black ${
+              balanceTone
+            }`}
+          >
+            <p className="text-xs font-black uppercase tracking-wide opacity-80">Remaining Balance</p>
+            <p className="mt-2 text-4xl font-black">{formatOmr(remainingBalance)}</p>
+            <p className="mt-2 text-sm font-bold">
+              {balancePaidInFull ? "Paid in full" : "Balance still due"}
+            </p>
+          </div>
+
+          <div className="flex flex-col gap-3">
             <label className="flex items-center gap-3">
               <input
                 type="checkbox"
@@ -460,7 +566,7 @@ export function NewInvoiceForm({
             </label>
 
             {useCheck ? (
-              <div className="mt-4 grid grid-cols-1 gap-3">
+              <div className="grid grid-cols-1 gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4">
                 <label className="block">
                   <span className="text-sm font-black text-slate-700">Check Amount</span>
                   <input
@@ -470,6 +576,8 @@ export function NewInvoiceForm({
                     step="0.001"
                     inputMode="decimal"
                     placeholder="0.000"
+                    value={checkAmount}
+                    onChange={(event) => setCheckAmount(event.target.value)}
                     className="mt-2 h-14 w-full rounded-lg border-2 border-slate-300 px-4 text-xl font-black outline-none focus:border-slate-950"
                   />
                 </label>
@@ -494,10 +602,8 @@ export function NewInvoiceForm({
             ) : (
               <input type="hidden" name="checkAmount" value="0" />
             )}
-          </div>
 
-          <div className="rounded-lg border border-slate-200 p-4 md:col-span-2">
-            <label className="flex items-center gap-3">
+            <label className="flex items-center gap-3 pt-2">
               <input
                 type="checkbox"
                 checked={useTransfer}
@@ -508,7 +614,7 @@ export function NewInvoiceForm({
             </label>
 
             {useTransfer ? (
-              <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+              <div className="grid grid-cols-1 gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4">
                 <label className="block">
                   <span className="text-sm font-black text-slate-700">Transfer Amount</span>
                   <input
@@ -518,6 +624,8 @@ export function NewInvoiceForm({
                     step="0.001"
                     inputMode="decimal"
                     placeholder="0.000"
+                    value={transferAmount}
+                    onChange={(event) => setTransferAmount(event.target.value)}
                     className="mt-2 h-14 w-full rounded-lg border-2 border-slate-300 px-4 text-xl font-black outline-none focus:border-slate-950"
                   />
                 </label>
@@ -530,7 +638,7 @@ export function NewInvoiceForm({
                     className="mt-2 h-14 w-full rounded-lg border border-slate-300 px-3 text-sm font-bold"
                   />
                 </label>
-                <label className="block md:col-span-2">
+                <label className="block">
                   <span className="text-sm font-black text-slate-700">Transfer Receipt Image</span>
                   <input
                     name="transferReceipt"
