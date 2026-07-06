@@ -67,6 +67,11 @@ function formatOmr(value: number) {
   }).format(value);
 }
 
+function normalizeTaxRate(value: string) {
+  const rate = toNumber(value);
+  return rate > 1 ? rate / 100 : rate;
+}
+
 function fieldClass(value: string, extra = "") {
   return [
     "w-full rounded-xl border px-3 text-sm font-bold text-slate-900 outline-none transition-colors focus:border-slate-950",
@@ -230,7 +235,7 @@ export function NewInvoiceForm({
   }, [productRows, products]);
 
   const itemsSubtotal = useMemo(() => lineItems.reduce((sum, item) => sum + item.itemTotal, 0), [lineItems]);
-  const vatRateValue = useMemo(() => toNumber(taxRate), [taxRate]);
+  const vatRateValue = useMemo(() => normalizeTaxRate(taxRate), [taxRate]);
   const vatAmount = useMemo(() => itemsSubtotal * vatRateValue, [itemsSubtotal, vatRateValue]);
   const invoiceTotal = useMemo(() => itemsSubtotal + vatAmount, [itemsSubtotal, vatAmount]);
   const paidAmount = useMemo(
@@ -457,7 +462,7 @@ export function NewInvoiceForm({
           </section>
         </section>
 
-        <section className="rounded-xl bg-white p-6 shadow-sm">
+        <section className="max-w-full overflow-hidden rounded-xl bg-white p-6 shadow-sm">
           <div className="flex items-center justify-between gap-3">
             <div>
               <p className="text-lg font-black text-slate-950">Product Selection</p>
@@ -465,17 +470,17 @@ export function NewInvoiceForm({
             </div>
           </div>
 
-          <div className="mt-4 overflow-x-auto">
-            <div className="min-w-[920px]">
-              <div className="grid grid-cols-[minmax(280px,2.2fr)_minmax(140px,1fr)_minmax(140px,1fr)_minmax(140px,1fr)_minmax(120px,auto)] gap-3 rounded-xl bg-slate-50 px-4 py-3 text-sm font-black uppercase tracking-wide text-slate-500">
+          <div className="mt-3 max-w-full overflow-x-auto">
+            <div className="min-w-[760px] max-w-full">
+              <div className="grid grid-cols-[minmax(240px,2fr)_minmax(116px,1fr)_minmax(116px,1fr)_minmax(120px,1fr)_minmax(104px,auto)] gap-2 rounded-xl bg-slate-50 px-4 py-3 text-sm font-black uppercase tracking-wide text-slate-500">
                 <div>Product</div>
-                <div className="whitespace-nowrap text-center">Delivered</div>
-                <div className="whitespace-nowrap text-center">Collected</div>
+                <div className="flex-1 whitespace-nowrap text-center text-sm">Delivered</div>
+                <div className="flex-1 whitespace-nowrap text-center text-sm">Collected</div>
                 <div className="whitespace-nowrap text-center">Unit Price</div>
                 <div className="whitespace-nowrap text-right">Total</div>
               </div>
 
-              <div className="mt-4 flex flex-col gap-4">
+              <div className="mt-3 flex flex-col gap-3">
                 {productRows.map((row, index) => (
                   <article
                     key={row.id}

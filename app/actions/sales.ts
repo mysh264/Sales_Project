@@ -37,6 +37,10 @@ function decimalMax(value: Prisma.Decimal, floor: Prisma.Decimal) {
   return value.greaterThan(floor) ? value : floor;
 }
 
+function normalizeTaxRate(value: Prisma.Decimal) {
+  return value.greaterThan(1) ? value.div(100) : value;
+}
+
 async function storeUpload(file: FormDataEntryValue | null, folder: string) {
   if (!(file instanceof File) || file.size === 0) {
     return null;
@@ -72,6 +76,7 @@ export async function createOrder(formData: FormData) {
       ? branch.defaultTaxRate
       : new Prisma.Decimal("5.0000");
     const taxRate = decimalValue(formData, "taxRate", branchTaxRate);
+    const normalizedTaxRate = normalizeTaxRate(taxRate);
     const applyDebtCollection = text(formData, "applyDebtCollection") === "true";
     const requestedDebtCollection = moneyValue(formData, "debtCollectionAmount");
 
@@ -170,7 +175,7 @@ export async function createOrder(formData: FormData) {
     }
 
     const subtotal = lines.reduce((sum, line) => sum.add(line.lineSubtotal), new Prisma.Decimal(0));
-    const taxAmount = subtotal.mul(taxRate);
+    const taxAmount = subtotal.mul(normalizedTaxRate);
     const totalAmount = subtotal.add(taxAmount);
     const cashAmount = moneyValue(formData, "cashAmount");
     const checkAmount = moneyValue(formData, "checkAmount");
