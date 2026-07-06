@@ -99,11 +99,13 @@ export async function createOrder(formData: FormData) {
     const branchRow = await tx.branch.findUniqueOrThrow({ where: { id: branchId } });
     const salesman = await tx.user.findUniqueOrThrow({ where: { id: currentUser.id } });
 
+    const customerScope = currentUser.hasGlobalAccess ? {} : { branchId: branchRow.id };
+
     const existingCustomer = customerId
       ? await tx.customer.findFirst({
           where: {
             id: customerId,
-            branchId: branchRow.id,
+            ...customerScope,
           },
         })
       : null;
@@ -112,7 +114,7 @@ export async function createOrder(formData: FormData) {
       existingCustomer ??
       (await tx.customer.findFirst({
         where: {
-          branchId: branchRow.id,
+          ...customerScope,
           OR: [
             customerPhone ? { phone: customerPhone } : undefined,
             customerName ? { name: { equals: customerName, mode: "insensitive" } } : undefined,

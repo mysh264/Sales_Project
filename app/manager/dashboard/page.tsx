@@ -4,8 +4,9 @@ import { forbidden, redirect } from "next/navigation";
 import { getFinancialSummary } from "@/app/actions/finance";
 import { formatDateTimeDMY } from "@/lib/date-format";
 import { Permissions } from "@/lib/permissions";
-import { requirePermission } from "@/lib/permission-guard";
+import { checkPermission, requirePermission } from "@/lib/permission-guard";
 import { prisma } from "@/lib/prisma";
+import { getCurrentUser, hasGlobalSalesAccess } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
@@ -65,16 +66,22 @@ type DebtAuditScopeRow = {
 };
 
 async function getFinanceUser() {
-  try {
-    return (await requirePermission(Permissions.Finance_Read)).user;
-  } catch {
+  const currentUser = await getCurrentUser();
+
+  if (!currentUser) {
     forbidden();
   }
+
+  if (currentUser.role !== "ADMIN" && !checkPermission(currentUser, Permissions.Finance_Read)) {
+    await requirePermission(Permissions.Finance_Read);
+  }
+
+  return currentUser;
 }
 
 export default async function ManagerDashboardPage({ searchParams }: ManagerDashboardPageProps) {
   const currentUser = await getFinanceUser();
-  const hasGlobalAccess = currentUser.role === "ADMIN" || Boolean(currentUser.allowGlobalSalesView);
+  const hasGlobalAccess = hasGlobalSalesAccess(currentUser);
 
   if (!currentUser.branchId && !hasGlobalAccess) {
     redirect("/manager");

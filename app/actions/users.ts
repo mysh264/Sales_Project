@@ -81,6 +81,7 @@ export async function createUser(formData: FormData) {
         branchId,
         roleId: permissionProfileId,
         isActive: true,
+        hasGlobalAccess: false,
         allowGlobalSalesView: false,
       },
     });
@@ -100,6 +101,7 @@ export async function createUser(formData: FormData) {
         roleId: user.roleId,
         branchId: user.branchId,
         isActive: user.isActive,
+        hasGlobalAccess: user.hasGlobalAccess,
         allowGlobalSalesView: user.allowGlobalSalesView,
       }),
       { tx },
@@ -202,7 +204,10 @@ export async function toggleGlobalSalesView(formData: FormData) {
     const user = await tx.user.findUniqueOrThrow({ where: { id: userId } });
     const updatedUser = await tx.user.update({
       where: { id: userId },
-      data: { allowGlobalSalesView: !currentStatus },
+      data: {
+        hasGlobalAccess: !currentStatus,
+        allowGlobalSalesView: !currentStatus,
+      },
     });
 
     await logAction(

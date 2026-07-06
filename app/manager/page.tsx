@@ -100,7 +100,11 @@ export default async function ManagerDashboardPage() {
       orderBy: { createdAt: "desc" },
       take: 10,
     }),
-    prisma.user.count({ where: { allowGlobalSalesView: true } }),
+    prisma.user.count({
+      where: {
+        OR: [{ hasGlobalAccess: true }, { allowGlobalSalesView: true }],
+      },
+    }),
     prisma.user.count(),
   ]);
 

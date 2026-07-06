@@ -3,7 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { formatDateDMY } from "@/lib/date-format";
 import { Permissions } from "@/lib/permissions";
-import { requirePermission } from "@/lib/permission-guard";
+import { checkPermission, requirePermission } from "@/lib/permission-guard";
 import { getCurrentUser } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 
@@ -61,7 +61,9 @@ export default async function ReconciliationOverviewPage({
     redirect("/login");
   }
 
-  await requirePermission(Permissions.Finance_Read);
+  if (currentUser.role !== "ADMIN" && !checkPermission(currentUser, Permissions.Finance_Read)) {
+    await requirePermission(Permissions.Finance_Read);
+  }
 
   const params = (await searchParams) ?? {};
   const startDate = parseDate(params.start) ?? startOfMonth();

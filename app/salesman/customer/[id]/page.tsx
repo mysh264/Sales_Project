@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { Prisma } from "@prisma/client";
 import { formatDateTimeDMY } from "@/lib/date-format";
 import { prisma } from "@/lib/prisma";
-import { getCurrentUser } from "@/lib/session";
+import { getCurrentUser, hasGlobalSalesAccess } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
@@ -29,17 +29,21 @@ export default async function CustomerDebtPage({ params }: CustomerPageProps) {
     notFound();
   }
 
+  const hasGlobalAccess = hasGlobalSalesAccess(currentUser);
   const customer = await prisma.customer.findFirst({
     where: {
       id,
-      branchId: currentUser.branchId,
+      ...(hasGlobalAccess ? {} : { branchId: currentUser.branchId }),
       invoices: {
         some: { salesmanId: currentUser.id },
       },
     },
     include: {
       invoices: {
-        where: { salesmanId: currentUser.id },
+        where: {
+          salesmanId: currentUser.id,
+          ...(hasGlobalAccess ? {} : { branchId: currentUser.branchId }),
+        },
         include: {
           payments: true,
           items: {
@@ -52,6 +56,7 @@ export default async function CustomerDebtPage({ params }: CustomerPageProps) {
         where: {
           invoice: {
             salesmanId: currentUser.id,
+            ...(hasGlobalAccess ? {} : { branchId: currentUser.branchId }),
           },
         },
         include: {

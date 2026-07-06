@@ -106,6 +106,7 @@ model User {
   email                 String?            @unique
   passwordHash          String?
   isActive              Boolean            @default(true)
+  hasGlobalAccess       Boolean            @default(false)
   allowGlobalSalesView  Boolean            @default(false)
   branch                Branch?            @relation(fields: [branchId], references: [id])
   roleProfile           Role?              @relation(fields: [roleId], references: [id])

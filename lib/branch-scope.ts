@@ -17,7 +17,7 @@ export async function getBranchScope() {
   }
 
   const isAdmin = user.role === "ADMIN";
-  const canSeeAllBranches = isAdmin || Boolean(user.allowGlobalSalesView);
+  const canSeeAllBranches = isAdmin || Boolean(user.hasGlobalAccess ?? user.allowGlobalSalesView);
 
   return {
     userId: user.id,
@@ -30,7 +30,7 @@ export async function getBranchScope() {
 
 export function branchWhere(scope: BranchScope | null | undefined) {
   if (!scope || scope.canSeeAllBranches) {
-    return {};
+    return undefined;
   }
 
   if (!scope.branchId) {

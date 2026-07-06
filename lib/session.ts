@@ -39,10 +39,12 @@ export async function getCurrentUser() {
   });
 }
 
-export function hasGlobalSalesAccess(user: { role: string; allowGlobalSalesView?: boolean | null } | null | undefined) {
+export function hasGlobalSalesAccess(
+  user: { role: string; hasGlobalAccess?: boolean | null; allowGlobalSalesView?: boolean | null } | null | undefined,
+) {
   if (!user) {
     return false;
   }
 
-  return user.role === "ADMIN" || Boolean(user.allowGlobalSalesView);
+  return user.role === "ADMIN" || Boolean(user.hasGlobalAccess ?? user.allowGlobalSalesView);
 }

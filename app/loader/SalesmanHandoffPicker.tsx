@@ -6,7 +6,6 @@ import { useRouter } from "next/navigation";
 type SalesmanOption = {
   id: string;
   fullName: string;
-  branchName: string | null;
 };
 
 type SalesmanHandoffPickerProps = {
@@ -51,11 +50,11 @@ export function SalesmanHandoffPicker({ salesmen }: SalesmanHandoffPickerProps) 
             onChange={(event) => setSelectedSalesmanId(event.target.value)}
             className="mt-2 h-12 w-full rounded-lg border border-slate-300 px-3 text-sm font-bold"
           >
-            {salesmen.map((salesman) => (
-              <option key={salesman.id} value={salesman.id}>
-                {salesman.fullName} {salesman.branchName ? `· ${salesman.branchName}` : ""}
-              </option>
-            ))}
+              {salesmen.map((salesman) => (
+                <option key={salesman.id} value={salesman.id}>
+                  {salesman.fullName}
+                </option>
+              ))}
           </select>
         </label>
       </div>

@@ -190,14 +190,14 @@ export default async function AdminConsolePage() {
                     <td className="whitespace-nowrap px-4 py-2">
                       <form action={toggleGlobalSalesView}>
                         <input type="hidden" name="userId" value={user.id} />
-                        <input type="hidden" name="currentStatus" value={String(user.allowGlobalSalesView)} />
+                        <input type="hidden" name="currentStatus" value={String(user.hasGlobalAccess ?? user.allowGlobalSalesView)} />
                         <button
                           type="submit"
                           className={`rounded px-3 py-2 text-xs font-black text-white ${
-                            user.allowGlobalSalesView ? "bg-indigo-700" : "bg-slate-500"
+                            (user.hasGlobalAccess ?? user.allowGlobalSalesView) ? "bg-indigo-700" : "bg-slate-500"
                           }`}
                         >
-                          {user.allowGlobalSalesView ? "Enabled" : "Disabled"}
+                          {(user.hasGlobalAccess ?? user.allowGlobalSalesView) ? "Enabled" : "Disabled"}
                         </button>
                       </form>
                     </td>
