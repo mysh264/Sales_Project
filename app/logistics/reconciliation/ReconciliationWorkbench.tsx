@@ -45,9 +45,15 @@ export function ReconciliationWorkbench({
   ]);
 
   const salesmanOptions = useMemo(() => salesmen, [salesmen]);
+  const usedProductIds = useMemo(() => rows.map((row) => row.productId).filter(Boolean), [rows]);
 
   function updateRow(key: string, patch: Partial<MorningRow>) {
     setRows((current) => current.map((row) => (row.key === key ? { ...row, ...patch } : row)));
+  }
+
+  function nextAvailableProduct(rowState: MorningRow[], currentProductId?: string) {
+    const currentUsed = new Set(rowState.map((row) => row.productId).filter((id) => id && id !== currentProductId));
+    return products.find((product) => !currentUsed.has(product.id))?.id ?? currentProductId ?? products[0]?.id ?? "";
   }
 
   function addRow() {
@@ -55,7 +61,7 @@ export function ReconciliationWorkbench({
       ...current,
       {
         key: crypto.randomUUID(),
-        productId: products[0]?.id ?? "",
+        productId: nextAvailableProduct(current),
         morningFull: "",
       },
     ]);
@@ -132,12 +138,29 @@ export function ReconciliationWorkbench({
                     <select
                       name="productId"
                       value={row.productId}
-                      onChange={(event) => updateRow(row.key, { productId: event.target.value })}
+                      onChange={(event) => {
+                        const nextProductId = event.target.value;
+                        setRows((current) =>
+                          current.map((candidate) => {
+                            if (candidate.key === row.key) {
+                              return { ...candidate, productId: nextProductId };
+                            }
+
+                            if (candidate.productId !== nextProductId) {
+                              return candidate;
+                            }
+
+                            return { ...candidate, productId: nextAvailableProduct(current, nextProductId) };
+                          }),
+                        );
+                      }}
                       className="mt-2 h-12 w-full rounded-lg border border-slate-300 px-3 text-sm font-bold"
                     >
                       {products.map((product) => (
                         <option key={product.id} value={product.id}>
-                          {product.name} · {product.sku}
+                          {usedProductIds.includes(product.id) && product.id !== row.productId
+                            ? `${product.name} · ${product.sku} (used)`
+                            : `${product.name} · ${product.sku}`}
                         </option>
                       ))}
                     </select>

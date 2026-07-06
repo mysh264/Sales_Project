@@ -51,14 +51,27 @@ function parseRows(formData: FormData, morningKey: string, returnedFullKey?: str
     .filter((item) => item.productId);
 }
 
-function ensureUniqueProductRows<T extends { productId: string }>(rows: T[]) {
-  const seen = new Set<string>();
+function normalizeProductRows<T extends { productId: string; morningFull: number; eveningReturnedFull: number; eveningReturnedEmpty: number }>(
+  rows: T[],
+) {
+  const ordered = new Map<string, T>();
+
   for (const row of rows) {
-    if (seen.has(row.productId)) {
-      throw new Error("Each product can appear only once.");
+    const current = ordered.get(row.productId);
+    if (!current) {
+      ordered.set(row.productId, { ...row });
+      continue;
     }
-    seen.add(row.productId);
+
+    ordered.set(row.productId, {
+      ...current,
+      morningFull: current.morningFull + row.morningFull,
+      eveningReturnedFull: current.eveningReturnedFull + row.eveningReturnedFull,
+      eveningReturnedEmpty: current.eveningReturnedEmpty + row.eveningReturnedEmpty,
+    });
   }
+
+  return [...ordered.values()];
 }
 
 export async function recordMorningLoad(salesmanId: string, productList: MorningLoadItem[]) {
@@ -81,8 +94,15 @@ export async function recordMorningLoad(salesmanId: string, productList: Morning
     throw new Error("Salesman must belong to a branch.");
   }
 
-  const rows = productList.filter((item) => item.morningFull > 0);
-  ensureUniqueProductRows(rows);
+  const rows = normalizeProductRows(
+    productList
+      .filter((item) => item.morningFull > 0)
+      .map((item) => ({
+        ...item,
+        eveningReturnedFull: 0,
+        eveningReturnedEmpty: 0,
+      })),
+  ).map((item) => ({ productId: item.productId, morningFull: item.morningFull }));
 
   if (rows.length === 0) {
     throw new Error("Enter at least one morning load quantity.");
@@ -219,9 +239,9 @@ export async function recordEveningReconcile(salesmanId: string, reconciledList:
   }
 
   const reconciliationDate = dayOnly();
-  ensureUniqueProductRows(reconciledList);
+  const normalizedList = normalizeProductRows(reconciledList);
 
-  if (reconciledList.length === 0) {
+  if (normalizedList.length === 0) {
     throw new Error("Enter at least one evening reconciliation row.");
   }
 
@@ -249,7 +269,7 @@ export async function recordEveningReconcile(salesmanId: string, reconciledList:
       reconciliation.items.map((item) => [item.productId, item]),
     );
 
-    for (const row of reconciledList) {
+    for (const row of normalizedList) {
       const item = itemMap.get(row.productId);
 
       if (!item) {
