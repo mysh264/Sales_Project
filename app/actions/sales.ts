@@ -75,7 +75,9 @@ export async function createOrder(formData: FormData) {
     const customerPhone = text(formData, "customerPhone");
     const customerAddress = text(formData, "customerAddress");
     const customerVatNumber = text(formData, "customerVatNumber");
-    const invoiceSerial = text(formData, "invoiceSerial") || buildInvoiceSerial();
+    const manualSerial = text(formData, "manualSerial");
+    const invoiceSerial = manualSerial || text(formData, "invoiceSerial") || buildInvoiceSerial();
+    const invoiceDate = parseDate(text(formData, "invoiceDate")) ?? new Date();
     const currency = text(formData, "currency") || branch?.defaultCurrency || "OMR";
     const branchTaxRate = branch?.defaultTaxRate && branch.defaultTaxRate.greaterThan(0)
       ? branch.defaultTaxRate
@@ -212,6 +214,7 @@ export async function createOrder(formData: FormData) {
         debtAmount,
         debtCollectionAmount,
         customerCredit,
+        createdAt: invoiceDate,
         items: {
           create: lines.map((line) => ({
             productId: line.productId,

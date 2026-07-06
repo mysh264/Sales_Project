@@ -14,11 +14,19 @@ function toValidDate(value: Date | string | number) {
 
 export function formatDateDMY(value: Date | string | number) {
   const date = toValidDate(value);
-  return `${pad(date.getDate())}/${pad(date.getMonth() + 1)}/${date.getFullYear()}`;
+  return date.toLocaleDateString("en-GB", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
 }
 
 export function formatDateTimeDMY(value: Date | string | number) {
   const date = toValidDate(value);
-  return `${formatDateDMY(date)} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  const dateText = date.toLocaleDateString("en-GB", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
+  return `${dateText} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
-

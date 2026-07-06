@@ -160,7 +160,7 @@ export default async function RolesPage({ searchParams }: RolesPageProps) {
                   <span className="text-sm font-black text-slate-700">Permissions</span>
                   <p className="text-xs font-bold text-slate-500">Select the capabilities this role should grant.</p>
                 </div>
-                <PermissionChecklist selected={selectedRole?.permissions ?? []} />
+                <PermissionChecklist selected={selectedRole?.permissions ?? []} autoSubmit={isEditMode} />
               </div>
 
               <div className="flex flex-wrap gap-3">

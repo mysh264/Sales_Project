@@ -54,7 +54,8 @@ type SavedInvoiceData = {
   selectedCustomerId: string | null;
   customerDraft: CustomerDraft;
   showAdvanced: boolean;
-  invoiceSerialValue: string;
+  manualSerialValue: string;
+  invoiceDateValue: string;
   currency: string;
   taxRate: string;
   cashAmount: string;
@@ -74,6 +75,12 @@ const STORAGE_KEY = "newInvoiceData";
 
 function makeId() {
   return globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2);
+}
+
+function todayInputValue() {
+  const now = new Date();
+  const timezoneOffset = now.getTimezoneOffset() * 60_000;
+  return new Date(now.getTime() - timezoneOffset).toISOString().slice(0, 10);
 }
 
 function toNumber(value: string) {
@@ -127,7 +134,8 @@ export function NewInvoiceForm({
     vatNumber: "",
   });
   const [showAdvanced, setShowAdvanced] = useState(false);
-  const [invoiceSerialValue, setInvoiceSerialValue] = useState(invoiceSerial);
+  const [manualSerialValue, setManualSerialValue] = useState(invoiceSerial);
+  const [invoiceDateValue, setInvoiceDateValue] = useState(todayInputValue());
   const [currency, setCurrency] = useState(defaultCurrency);
   const [taxRate, setTaxRate] = useState(defaultTaxRate);
   const [cashAmount, setCashAmount] = useState("");
@@ -254,7 +262,7 @@ export function NewInvoiceForm({
     }
 
     try {
-      const data = JSON.parse(saved) as Partial<SavedInvoiceData>;
+      const data = JSON.parse(saved) as Partial<SavedInvoiceData> & { invoiceSerialValue?: string };
       const savedCustomer = data.selectedCustomerId
         ? data.selectedCustomerId === "new"
           ? {
@@ -276,7 +284,8 @@ export function NewInvoiceForm({
         vatNumber: data.customerDraft?.vatNumber ?? "",
       });
       setShowAdvanced(Boolean(data.showAdvanced));
-      setInvoiceSerialValue(data.invoiceSerialValue ?? invoiceSerial);
+      setManualSerialValue(data.manualSerialValue ?? data.invoiceSerialValue ?? invoiceSerial);
+      setInvoiceDateValue(data.invoiceDateValue ?? todayInputValue());
       setCurrency(data.currency ?? defaultCurrency);
       setTaxRate(data.taxRate ? Math.round(toNumber(data.taxRate)).toString() : defaultTaxRate);
       setCashAmount(data.cashAmount ?? "");
@@ -318,7 +327,8 @@ export function NewInvoiceForm({
       selectedCustomerId: selectedCustomer?.id ?? null,
       customerDraft,
       showAdvanced,
-      invoiceSerialValue,
+      manualSerialValue,
+      invoiceDateValue,
       currency,
       taxRate,
       cashAmount,
@@ -350,7 +360,8 @@ export function NewInvoiceForm({
     customerQuery,
     debtCollectionAmount,
     hasHydrated,
-    invoiceSerialValue,
+    manualSerialValue,
+    invoiceDateValue,
     productRows,
     selectedCustomer?.id,
     showAdvanced,
@@ -450,9 +461,11 @@ export function NewInvoiceForm({
       action={action}
       onSubmit={handleSubmit}
       encType="multipart/form-data"
-      className="mx-auto flex max-w-7xl flex-col gap-8 pb-[calc(env(safe-area-inset-bottom)+2rem)]"
+      className="mx-auto flex max-w-screen-2xl flex-col gap-6 pb-[calc(env(safe-area-inset-bottom)+1.5rem)] md:pb-8"
     >
-      <input type="hidden" name="invoiceSerial" value={invoiceSerialValue} />
+      <input type="hidden" name="invoiceSerial" value={invoiceSerial} />
+      <input type="hidden" name="manualSerial" value={manualSerialValue} />
+      <input type="hidden" name="invoiceDate" value={invoiceDateValue} />
       <input type="hidden" name="customerId" value={selectedCustomer?.id === "new" ? "" : selectedCustomer?.id ?? ""} />
       <input type="hidden" name="customerName" value={selectedCustomerName} />
       <input type="hidden" name="customerPhone" value={selectedCustomerPhone} />
@@ -502,7 +515,42 @@ export function NewInvoiceForm({
         </div>
       ) : null}
 
-      <div className="grid grid-cols-1 gap-8 lg:grid-cols-[minmax(320px,0.95fr)_minmax(0,1.55fr)]">
+      <section className="rounded-xl bg-white p-4 shadow-sm md:p-6">
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-4">
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <p className="text-xs font-black uppercase tracking-wide text-slate-500">Salesman</p>
+            <p className="mt-2 text-lg font-black text-slate-950">{salesmanName}</p>
+            <p className="text-sm font-bold text-slate-600">{branchName}</p>
+          </div>
+          <label className="block rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <span className="text-xs font-black uppercase tracking-wide text-slate-500">Invoice Serial</span>
+            <input
+              type="text"
+              value={manualSerialValue}
+              onChange={(event) => setManualSerialValue(event.target.value)}
+              className={`mt-2 h-12 ${fieldClass(manualSerialValue)}`}
+            />
+          </label>
+          <label className="block rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <span className="text-xs font-black uppercase tracking-wide text-slate-500">Date</span>
+            <input
+              type="date"
+              value={invoiceDateValue}
+              onChange={(event) => setInvoiceDateValue(event.target.value)}
+              className={`mt-2 h-12 ${fieldClass(invoiceDateValue)}`}
+            />
+          </label>
+          <button
+            type="button"
+            onClick={() => setShowAdvanced((current) => !current)}
+            className="rounded-xl bg-slate-950 px-4 py-4 text-sm font-black text-white shadow-sm"
+          >
+            {showAdvanced ? "Hide Advanced Settings" : "Show Advanced Settings"}
+          </button>
+        </div>
+      </section>
+
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1.7fr)_minmax(320px,0.9fr)]">
         <section className="flex flex-col gap-6">
           <section className="rounded-xl bg-white p-6 shadow-sm">
             <div className="flex items-start justify-between gap-3">
@@ -597,27 +645,11 @@ export function NewInvoiceForm({
                 <p className="text-lg font-black text-slate-950">Invoice Settings</p>
                 <p className="text-sm font-bold text-slate-500">Values are locked once the invoice is saved.</p>
               </div>
-              <button
-                type="button"
-                onClick={() => setShowAdvanced((current) => !current)}
-                className="rounded bg-slate-950 px-3 py-2 text-xs font-black text-white"
-              >
-                ⚙ Advanced Settings
-              </button>
             </div>
 
             <div className="mt-4 grid grid-cols-1 gap-4">
-              <label className="block">
-                <span className="text-sm font-black text-slate-700">Invoice Serial</span>
-                <input
-                  value={invoiceSerialValue}
-                  readOnly
-                  className={`mt-2 h-12 ${fieldClass(invoiceSerialValue)}`}
-                />
-              </label>
-
               {showAdvanced ? (
-                <div className="grid grid-cols-1 gap-4 rounded-xl border border-slate-200 bg-slate-50 p-4 md:grid-cols-3">
+                <div className="grid grid-cols-1 gap-4 rounded-xl border border-slate-200 bg-slate-50 p-4 md:grid-cols-2">
                   <label className="block">
                     <span className="text-sm font-black text-slate-700">Currency</span>
                     <select
@@ -639,15 +671,6 @@ export function NewInvoiceForm({
                       value={taxRate}
                       onChange={(event) => setTaxRate(event.target.value)}
                       className={`mt-2 h-12 ${fieldClass(taxRate)}`}
-                    />
-                  </label>
-                  <label className="block md:col-span-1">
-                    <span className="text-sm font-black text-slate-700">Invoice Serial Override</span>
-                    <input
-                      type="text"
-                      value={invoiceSerialValue}
-                      onChange={(event) => setInvoiceSerialValue(event.target.value)}
-                      className={`mt-2 h-12 ${fieldClass(invoiceSerialValue)}`}
                     />
                   </label>
                 </div>
@@ -824,22 +847,31 @@ export function NewInvoiceForm({
             </button>
           </div>
 
-          <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+          <aside className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4 shadow-sm xl:sticky xl:top-6">
+            <div className="flex items-center justify-between gap-3">
               <div>
+                <p className="text-lg font-black text-slate-950">Invoice Preview</p>
+                <p className="text-sm font-bold text-slate-500">Totals update as the invoice is edited.</p>
+              </div>
+              <span className="rounded-full bg-slate-950 px-3 py-1 text-xs font-black uppercase tracking-wide text-white">
+                Live
+              </span>
+            </div>
+            <div className="mt-4 grid grid-cols-1 gap-3">
+              <div className="rounded-xl border border-slate-200 bg-white p-4">
                 <p className="text-xs font-black uppercase tracking-wide text-slate-500">Items Subtotal</p>
                 <p className="mt-1 text-2xl font-black text-slate-950">{formatOmr(itemsSubtotal)}</p>
               </div>
-              <div>
+              <div className="rounded-xl border border-slate-200 bg-white p-4">
                 <p className="text-xs font-black uppercase tracking-wide text-slate-500">VAT</p>
                 <p className="mt-1 text-2xl font-black text-slate-950">{formatOmr(vatAmount)}</p>
               </div>
-              <div>
+              <div className="rounded-xl border border-slate-200 bg-white p-4">
                 <p className="text-xs font-black uppercase tracking-wide text-slate-500">Invoice Total</p>
                 <p className="mt-1 text-3xl font-black text-slate-950">{formatOmr(invoiceTotal)}</p>
               </div>
             </div>
-          </div>
+          </aside>
         </section>
       </div>
 

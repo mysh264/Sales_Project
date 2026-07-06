@@ -85,7 +85,7 @@ export default async function NewOrderPage({ searchParams }: NewOrderPageProps) 
     : "5";
 
   return (
-    <main className="min-h-screen bg-gray-50 px-4 py-5">
+    <main className="min-h-screen bg-gray-50 px-3 py-4 md:px-6 md:py-6">
       <NewInvoiceForm
         salesmanName={salesman.fullName}
         branchName={salesman.branch.name}

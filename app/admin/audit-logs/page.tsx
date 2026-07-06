@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { forbidden, redirect } from "next/navigation";
 import { logAction } from "@/lib/audit";
+import { formatDateDMY } from "@/lib/date-format";
 import { getCurrentUser } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { AuditLogTable } from "./AuditLogTable";
@@ -303,7 +304,7 @@ export default async function AuditLogsPage({ searchParams }: AuditLogsPageProps
             <AuditLogTable
               logs={logs.map((log) => ({
                 id: log.id,
-                timestamp: log.timestamp.toISOString(),
+                timestamp: formatDateDMY(log.timestamp),
                 action: log.action,
                 targetModel: log.targetModel,
                 targetId: log.targetId,
