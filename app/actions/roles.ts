@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { auditSnapshot, logAction } from "@/lib/audit";
-import { Permissions, assignablePermissions } from "@/lib/permissions";
+import { Permissions, assignablePermissions, normalizePermissions } from "@/lib/permissions";
 import { requirePermission } from "@/lib/permission-guard";
 import { prisma } from "@/lib/prisma";
 
@@ -12,16 +12,13 @@ function text(formData: FormData, key: string) {
 }
 
 function permissionList(formData: FormData) {
-  const values = formData
-    .getAll("permissions")
-    .filter((value): value is string => typeof value === "string")
-    .filter((value) => assignablePermissions.includes(value as (typeof assignablePermissions)[number]));
+  const values = formData.getAll("permissions").filter((value): value is string => typeof value === "string");
 
-  return [...new Set(values)];
+  return normalizePermissions(values).filter((value) => assignablePermissions.includes(value));
 }
 
 async function getActorId() {
-  const { user } = await requirePermission(Permissions.ROLE_MANAGE);
+  const { user } = await requirePermission(Permissions.Roles_Update);
   if (!user) {
     throw new Error("Unauthorized");
   }

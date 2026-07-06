@@ -62,7 +62,7 @@ export async function createOrder(formData: FormData) {
   try {
     const currentUser = await getCurrentUser();
 
-    await requirePermission(Permissions.INVOICE_CREATE);
+    await requirePermission(Permissions.Sales_Create);
 
     if (!currentUser || !currentUser.branchId) {
       throw new Error("Salesman session is required.");

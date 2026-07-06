@@ -1,7 +1,7 @@
 import type { UserRole } from "@prisma/client";
 import { getCurrentUser } from "@/lib/session";
 import { logAction } from "@/lib/audit";
-import { Permissions, getEffectivePermissions, type Permission } from "@/lib/permissions";
+import { getEffectivePermissions, hasPermission, type Permission } from "@/lib/permissions";
 
 type AuditClient = {
   auditLog: {
@@ -27,12 +27,7 @@ export function checkPermission(
     | undefined,
   requiredPermission: Permission,
 ) {
-  if (!user) {
-    return false;
-  }
-
-  const permissions = getEffectivePermissions(user);
-  return user.role === "ADMIN" || permissions.includes(requiredPermission);
+  return hasPermission(user, requiredPermission);
 }
 
 export async function requirePermission(permission: Permission, context?: PermissionGuardContext) {
@@ -48,7 +43,7 @@ export async function requirePermission(permission: Permission, context?: Permis
 
   await logAction(
     currentUser.id,
-    Permissions.SECURITY_BREACH,
+    "SECURITY_BREACH",
     context?.targetModel ?? "PermissionGuard",
     context?.targetId ?? permission,
     null,

@@ -22,10 +22,7 @@ export default async function MorningLoadPage({ params }: MorningLoadPageProps) 
   }
 
   const products = await prisma.product.findMany({
-    where: {
-      isActive: true,
-      OR: [{ branchId: truck.branchId }, { branchId: null }],
-    },
+    where: { isActive: true },
     orderBy: { name: "asc" },
   });
 

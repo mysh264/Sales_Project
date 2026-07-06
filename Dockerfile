@@ -27,6 +27,7 @@ COPY --from=builder /app/package-lock.json ./package-lock.json
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 COPY --from=builder /app/prisma ./prisma
+COPY --from=builder /app/lib ./lib
 COPY --from=builder /app/scripts ./scripts
 COPY --from=builder /app/update_admin_role.sql ./update_admin_role.sql
 COPY --from=builder /app/update_tax_rate.sql ./update_tax_rate.sql

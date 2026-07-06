@@ -34,7 +34,7 @@ export type FinancialSummary = {
 };
 
 export async function getFinancialSummary(): Promise<FinancialSummary> {
-  const { user } = await requirePermission(Permissions.FINANCE_VIEW);
+  const { user } = await requirePermission(Permissions.Finance_Read);
   const scope = await getBranchScope();
   const globalAccess = Boolean(scope?.canSeeAllBranches);
   const dayStart = startOfDay();

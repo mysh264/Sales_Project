@@ -1,52 +1,8 @@
 import { PrismaClient, UserRole } from "@prisma/client";
 import bcrypt from "bcryptjs";
+import { DEFAULT_ROLE_PERMISSIONS } from "../lib/permissions";
 
 const prisma = new PrismaClient();
-
-const DEFAULT_ROLE_PERMISSIONS: Record<UserRole, string[]> = {
-  ADMIN: [
-    "INVOICE_CREATE",
-    "INVENTORY_UPDATE",
-    "CUSTOMER_MANAGE",
-    "PRODUCT_MANAGE",
-    "PRICE_RULE_UPDATE",
-    "DEBT_COLLECT",
-    "FINANCE_VIEW",
-    "LOGISTICS_EXECUTE",
-    "USER_MANAGE",
-    "ROLE_MANAGE",
-    "AUDIT_VIEW",
-    "AUDIT_DELETE",
-    "MANAGER_VIEW_ALL_SALES",
-  ],
-  GENERAL_MANAGER: [
-    "INVOICE_CREATE",
-    "INVENTORY_UPDATE",
-    "CUSTOMER_MANAGE",
-    "PRODUCT_MANAGE",
-    "PRICE_RULE_UPDATE",
-    "DEBT_COLLECT",
-    "FINANCE_VIEW",
-    "USER_MANAGE",
-    "ROLE_MANAGE",
-    "AUDIT_VIEW",
-    "MANAGER_VIEW_ALL_SALES",
-  ],
-  MANAGER: [
-    "INVOICE_CREATE",
-    "INVENTORY_UPDATE",
-    "CUSTOMER_MANAGE",
-    "PRODUCT_MANAGE",
-    "DEBT_COLLECT",
-    "FINANCE_VIEW",
-    "AUDIT_VIEW",
-    "MANAGER_VIEW_ALL_SALES",
-  ],
-  ACCOUNTANT: ["DEBT_COLLECT", "PRICE_RULE_UPDATE", "AUDIT_VIEW", "FINANCE_VIEW"],
-  ACCOUNTANT_MANAGER: ["DEBT_COLLECT", "PRICE_RULE_UPDATE", "AUDIT_VIEW", "USER_MANAGE", "FINANCE_VIEW"],
-  LOADER: ["INVENTORY_UPDATE", "LOGISTICS_EXECUTE"],
-  SALESMAN: ["INVOICE_CREATE", "CUSTOMER_MANAGE"],
-};
 
 const companyData = {
   name: "NATIONAL INDUSTRIAL GAS PLANT - OMAN",

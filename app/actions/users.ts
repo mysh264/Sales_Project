@@ -67,7 +67,7 @@ export async function createUser(formData: FormData) {
   }
 
   const passwordHash = await bcrypt.hash(password, 12);
-  await requirePermission(Permissions.USER_MANAGE);
+  await requirePermission(Permissions.Users_Update);
 
   await prisma.$transaction(async (tx) => {
     const permissionProfileId = await resolvePermissionProfileId(tx, role, roleId);
@@ -119,7 +119,7 @@ export async function toggleUserStatus(formData: FormData) {
     throw new Error("Missing user.");
   }
 
-  await requirePermission(Permissions.USER_MANAGE);
+  await requirePermission(Permissions.Users_Update);
 
   await prisma.$transaction(async (tx) => {
     const user = await tx.user.findUniqueOrThrow({ where: { id: userId } });
@@ -157,7 +157,7 @@ export async function updateUserRole(formData: FormData) {
     await prisma.branch.findUniqueOrThrow({ where: { id: branchId } });
   }
 
-  await requirePermission(Permissions.USER_MANAGE);
+  await requirePermission(Permissions.Users_Update);
 
   await prisma.$transaction(async (tx) => {
     const user = await tx.user.findUniqueOrThrow({ where: { id: userId } });
@@ -196,7 +196,7 @@ export async function toggleGlobalSalesView(formData: FormData) {
     throw new Error("Missing user.");
   }
 
-  await requirePermission(Permissions.USER_MANAGE);
+  await requirePermission(Permissions.Users_Update);
 
   await prisma.$transaction(async (tx) => {
     const user = await tx.user.findUniqueOrThrow({ where: { id: userId } });

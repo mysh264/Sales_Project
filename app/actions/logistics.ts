@@ -62,7 +62,7 @@ function ensureUniqueProductRows<T extends { productId: string }>(rows: T[]) {
 }
 
 export async function recordMorningLoad(salesmanId: string, productList: MorningLoadItem[]) {
-  const { user: currentUser } = await requirePermission(Permissions.LOGISTICS_EXECUTE);
+  const { user: currentUser } = await requirePermission(Permissions.Logistics_Update);
   const targetSalesman = await prisma.user.findUniqueOrThrow({
     where: { id: salesmanId },
     include: { branch: true },
@@ -138,13 +138,12 @@ export async function recordMorningLoad(salesmanId: string, productList: Morning
     const products = await tx.product.findMany({
       where: {
         id: { in: productIds },
-        ...(currentUser.role === "ADMIN" ? {} : { branchId }),
         isActive: true,
       },
     });
 
     if (products.length !== rows.length) {
-      throw new Error("One or more selected products are not available for this branch.");
+      throw new Error("One or more selected products are not available for this workflow.");
     }
 
     const beforeSnapshot = existing ? auditSnapshot(existing) : null;
@@ -209,7 +208,7 @@ export async function recordMorningLoad(salesmanId: string, productList: Morning
 }
 
 export async function recordEveningReconcile(salesmanId: string, reconciledList: EveningReconcileItem[]) {
-  const { user: currentUser } = await requirePermission(Permissions.LOGISTICS_EXECUTE);
+  const { user: currentUser } = await requirePermission(Permissions.Logistics_Update);
   const targetSalesman = await prisma.user.findUniqueOrThrow({
     where: { id: salesmanId },
     include: { branch: true },

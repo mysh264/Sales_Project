@@ -38,7 +38,7 @@ export async function updatePriceRule(formData: FormData) {
     throw new Error("Price limits are invalid.");
   }
 
-  await requirePermission(Permissions.PRICE_RULE_UPDATE);
+  await requirePermission(Permissions.Products_Update);
 
   await prisma.$transaction(async (tx) => {
     const rule = await tx.productPriceRule.findUniqueOrThrow({ where: { id: ruleId } });
@@ -75,7 +75,7 @@ export async function collectDebt(formData: FormData) {
     throw new Error("Collection amount must be greater than zero.");
   }
 
-  await requirePermission(Permissions.DEBT_COLLECT);
+  await requirePermission(Permissions.Finance_Update);
 
   await prisma.$transaction(async (tx) => {
     const debt = await tx.customerDebt.findUniqueOrThrow({

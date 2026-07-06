@@ -34,7 +34,7 @@ export default async function LogisticsReconciliationPage({ searchParams }: Reco
     redirect("/login");
   }
 
-  if (!checkPermission(currentUser, Permissions.LOGISTICS_EXECUTE)) {
+  if (!checkPermission(currentUser, Permissions.Logistics_Update)) {
     forbidden();
   }
 
@@ -57,7 +57,6 @@ export default async function LogisticsReconciliationPage({ searchParams }: Reco
     prisma.product.findMany({
       where: {
         isActive: true,
-        ...filter,
       },
       orderBy: [{ name: "asc" }],
     }),

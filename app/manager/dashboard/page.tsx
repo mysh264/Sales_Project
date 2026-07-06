@@ -66,7 +66,7 @@ type DebtAuditScopeRow = {
 
 async function getFinanceUser() {
   try {
-    return (await requirePermission(Permissions.FINANCE_VIEW)).user;
+    return (await requirePermission(Permissions.Finance_Read)).user;
   } catch {
     forbidden();
   }

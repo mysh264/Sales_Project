@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { createRole, updateRole } from "@/app/actions/roles";
 import { PermissionChecklist } from "@/app/admin/roles/PermissionChecklist";
 import { getCurrentUser } from "@/lib/session";
+import { normalizePermissions } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -160,7 +161,7 @@ export default async function RolesPage({ searchParams }: RolesPageProps) {
                   <span className="text-sm font-black text-slate-700">Permissions</span>
                   <p className="text-xs font-bold text-slate-500">Select the capabilities this role should grant.</p>
                 </div>
-                <PermissionChecklist selected={selectedRole?.permissions ?? []} autoSubmit={isEditMode} />
+                <PermissionChecklist selected={normalizePermissions(selectedRole?.permissions ?? [])} autoSubmit={isEditMode} />
               </div>
 
               <div className="flex flex-wrap gap-3">

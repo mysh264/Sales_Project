@@ -25,10 +25,7 @@ export default async function EveningReturnPage({ params }: EveningReturnPagePro
   }
 
   const products = await prisma.product.findMany({
-    where: {
-      isActive: true,
-      OR: [{ branchId: session.truck.branchId }, { branchId: null }],
-    },
+    where: { isActive: true },
     orderBy: { name: "asc" },
   });
 

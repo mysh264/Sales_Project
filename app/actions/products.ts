@@ -29,7 +29,7 @@ export async function saveProduct(formData: FormData) {
     throw new Error("Name, gas type, and cylinder size are required.");
   }
 
-  await requirePermission(Permissions.PRODUCT_MANAGE);
+  await requirePermission(Permissions.Products_Update);
 
   await prisma.$transaction(async (tx) => {
     if (productId) {
@@ -103,7 +103,7 @@ export async function toggleProductStatus(formData: FormData) {
     throw new Error("Missing product.");
   }
 
-  await requirePermission(Permissions.PRODUCT_MANAGE);
+  await requirePermission(Permissions.Products_Update);
 
   await prisma.$transaction(async (tx) => {
     const existing = await tx.product.findUniqueOrThrow({ where: { id: productId } });

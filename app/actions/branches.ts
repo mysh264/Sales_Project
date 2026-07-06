@@ -29,7 +29,7 @@ export async function saveBranch(formData: FormData) {
     throw new Error("Branch name is required.");
   }
 
-  await requirePermission(Permissions.USER_MANAGE);
+  await requirePermission(Permissions.Branches_Update);
 
   const company = await prisma.company.findFirstOrThrow({
     orderBy: { createdAt: "asc" },

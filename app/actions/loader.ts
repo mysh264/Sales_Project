@@ -42,7 +42,7 @@ export async function processMorningLoad(formData: FormData) {
     throw new Error("Missing truck.");
   }
 
-  await requirePermission(Permissions.INVENTORY_UPDATE);
+  await requirePermission(Permissions.Logistics_Update);
 
   await prisma.$transaction(async (tx) => {
     const truck = await tx.truck.findUniqueOrThrow({
@@ -178,7 +178,7 @@ export async function processEveningReturn(formData: FormData) {
     throw new Error("Missing load session.");
   }
 
-  await requirePermission(Permissions.INVENTORY_UPDATE);
+  await requirePermission(Permissions.Logistics_Update);
 
   await prisma.$transaction(async (tx) => {
     const session = await tx.truckLoadSession.findUniqueOrThrow({
