@@ -1,17 +1,46 @@
-import { DebtStatus, Prisma } from "@prisma/client";
+import { DebtStatus, InvoiceStatus, Prisma } from "@prisma/client";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { getFinancialSummary } from "@/app/actions/finance";
 import { formatDateTimeDMY } from "@/lib/date-format";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser, hasGlobalSalesAccess } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
+type ManagerSearchParams = {
+  start?: string;
+  end?: string;
+  branchId?: string;
+  userId?: string;
+  customer?: string;
+  status?: string;
+};
+
 const activeDebtStatuses: DebtStatus[] = ["OPEN", "PARTIALLY_PAID"];
 
 function startOfMonth() {
   const now = new Date();
   return new Date(now.getFullYear(), now.getMonth(), 1);
+}
+
+function endOfMonth() {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth() + 1, 1);
+}
+
+function parseDate(value?: string) {
+  if (!value) {
+    return null;
+  }
+
+  const parsed = new Date(`${value}T00:00:00`);
+
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function nextDay(date: Date) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1);
 }
 
 function formatOmr(value: Prisma.Decimal | number | null | undefined) {
@@ -35,16 +64,26 @@ function statusBadge(status: string) {
   return <span className={`rounded px-2 py-1 text-xs font-black uppercase ${classes}`}>{status}</span>;
 }
 
-export default async function ManagerDashboardPage() {
+export default async function ManagerDashboardPage({
+  searchParams,
+}: {
+  searchParams?: Promise<ManagerSearchParams>;
+}) {
   const currentUser = await getCurrentUser();
 
   if (!currentUser) {
     redirect("/login");
   }
 
-  const monthStart = startOfMonth();
+  const params = (await searchParams) ?? {};
+  const startDate = parseDate(params.start) ?? startOfMonth();
+  const endDateExclusive = parseDate(params.end) ? nextDay(parseDate(params.end)!) : endOfMonth();
   const hasGlobalAccess = hasGlobalSalesAccess(currentUser);
   const branchId = !hasGlobalAccess ? currentUser.branchId ?? null : null;
+  const requestedBranchId = hasGlobalAccess ? params.branchId?.trim() || null : branchId;
+  const requestedUserId = params.userId?.trim() || null;
+  const customerFilter = params.customer?.trim() || "";
+  const statusFilter = params.status?.trim() || "";
   const branch =
     currentUser.branch ??
     (branchId
@@ -63,43 +102,90 @@ export default async function ManagerDashboardPage() {
     );
   }
 
-  const invoiceWhere = hasGlobalAccess ? { createdAt: { gte: monthStart } } : { branchId: branchId ?? "", createdAt: { gte: monthStart } };
-  const debtWhere = hasGlobalAccess
-    ? {
-        balanceAmount: { gt: new Prisma.Decimal(0) },
-        status: { in: activeDebtStatuses },
-      }
-    : {
-        customer: { branchId: branch?.id ?? "" },
-        balanceAmount: { gt: new Prisma.Decimal(0) },
-        status: { in: activeDebtStatuses },
-      };
-  const movementWhere = hasGlobalAccess ? { createdAt: { gte: monthStart } } : { branchId: branch?.id ?? "", createdAt: { gte: monthStart } };
+  const [availableBranches, availableUsers] = await Promise.all([
+    prisma.branch.findMany({
+      where: hasGlobalAccess ? undefined : { id: branch?.id ?? "" },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true, code: true },
+    }),
+    prisma.user.findMany({
+      where: hasGlobalAccess
+        ? undefined
+        : branch?.id
+          ? { branchId: branch.id }
+          : { id: "__no_user__" },
+      orderBy: { fullName: "asc" },
+      select: { id: true, fullName: true, branchId: true },
+    }),
+  ]);
 
-  const [monthlyRevenue, outstandingDebt, movementCount, latestInvoices, globalViewUsers, userCount] = await Promise.all([
-    prisma.invoice.aggregate({
-      _sum: { totalAmount: true },
-      where: {
-        ...invoiceWhere,
-        status: "ISSUED",
-      },
+  const invoiceWhere: Prisma.InvoiceWhereInput = {
+    ...(hasGlobalAccess
+      ? requestedBranchId
+        ? { branchId: requestedBranchId }
+        : {}
+      : { branchId: branchId ?? "" }),
+    ...(requestedUserId ? { salesmanId: requestedUserId } : {}),
+    ...(customerFilter
+      ? {
+          customer: {
+            name: {
+              contains: customerFilter,
+              mode: "insensitive" as const,
+            },
+          },
+        }
+      : {}),
+    ...(statusFilter && statusFilter !== "ALL" ? { status: statusFilter as InvoiceStatus } : { status: "ISSUED" }),
+    createdAt: {
+      gte: startDate,
+      lt: endDateExclusive,
+    },
+  };
+
+  const debtWhere: Prisma.CustomerDebtWhereInput = {
+    ...(hasGlobalAccess
+      ? requestedBranchId
+        ? { customer: { branchId: requestedBranchId } }
+        : {}
+      : { customer: { branchId: branch?.id ?? "" } }),
+    ...(requestedUserId ? { invoice: { salesmanId: requestedUserId } } : {}),
+    ...(customerFilter
+      ? {
+          customer: {
+            name: {
+              contains: customerFilter,
+              mode: "insensitive" as const,
+            },
+          },
+        }
+      : {}),
+    balanceAmount: { gt: new Prisma.Decimal(0) },
+    status: { in: activeDebtStatuses },
+    createdAt: {
+      gte: startDate,
+      lt: endDateExclusive,
+    },
+  };
+
+  const movementWhere = hasGlobalAccess
+    ? requestedBranchId
+      ? { branchId: requestedBranchId, createdAt: { gte: startDate, lt: endDateExclusive } }
+      : { createdAt: { gte: startDate, lt: endDateExclusive } }
+    : { branchId: branch?.id ?? "", createdAt: { gte: startDate, lt: endDateExclusive } };
+
+  const [summary, outstandingDebt, movementCount, globalViewUsers, userCount] = await Promise.all([
+    getFinancialSummary({
+      startDate,
+      endDateExclusive,
+      branchId: requestedBranchId,
+      salesmanId: requestedUserId,
     }),
     prisma.customerDebt.aggregate({
       _sum: { balanceAmount: true },
       where: debtWhere,
     }),
-    prisma.cylinderMovement.count({
-      where: movementWhere,
-    }),
-    prisma.invoice.findMany({
-      where: hasGlobalAccess ? { createdAt: { gte: monthStart } } : { branchId: branch?.id ?? "" },
-      include: {
-        customer: true,
-        salesman: true,
-      },
-      orderBy: { createdAt: "desc" },
-      take: 10,
-    }),
+    prisma.cylinderMovement.count({ where: movementWhere }),
     prisma.user.count({
       where: {
         OR: [{ hasGlobalAccess: true }, { allowGlobalSalesView: true }],
@@ -108,10 +194,20 @@ export default async function ManagerDashboardPage() {
     prisma.user.count(),
   ]);
 
+  const latestInvoices = await prisma.invoice.findMany({
+    where: invoiceWhere,
+    include: {
+      customer: true,
+      salesman: true,
+    },
+    orderBy: { createdAt: "desc" },
+    take: 10,
+  });
+
   const outstandingDebtValue = outstandingDebt._sum?.balanceAmount ?? new Prisma.Decimal(0);
 
   const stats = [
-    { label: "Revenue This Month", value: formatOmr(monthlyRevenue._sum.totalAmount), tone: "text-green-700" },
+    { label: "Revenue in Scope", value: formatOmr(Number(summary.totalSalesToday)), tone: "text-green-700" },
     { label: "Outstanding Debt", value: formatOmr(outstandingDebtValue), tone: "text-red-700" },
     { label: "Cylinder Movements", value: movementCount.toLocaleString("en-OM"), tone: "text-slate-900" },
   ];
@@ -124,9 +220,9 @@ export default async function ManagerDashboardPage() {
             <p className="text-sm font-black uppercase tracking-wide text-slate-500">Branch Manager</p>
             <h1 className="text-3xl font-black text-slate-950">{branch?.name ?? "All Branches"}</h1>
             <p className="mt-1 text-sm font-bold text-slate-600">
-              {hasGlobalAccess ? "Global sales visibility is enabled for this account." : "Branch-level view only."}
-            </p>
-          </div>
+            {hasGlobalAccess ? "Global sales visibility is enabled for this account." : "Branch-level view only."}
+          </p>
+        </div>
           <div className="flex flex-col gap-2 sm:flex-row">
             <Link href="/manager/settings" className="rounded bg-slate-950 px-4 py-2 text-sm font-black text-white">
               Price Settings
@@ -139,6 +235,62 @@ export default async function ManagerDashboardPage() {
             </Link>
           </div>
         </header>
+
+        <section className="rounded-lg border border-slate-200 bg-white shadow-sm">
+          <div className="border-b border-slate-200 px-4 py-3">
+            <h2 className="text-lg font-black text-slate-950">Scope Filters</h2>
+          </div>
+          <form method="get" className="grid grid-cols-1 gap-4 p-4 md:grid-cols-2 xl:grid-cols-4">
+            <label className="block">
+              <span className="text-xs font-black uppercase tracking-wide text-slate-500">Start Date</span>
+              <input name="start" type="date" defaultValue={params.start ?? ""} className="mt-2 h-12 w-full rounded border border-slate-300 px-3 text-sm font-bold" />
+            </label>
+            <label className="block">
+              <span className="text-xs font-black uppercase tracking-wide text-slate-500">End Date</span>
+              <input name="end" type="date" defaultValue={params.end ?? ""} className="mt-2 h-12 w-full rounded border border-slate-300 px-3 text-sm font-bold" />
+            </label>
+            <label className="block">
+              <span className="text-xs font-black uppercase tracking-wide text-slate-500">Branch</span>
+              <select name="branchId" defaultValue={requestedBranchId ?? ""} className="mt-2 h-12 w-full rounded border border-slate-300 px-3 text-sm font-bold">
+                <option value="">{hasGlobalAccess ? "All Branches" : "Current Branch"}</option>
+                {availableBranches.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.code} · {item.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="block">
+              <span className="text-xs font-black uppercase tracking-wide text-slate-500">Salesman</span>
+              <select name="userId" defaultValue={requestedUserId ?? ""} className="mt-2 h-12 w-full rounded border border-slate-300 px-3 text-sm font-bold">
+                <option value="">All Salesmen</option>
+                {availableUsers.map((user) => (
+                  <option key={user.id} value={user.id}>
+                    {user.fullName}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="block md:col-span-2 xl:col-span-2">
+              <span className="text-xs font-black uppercase tracking-wide text-slate-500">Customer Search</span>
+              <input name="customer" defaultValue={customerFilter} placeholder="Customer name" className="mt-2 h-12 w-full rounded border border-slate-300 px-3 text-sm font-bold" />
+            </label>
+            <label className="block">
+              <span className="text-xs font-black uppercase tracking-wide text-slate-500">Status</span>
+              <select name="status" defaultValue={statusFilter || "ALL"} className="mt-2 h-12 w-full rounded border border-slate-300 px-3 text-sm font-bold">
+                <option value="ALL">Open / Partial</option>
+                <option value="OPEN">Open</option>
+                <option value="PARTIALLY_PAID">Partially Paid</option>
+                <option value="PAID">Paid</option>
+                <option value="WRITTEN_OFF">Written Off</option>
+              </select>
+            </label>
+            <div className="md:col-span-2 xl:col-span-4 flex gap-3">
+              <button type="submit" className="rounded bg-slate-950 px-4 py-2 text-sm font-black text-white">Apply Filters</button>
+              <Link href="/manager" className="rounded border border-slate-300 bg-white px-4 py-2 text-sm font-black text-slate-900">Reset</Link>
+            </div>
+          </form>
+        </section>
 
         <section className="grid grid-cols-1 gap-4 md:grid-cols-3">
           {stats.map((stat) => (

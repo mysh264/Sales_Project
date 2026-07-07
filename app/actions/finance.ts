@@ -33,24 +33,61 @@ export type FinancialSummary = {
   pendingDebtCollectionToday: string;
 };
 
-export async function getFinancialSummary(): Promise<FinancialSummary> {
+export type FinancialSummaryFilters = {
+  startDate?: Date;
+  endDateExclusive?: Date;
+  branchId?: string | null;
+  salesmanId?: string | null;
+};
+
+export async function getFinancialSummary(filters: FinancialSummaryFilters = {}): Promise<FinancialSummary> {
   const { user } = await requirePermission(Permissions.Finance_Read);
   const scope = await getBranchScope();
   const globalAccess = Boolean(scope?.canSeeAllBranches);
-  const dayStart = startOfDay();
-  const dayEnd = endOfDay();
+  const dayStart = filters.startDate ?? startOfDay();
+  const dayEnd = filters.endDateExclusive ?? endOfDay();
   const branchFilter = branchWhere(scope);
+  const targetBranchId = globalAccess ? filters.branchId ?? null : scope?.branchId ?? null;
+  const targetSalesmanId = filters.salesmanId ?? null;
+
+  const invoiceBranchFilter = globalAccess
+    ? targetBranchId
+      ? { branchId: targetBranchId }
+      : undefined
+    : branchFilter;
+
+  const invoiceSalesmanFilter = targetSalesmanId ? { salesmanId: targetSalesmanId } : undefined;
+
+  const invoiceWhere = {
+    ...(invoiceBranchFilter ?? {}),
+    ...(invoiceSalesmanFilter ?? {}),
+    status: "ISSUED",
+    createdAt: {
+      gte: dayStart,
+      lt: dayEnd,
+    },
+  } satisfies Prisma.InvoiceWhereInput;
+
+  const debtWhere: Prisma.CustomerDebtWhereInput = {
+    invoice:
+      invoiceBranchFilter || targetSalesmanId
+        ? {
+            ...(invoiceBranchFilter ?? {}),
+            ...(targetSalesmanId ? { salesmanId: targetSalesmanId } : {}),
+          }
+        : undefined,
+    status: {
+      in: [DebtStatus.OPEN, DebtStatus.PARTIALLY_PAID],
+    },
+    createdAt: {
+      gte: dayStart,
+      lt: dayEnd,
+    },
+  };
 
   const [invoiceTotals, debtTotals] = await Promise.all([
     prisma.invoice.aggregate({
-      where: {
-        ...branchFilter,
-        status: "ISSUED",
-        createdAt: {
-          gte: dayStart,
-          lt: dayEnd,
-        },
-      },
+      where: invoiceWhere,
       _sum: {
         subtotalAmount: true,
         taxAmount: true,
@@ -58,16 +95,7 @@ export async function getFinancialSummary(): Promise<FinancialSummary> {
       },
     }),
     prisma.customerDebt.aggregate({
-      where: {
-        ...branchFilter,
-        status: {
-          in: [DebtStatus.OPEN, DebtStatus.PARTIALLY_PAID],
-        },
-        createdAt: {
-          gte: dayStart,
-          lt: dayEnd,
-        },
-      },
+      where: debtWhere,
       _sum: {
         balanceAmount: true,
       },
