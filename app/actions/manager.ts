@@ -27,11 +27,14 @@ function paymentMethod(value: string) {
 
 export async function updatePriceRule(formData: FormData) {
   const ruleId = text(formData, "ruleId");
+  const branchId = text(formData, "branchId");
+  const productId = text(formData, "productId");
+  const currency = text(formData, "currency") || "OMR";
   const minPrice = money(formData, "minPrice");
   const maxPrice = money(formData, "maxPrice");
 
-  if (!ruleId) {
-    throw new Error("Missing price rule.");
+  if (!productId) {
+    throw new Error("Missing product.");
   }
 
   if (minPrice.lessThan(0) || maxPrice.lessThan(0) || minPrice.greaterThan(maxPrice)) {
@@ -41,18 +44,60 @@ export async function updatePriceRule(formData: FormData) {
   await requirePermission(Permissions.Products_Update);
 
   await prisma.$transaction(async (tx) => {
-    const rule = await tx.productPriceRule.findUniqueOrThrow({ where: { id: ruleId } });
-    const updatedRule = await tx.productPriceRule.update({
-      where: { id: ruleId },
-      data: { minPrice, maxPrice },
-    });
+    let updatedRule;
+    let previousRule = null;
+
+    if (ruleId) {
+      previousRule = await tx.productPriceRule.findUniqueOrThrow({ where: { id: ruleId } });
+      updatedRule = await tx.productPriceRule.update({
+        where: { id: ruleId },
+        data: {
+          currency,
+          minPrice,
+          maxPrice,
+          endsAt: null,
+        },
+      });
+    } else {
+      if (!branchId) {
+        throw new Error("Missing branch.");
+      }
+
+      previousRule = await tx.productPriceRule.findFirst({
+        where: {
+          branchId,
+          productId,
+          endsAt: null,
+        },
+        orderBy: { startsAt: "desc" },
+      });
+
+      if (previousRule) {
+        await tx.productPriceRule.update({
+          where: { id: previousRule.id },
+          data: { endsAt: new Date() },
+        });
+      }
+
+      updatedRule = await tx.productPriceRule.create({
+        data: {
+          branchId,
+          productId,
+          currency,
+          minPrice,
+          maxPrice,
+          startsAt: new Date(),
+          endsAt: null,
+        },
+      });
+    }
 
     await logAction(
-      rule.branchId,
+      branchId || updatedRule.branchId,
       "UPDATE_PRICE_RULE",
       "ProductPriceRule",
-      ruleId,
-      auditSnapshot(rule),
+      updatedRule.id,
+      auditSnapshot(previousRule),
       auditSnapshot(updatedRule),
       { tx },
     );

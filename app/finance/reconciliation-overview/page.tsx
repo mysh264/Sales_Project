@@ -13,6 +13,8 @@ export const dynamic = "force-dynamic";
 type OverviewSearchParams = {
   start?: string;
   end?: string;
+  branchId?: string;
+  userId?: string;
 };
 
 function startOfMonth() {
@@ -72,11 +74,32 @@ export default async function ReconciliationOverviewPage({
   const endDateExclusive = endDateInput ? nextDay(endDateInput) : endOfMonth();
   const endDateDisplay = endDateInput ?? new Date(endDateExclusive.getFullYear(), endDateExclusive.getMonth(), endDateExclusive.getDate() - 1);
   const hasGlobalAccess = hasGlobalSalesAccess(currentUser);
+  const requestedBranchId = hasGlobalAccess ? params.branchId?.trim() || null : currentUser.branchId ?? null;
+  const requestedUserId = params.userId?.trim() || null;
   const branchScope = hasGlobalAccess
-    ? {}
+    ? requestedBranchId
+      ? { branchId: requestedBranchId }
+      : {}
     : currentUser.branchId
       ? { branchId: currentUser.branchId }
       : { branchId: "__no_branch__" };
+
+  const [availableBranches, availableUsers] = await Promise.all([
+    prisma.branch.findMany({
+      where: hasGlobalAccess ? undefined : { id: currentUser.branchId ?? "" },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true, code: true },
+    }),
+    prisma.user.findMany({
+      where: hasGlobalAccess
+        ? undefined
+        : currentUser.branchId
+          ? { branchId: currentUser.branchId }
+          : { id: "__no_user__" },
+      orderBy: { fullName: "asc" },
+      select: { id: true, fullName: true },
+    }),
+  ]);
 
   const [reconciliations, invoices] = await Promise.all([
     prisma.dailyReconciliation.findMany({
@@ -86,6 +109,7 @@ export default async function ReconciliationOverviewPage({
           lt: endDateExclusive,
         },
         ...branchScope,
+        ...(requestedUserId ? { salesmanId: requestedUserId } : {}),
       },
       include: {
         salesman: {
@@ -105,6 +129,7 @@ export default async function ReconciliationOverviewPage({
           lt: endDateExclusive,
         },
         ...branchScope,
+        ...(requestedUserId ? { salesmanId: requestedUserId } : {}),
       },
       select: {
         salesmanId: true,
@@ -206,6 +231,48 @@ export default async function ReconciliationOverviewPage({
               {formatNumber(totals.variance)}
             </div>
           </div>
+        </section>
+
+        <section className="rounded-lg border border-slate-200 bg-white shadow-sm">
+          <div className="border-b border-slate-200 px-5 py-4">
+            <h2 className="text-lg font-black text-slate-950">Scope Filters</h2>
+          </div>
+          <form method="get" className="grid grid-cols-1 gap-4 p-4 md:grid-cols-2 xl:grid-cols-4">
+            <label className="block">
+              <span className="text-xs font-black uppercase tracking-wide text-slate-500">Start Date</span>
+              <input name="start" type="date" defaultValue={params.start ?? ""} className="mt-2 h-12 w-full rounded border border-slate-300 px-3 text-sm font-bold" />
+            </label>
+            <label className="block">
+              <span className="text-xs font-black uppercase tracking-wide text-slate-500">End Date</span>
+              <input name="end" type="date" defaultValue={params.end ?? ""} className="mt-2 h-12 w-full rounded border border-slate-300 px-3 text-sm font-bold" />
+            </label>
+            <label className="block">
+              <span className="text-xs font-black uppercase tracking-wide text-slate-500">Branch</span>
+              <select name="branchId" defaultValue={requestedBranchId ?? ""} className="mt-2 h-12 w-full rounded border border-slate-300 px-3 text-sm font-bold">
+                <option value="">{hasGlobalAccess ? "All Branches" : "Current Branch"}</option>
+                {availableBranches.map((branch) => (
+                  <option key={branch.id} value={branch.id}>
+                    {branch.code} · {branch.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="block">
+              <span className="text-xs font-black uppercase tracking-wide text-slate-500">Salesman</span>
+              <select name="userId" defaultValue={requestedUserId ?? ""} className="mt-2 h-12 w-full rounded border border-slate-300 px-3 text-sm font-bold">
+                <option value="">All Salesmen</option>
+                {availableUsers.map((user) => (
+                  <option key={user.id} value={user.id}>
+                    {user.fullName}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className="md:col-span-2 xl:col-span-4 flex gap-3">
+              <button type="submit" className="rounded bg-slate-950 px-4 py-2 text-sm font-black text-white">Apply Filters</button>
+              <Link href="/finance/reconciliation-overview" className="rounded border border-slate-300 bg-white px-4 py-2 text-sm font-black text-slate-900">Reset</Link>
+            </div>
+          </form>
         </section>
 
         <section className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
