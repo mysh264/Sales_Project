@@ -300,28 +300,20 @@ export async function recordEveningReconcile(salesmanId: string, reconciledList:
       }
 
       const soldFull = item.morningFull - row.eveningReturnedFull;
+      const missingEmpty = item.morningFull - row.eveningReturnedFull - row.eveningReturnedEmpty;
       if (soldFull < 0) {
         throw new Error("Returned full cylinders cannot exceed morning load.");
+      }
+
+      if (missingEmpty < 0) {
+        throw new Error("Returned cylinders cannot exceed morning load.");
       }
 
       return {
         ...row,
-        eveningReturnedEmpty: soldFull,
+        missingEmpty,
       };
     });
-
-    for (const row of normalizedRows) {
-      const item = itemMap.get(row.productId);
-
-      if (!item) {
-        throw new Error("Evening reconciliation must include the morning load products.");
-      }
-
-      const soldFull = item.morningFull - row.eveningReturnedFull;
-      if (soldFull < 0) {
-        throw new Error("Returned full cylinders cannot exceed morning load.");
-      }
-    }
 
     const reconciliationBefore = auditSnapshot(reconciliation);
 
@@ -345,6 +337,7 @@ export async function recordEveningReconcile(salesmanId: string, reconciledList:
         data: {
           eveningReturnedFull: row.eveningReturnedFull,
           eveningReturnedEmpty: row.eveningReturnedEmpty,
+          missingEmpty: row.missingEmpty,
           soldFull: currentItem.morningFull - row.eveningReturnedFull,
         },
       });

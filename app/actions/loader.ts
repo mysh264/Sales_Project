@@ -319,11 +319,14 @@ export async function processEveningReturn(formData: FormData) {
       }
 
       const soldFull = item.morningFull - row.eveningReturnedFull;
+      const missingEmpty = item.morningFull - row.eveningReturnedFull - row.eveningReturnedEmpty;
       if (soldFull < 0) {
         throw new Error("Returned full cylinders cannot exceed morning load.");
       }
 
-      row.eveningReturnedEmpty = soldFull;
+      if (missingEmpty < 0) {
+        throw new Error("Returned cylinders cannot exceed morning load.");
+      }
     }
 
     const reconciliationBefore = auditSnapshot(reconciliation);
@@ -338,6 +341,7 @@ export async function processEveningReturn(formData: FormData) {
 
     for (const row of normalizedList) {
       const currentItem = itemMap.get(row.productId)!;
+      const missingEmpty = currentItem.morningFull - row.eveningReturnedFull - row.eveningReturnedEmpty;
       const updatedItem = await tx.dailyReconciliationItem.update({
         where: {
           reconciliationId_productId: {
@@ -348,6 +352,7 @@ export async function processEveningReturn(formData: FormData) {
         data: {
           eveningReturnedFull: row.eveningReturnedFull,
           eveningReturnedEmpty: row.eveningReturnedEmpty,
+          missingEmpty,
           soldFull: currentItem.morningFull - row.eveningReturnedFull,
         },
       });

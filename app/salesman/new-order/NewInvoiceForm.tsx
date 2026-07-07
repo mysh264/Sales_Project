@@ -50,6 +50,7 @@ type CustomerDraft = {
 };
 
 type SavedInvoiceData = {
+  submissionToken: string;
   customerQuery: string;
   selectedCustomerId: string | null;
   customerDraft: CustomerDraft;
@@ -133,6 +134,7 @@ export function NewInvoiceForm({
     address: "",
     vatNumber: "",
   });
+  const [submissionToken, setSubmissionToken] = useState(() => makeId());
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [manualSerialValue, setManualSerialValue] = useState(invoiceSerial);
   const [invoiceDateValue, setInvoiceDateValue] = useState(todayInputValue());
@@ -283,6 +285,7 @@ export function NewInvoiceForm({
         address: data.customerDraft?.address ?? "",
         vatNumber: data.customerDraft?.vatNumber ?? "",
       });
+      setSubmissionToken(data.submissionToken ?? makeId());
       setShowAdvanced(Boolean(data.showAdvanced));
       setManualSerialValue(data.manualSerialValue ?? data.invoiceSerialValue ?? invoiceSerial);
       setInvoiceDateValue(data.invoiceDateValue ?? todayInputValue());
@@ -324,6 +327,7 @@ export function NewInvoiceForm({
 
     const data: SavedInvoiceData = {
       customerQuery,
+      submissionToken,
       selectedCustomerId: selectedCustomer?.id ?? null,
       customerDraft,
       showAdvanced,
@@ -364,6 +368,7 @@ export function NewInvoiceForm({
     invoiceDateValue,
     productRows,
     selectedCustomer?.id,
+    submissionToken,
     showAdvanced,
     taxRate,
     transferAmount,
@@ -464,6 +469,7 @@ export function NewInvoiceForm({
       className="mx-auto flex max-w-screen-2xl flex-col gap-6 pb-[calc(env(safe-area-inset-bottom)+1.5rem)] md:pb-8"
     >
       <input type="hidden" name="invoiceSerial" value={invoiceSerial} />
+      <input type="hidden" name="submissionToken" value={submissionToken} />
       <input type="hidden" name="manualSerial" value={manualSerialValue} />
       <input type="hidden" name="invoiceDate" value={invoiceDateValue} />
       <input type="hidden" name="customerId" value={selectedCustomer?.id === "new" ? "" : selectedCustomer?.id ?? ""} />

@@ -130,6 +130,7 @@ export default async function ReconciliationOverviewPage({
     const totalLoaded = reconciliation.items.reduce((total, item) => total + item.morningFull, 0);
     const returnedFull = reconciliation.items.reduce((total, item) => total + item.eveningReturnedFull, 0);
     const returnedEmpty = reconciliation.items.reduce((total, item) => total + item.eveningReturnedEmpty, 0);
+    const physicalShortage = reconciliation.items.reduce((total, item) => total + item.missingEmpty, 0);
     const calculatedSold = totalLoaded - returnedFull;
     const actualInvoiced = invoicedMap.get(`${reconciliation.salesmanId}:${dayKey(reconciliation.reconciliationDate)}`) ?? 0;
     const variance = actualInvoiced - calculatedSold;
@@ -142,6 +143,7 @@ export default async function ReconciliationOverviewPage({
       totalLoaded,
       returnedFull,
       returnedEmpty,
+      physicalShortage,
       calculatedSold,
       actualInvoiced,
       variance,
@@ -153,12 +155,13 @@ export default async function ReconciliationOverviewPage({
       acc.loaded += row.totalLoaded;
       acc.returnedFull += row.returnedFull;
       acc.returnedEmpty += row.returnedEmpty;
+      acc.physicalShortage += row.physicalShortage;
       acc.calculatedSold += row.calculatedSold;
       acc.actualInvoiced += row.actualInvoiced;
       acc.variance += row.variance;
       return acc;
     },
-    { loaded: 0, returnedFull: 0, returnedEmpty: 0, calculatedSold: 0, actualInvoiced: 0, variance: 0 },
+    { loaded: 0, returnedFull: 0, returnedEmpty: 0, physicalShortage: 0, calculatedSold: 0, actualInvoiced: 0, variance: 0 },
   );
 
   return (
@@ -222,6 +225,7 @@ export default async function ReconciliationOverviewPage({
                   <th className="px-4 py-3">Total Loaded</th>
                   <th className="px-4 py-3">Returned Full</th>
                   <th className="px-4 py-3">Returned Empty</th>
+                  <th className="px-4 py-3">Physical Shortage</th>
                   <th className="px-4 py-3">Calculated Sold</th>
                   <th className="px-4 py-3">Actual Invoiced</th>
                   <th className="px-4 py-3">Variance</th>
@@ -230,7 +234,7 @@ export default async function ReconciliationOverviewPage({
               <tbody className="divide-y divide-slate-200">
                 {rows.length === 0 ? (
                   <tr>
-                    <td className="px-4 py-5 font-bold text-slate-600" colSpan={9}>
+                    <td className="px-4 py-5 font-bold text-slate-600" colSpan={10}>
                       No routes found in this range.
                     </td>
                   </tr>
@@ -243,6 +247,7 @@ export default async function ReconciliationOverviewPage({
                       <td className="px-4 py-3 font-bold text-slate-700">{formatNumber(row.totalLoaded)}</td>
                       <td className="px-4 py-3 font-bold text-slate-700">{formatNumber(row.returnedFull)}</td>
                       <td className="px-4 py-3 font-bold text-slate-700">{formatNumber(row.returnedEmpty)}</td>
+                      <td className="px-4 py-3 font-black text-amber-700">{formatNumber(row.physicalShortage)}</td>
                       <td className="px-4 py-3 font-bold text-emerald-700">{formatNumber(row.calculatedSold)}</td>
                       <td className="px-4 py-3 font-bold text-slate-700">{formatNumber(row.actualInvoiced)}</td>
                       <td className={`px-4 py-3 font-black ${row.variance === 0 ? "text-slate-950" : "text-red-700"}`}>

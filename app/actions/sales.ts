@@ -77,6 +77,7 @@ export async function createOrder(formData: FormData) {
     const customerVatNumber = text(formData, "customerVatNumber");
     const manualSerial = text(formData, "manualSerial");
     const invoiceSerial = manualSerial || text(formData, "invoiceSerial") || buildInvoiceSerial();
+    const submissionToken = text(formData, "submissionToken");
     const invoiceDate = parseDate(text(formData, "invoiceDate")) ?? new Date();
     const currency = text(formData, "currency") || branch?.defaultCurrency || "OMR";
     const branchTaxRate = branch?.defaultTaxRate && branch.defaultTaxRate.greaterThan(0)
@@ -95,9 +96,22 @@ export async function createOrder(formData: FormData) {
       throw new Error("Enter a customer name or phone number.");
     }
 
+    if (!submissionToken) {
+      throw new Error("Missing submission token.");
+    }
+
+    const duplicateSubmission = await prisma.invoice.findUnique({
+      where: { submissionToken },
+      select: { id: true },
+    });
+
+    if (duplicateSubmission) {
+      throw new Error("This invoice was already submitted. Please wait a moment.");
+    }
+
     const invoice = await prisma.$transaction(async (tx) => {
-    const branchRow = await tx.branch.findUniqueOrThrow({ where: { id: branchId } });
-    const salesman = await tx.user.findUniqueOrThrow({ where: { id: currentUser.id } });
+      const branchRow = await tx.branch.findUniqueOrThrow({ where: { id: branchId } });
+      const salesman = await tx.user.findUniqueOrThrow({ where: { id: currentUser.id } });
 
     const customerScope = currentUser.hasGlobalAccess ? {} : { branchId: branchRow.id };
 
@@ -198,10 +212,25 @@ export async function createOrder(formData: FormData) {
     const debtAmount = decimalMax(totalAmount.sub(paidAmount), new Prisma.Decimal(0));
     const customerCredit = decimalMax(paidAmount.sub(totalAmount), new Prisma.Decimal(0));
 
+    const currentDebt = await tx.customerDebt.aggregate({
+      where: {
+        customerId: customer.id,
+        status: { in: [DebtStatus.OPEN, DebtStatus.PARTIALLY_PAID] },
+      },
+      _sum: { balanceAmount: true },
+    });
+    const outstandingDebt = currentDebt._sum.balanceAmount ?? new Prisma.Decimal(0);
+    const projectedDebt = outstandingDebt.add(debtAmount);
+
+    if (customer.creditLimit && projectedDebt.greaterThan(customer.creditLimit)) {
+      throw new Error("Credit Limit Exceeded");
+    }
+
     const createdInvoice = await tx.invoice.create({
       data: {
         invoiceNumber: invoiceSerial,
         invoiceSerial,
+        submissionToken,
         branchId: branchRow.id,
         customerId: customer.id,
         salesmanId: salesman.id,
@@ -425,6 +454,15 @@ export async function createOrder(formData: FormData) {
       (error as { digest: string }).digest.startsWith("NEXT_REDIRECT")
     ) {
       throw error;
+    }
+
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2002" &&
+      Array.isArray(error.meta?.target) &&
+      error.meta.target.includes("submissionToken")
+    ) {
+      redirect(`/salesman/new-order?error=${encodeURIComponent("This invoice was already submitted. Please wait a moment.")}`);
     }
 
     const message = error instanceof Error ? error.message : "Unable to save invoice.";

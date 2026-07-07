@@ -222,6 +222,7 @@ model Invoice {
   id                String        @id @default(cuid())
   invoiceNumber     String        @unique
   invoiceSerial     String?       @unique
+  submissionToken   String?       @unique
   branchId          String
   customerId        String
   salesmanId        String
@@ -385,6 +386,7 @@ model DailyReconciliationItem {
   morningFull         Int                 @default(0)
   eveningReturnedFull Int                 @default(0)
   eveningReturnedEmpty Int                @default(0)
+  missingEmpty        Int                 @default(0)
   soldFull            Int                 @default(0)
   reconciliation      DailyReconciliation @relation(fields: [reconciliationId], references: [id], onDelete: Cascade)
   product             Product             @relation(fields: [productId], references: [id])
