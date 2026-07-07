@@ -42,7 +42,7 @@ export default async function AdminProductsPage({ searchParams }: ProductsPagePr
   const activeCount = products.filter((product) => product.isActive).length;
 
   return (
-    <main className="min-h-screen bg-slate-50 p-8">
+    <main className="min-h-screen bg-slate-50 p-4 md:p-8">
       <div className="mx-auto flex max-w-screen-2xl flex-col gap-6">
         <header className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
           <div>
@@ -77,7 +77,7 @@ export default async function AdminProductsPage({ searchParams }: ProductsPagePr
           </article>
         </section>
 
-        <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(360px,0.9fr)_minmax(0,1.1fr)]">
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(320px,0.8fr)_minmax(0,1.2fr)]">
           <section className="rounded-lg border border-slate-200 bg-white shadow-sm">
             <div className="border-b border-slate-200 px-4 py-3">
               <h2 className="text-lg font-black text-slate-950">{productToEdit ? "Edit Product" : "Add Product"}</h2>

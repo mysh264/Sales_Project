@@ -4,9 +4,9 @@ import { logout } from "@/app/actions/auth";
 export default function AdminLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <>
-      <nav className="border-b border-slate-200 bg-white px-8 py-3 shadow-sm">
-        <div className="mx-auto flex max-w-screen-xl items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
+      <nav className="border-b border-slate-200 bg-white px-4 py-3 shadow-sm md:px-8">
+        <div className="mx-auto flex max-w-screen-xl flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div className="flex flex-wrap items-center gap-3">
             <Link href="/admin" className="rounded bg-slate-950 px-4 py-2 text-sm font-black text-white">
               Home
             </Link>

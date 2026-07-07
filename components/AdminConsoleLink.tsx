@@ -22,9 +22,8 @@ export async function AdminConsoleLink({ className }: { className: string }) {
   }
 
   return (
-    <Link href="/admin" className={className}>
+    <Link href="/admin-console" className={className}>
       Admin Console
     </Link>
   );
 }
-

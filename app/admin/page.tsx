@@ -25,7 +25,7 @@ export default async function AdminConsolePage() {
   ];
 
   return (
-    <main className="min-h-screen bg-slate-50 p-8">
+    <main className="min-h-screen bg-slate-50 p-4 md:p-8">
       <div className="mx-auto flex max-w-screen-xl flex-col gap-6">
         <header className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
           <p className="text-sm font-black uppercase tracking-wide text-slate-500">System Administration</p>
@@ -52,6 +52,9 @@ export default async function AdminConsolePage() {
           <div className="mt-4 flex flex-wrap gap-3">
             <Link href="/admin/branches" className="inline-flex rounded border border-slate-300 px-4 py-2 text-sm font-black text-slate-900">
               Branches
+            </Link>
+            <Link href="/admin-console" className="inline-flex rounded border border-slate-300 px-4 py-2 text-sm font-black text-slate-900">
+              User Management
             </Link>
             <Link href="/admin/products" className="inline-flex rounded border border-slate-300 px-4 py-2 text-sm font-black text-slate-900">
               Products

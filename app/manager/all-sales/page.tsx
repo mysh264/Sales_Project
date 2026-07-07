@@ -61,7 +61,7 @@ export default async function ManagerAllSalesPage() {
   const totalDebt = invoices.reduce((sum, invoice) => sum.add(invoice.debtAmount), new Prisma.Decimal(0));
 
   return (
-    <main className="min-h-screen bg-slate-50 p-8">
+    <main className="min-h-screen bg-slate-50 p-4 md:p-8">
       <div className="mx-auto flex max-w-7xl flex-col gap-6">
         <header className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
           <p className="text-sm font-black uppercase tracking-wide text-slate-500">Manager Sales View</p>

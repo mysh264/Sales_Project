@@ -40,7 +40,7 @@ export default async function AdminBranchesPage({ searchParams }: BranchPageProp
   ]);
 
   return (
-    <main className="min-h-screen bg-slate-50 p-8">
+    <main className="min-h-screen bg-slate-50 p-4 md:p-8">
       <div className="mx-auto flex max-w-7xl flex-col gap-8">
         <header className="flex items-start justify-between gap-4">
           <div>

@@ -49,7 +49,7 @@ export default async function RolesPage({ searchParams }: RolesPageProps) {
   const defaultRoleName = selectedRole ? (isEditMode ? selectedRole.name : `${selectedRole.name} Copy`) : "";
 
   return (
-    <main className="min-h-screen bg-slate-50 p-8">
+    <main className="min-h-screen bg-slate-50 p-4 md:p-8">
       <div className="mx-auto flex max-w-7xl flex-col gap-6">
         <header className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>

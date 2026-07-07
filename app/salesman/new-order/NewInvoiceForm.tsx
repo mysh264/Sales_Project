@@ -556,8 +556,8 @@ export function NewInvoiceForm({
         </div>
       </section>
 
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1.7fr)_minmax(320px,0.9fr)]">
-        <section className="flex flex-col gap-6">
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,2.2fr)_minmax(360px,0.9fr)] xl:items-start">
+        <section className="flex flex-col gap-6 xl:order-2">
           <section className="rounded-xl bg-white p-6 shadow-sm">
             <div className="flex items-start justify-between gap-3">
               <div>
@@ -683,9 +683,35 @@ export function NewInvoiceForm({
               ) : null}
             </div>
           </section>
+
+          <aside className="hidden rounded-xl border border-slate-200 bg-white p-5 shadow-sm xl:sticky xl:top-6 xl:block">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-lg font-black text-slate-950">Invoice Preview</p>
+                <p className="text-sm font-bold text-slate-500">Live totals before saving.</p>
+              </div>
+              <span className="rounded-full bg-slate-950 px-3 py-1 text-xs font-black uppercase tracking-wide text-white">
+                Live
+              </span>
+            </div>
+            <div className="mt-4 grid grid-cols-1 gap-3">
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                <p className="text-xs font-black uppercase tracking-wide text-slate-500">Items Subtotal</p>
+                <p className="mt-1 text-2xl font-black text-slate-950">{formatOmr(itemsSubtotal)}</p>
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                <p className="text-xs font-black uppercase tracking-wide text-slate-500">VAT</p>
+                <p className="mt-1 text-2xl font-black text-slate-950">{formatOmr(vatAmount)}</p>
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-slate-950 p-4 text-white">
+                <p className="text-xs font-black uppercase tracking-wide text-slate-300">Invoice Total</p>
+                <p className="mt-1 text-3xl font-black">{formatOmr(invoiceTotal)}</p>
+              </div>
+            </div>
+          </aside>
         </section>
 
-        <section className="max-w-full overflow-hidden rounded-xl bg-white p-6 shadow-sm">
+        <section className="max-w-full overflow-hidden rounded-xl bg-white p-4 shadow-sm md:p-6 xl:order-1">
           <div className="flex items-center justify-between gap-3">
             <div>
               <p className="text-lg font-black text-slate-950">Product Selection</p>
@@ -706,7 +732,7 @@ export function NewInvoiceForm({
               <p className="text-xs font-bold text-slate-500">All active branch products are shown here.</p>
             </div>
 
-            <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
               {products.map((product) => (
                 <button
                   key={product.id}
@@ -853,7 +879,7 @@ export function NewInvoiceForm({
             </button>
           </div>
 
-          <aside className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4 shadow-sm xl:sticky xl:top-6">
+          <aside className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4 shadow-sm xl:hidden">
             <div className="flex items-center justify-between gap-3">
               <div>
                 <p className="text-lg font-black text-slate-950">Invoice Preview</p>

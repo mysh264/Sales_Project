@@ -55,7 +55,7 @@ export default async function ManagerDashboardPage() {
 
   if (!hasGlobalAccess && !branch) {
     return (
-      <main className="min-h-screen bg-slate-50 p-8">
+      <main className="min-h-screen bg-slate-50 p-4 md:p-8">
         <div className="mx-auto max-w-7xl rounded-lg bg-white p-6 text-xl font-black text-slate-900 shadow-sm">
           No branch is configured for this account.
         </div>
@@ -117,7 +117,7 @@ export default async function ManagerDashboardPage() {
   ];
 
   return (
-    <main className="min-h-screen bg-slate-50 p-8">
+    <main className="min-h-screen bg-slate-50 p-4 md:p-8">
       <div className="mx-auto max-w-7xl">
         <header className="mb-6 flex items-center justify-between gap-4">
           <div>

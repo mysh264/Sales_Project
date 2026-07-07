@@ -25,7 +25,7 @@ export default async function ManagerSettingsPage() {
     : [];
 
   return (
-    <main className="min-h-screen bg-slate-50 p-8">
+    <main className="min-h-screen bg-slate-50 p-4 md:p-8">
       <div className="mx-auto max-w-7xl">
         <header className="mb-6 flex items-start justify-between gap-4">
           <div>
