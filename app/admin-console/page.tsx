@@ -60,6 +60,7 @@ export default async function AdminConsolePage() {
               <ButtonLink href="/admin/products" variant="ghost">Products</ButtonLink>
               <ButtonLink href="/admin/roles" variant="ghost">Roles</ButtonLink>
               <ButtonLink href="/admin/audit-logs" variant="ghost">Audit Logs</ButtonLink>
+              <ButtonLink href="/admin/cylinders" variant="ghost">Cylinders</ButtonLink>
               <ButtonLink href="/admin/finance" variant="ghost">Finance</ButtonLink>
               <ButtonLink href="/admin/reconciliation" variant="ghost">Reconciliation</ButtonLink>
             </>

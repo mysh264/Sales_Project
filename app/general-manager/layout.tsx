@@ -14,6 +14,7 @@ export default function GeneralManagerLayout({ children }: Readonly<{ children: 
           { href: "/general-manager/products", label: "Products" },
           { href: "/general-manager/inventory", label: "Inventory" },
           { href: "/general-manager/roles", label: "Roles" },
+          { href: "/admin/audit-logs", label: "Audit Logs" },
           { href: "/profile/security", label: "Security" },
         ]}
       />

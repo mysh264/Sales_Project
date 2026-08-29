@@ -76,14 +76,20 @@ function buildQueryString(params: Record<string, string | number | undefined>) {
 export default async function AuditLogsPage({ searchParams }: AuditLogsPageProps) {
   const currentUser = await getCurrentUser();
   if (!currentUser) redirect("/login");
-  if (currentUser.role !== "ADMIN") {
+  const isAdmin = currentUser.role === "ADMIN";
+  const isGM = currentUser.role === "GENERAL_MANAGER";
+  if (!isAdmin && !isGM) {
     await logAction(currentUser.id, "SECURITY_BREACH", "AuditLog", "admin/audit-logs", null, {
       requiredPermission: "ADMIN_ACCESS",
       role: currentUser.role,
-      reason: "Audit logs are admin-only.",
+      reason: "Audit logs require admin or general-manager access.",
     });
     forbidden();
   }
+
+  const scopeNote = isGM
+    ? "Branch-scoped view for the general manager. Logs are read-only and include transaction snapshots for review."
+    : "Global access for the admin role. Logs are read-only and include transaction snapshots for review.";
 
   const resolvedSearchParams = (await searchParams) ?? {};
   const page = parsePage(resolvedSearchParams.page);
@@ -96,6 +102,7 @@ export default async function AuditLogsPage({ searchParams }: AuditLogsPageProps
 
   const selectedGroup = ACTION_GROUPS[actionGroup] ?? ACTION_GROUPS.all;
   const where = {
+    ...(isGM && currentUser.branchId ? { user: { branchId: currentUser.branchId } } : {}),
     ...(userId ? { userId } : {}),
     ...(selectedGroup.actions.length > 0 ? { action: { in: selectedGroup.actions } } : {}),
     ...(targetId ? { targetId: { contains: targetId, mode: "insensitive" as const } } : {}),
@@ -105,7 +112,11 @@ export default async function AuditLogsPage({ searchParams }: AuditLogsPageProps
   };
 
   const [users, totalCount] = await Promise.all([
-    prisma.user.findMany({ include: { branch: true }, orderBy: [{ fullName: "asc" }] }),
+    prisma.user.findMany({
+      where: isGM && currentUser.branchId ? { branchId: currentUser.branchId } : {},
+      include: { branch: true },
+      orderBy: [{ fullName: "asc" }],
+    }),
     prisma.auditLog.count({ where }),
   ]);
 
@@ -129,7 +140,7 @@ export default async function AuditLogsPage({ searchParams }: AuditLogsPageProps
         <PageHeader
           eyebrow="Security / Audit"
           title="Audit Log Inspection"
-          description="Global access for the admin role. Logs are read-only and include transaction snapshots for review."
+          description={scopeNote}
           actions={
             <>
               <ButtonLink href={`/admin/audit-logs/export${exportQuery}`} variant="primary">

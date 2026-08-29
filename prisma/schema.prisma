@@ -87,6 +87,8 @@ model Branch {
   invoices            Invoice[]
   inventoryBalances   InventoryBalance[]
   cylinderMovements   CylinderMovement[]
+  cylinders           Cylinder[]
+  cylinderEvents      CylinderEvent[]
   dailyReconciliations DailyReconciliation[]
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
@@ -121,6 +123,7 @@ model User {
   approvedReconciliations DailyReconciliation[] @relation("ReconciliationApprovals")
   debtPayments          DebtPayment[]
   auditLogs             AuditLog[]
+  cylinderEvents        CylinderEvent[]
   createdAt             DateTime           @default(now())
   updatedAt             DateTime           @updatedAt
 
@@ -169,9 +172,14 @@ model Customer {
   taxRate       Decimal?    @db.Decimal(7, 4)
   creditLimit   Decimal?    @db.Decimal(12, 3)
   creditBalance Decimal     @default(0) @db.Decimal(12, 3)
+  // Tokenized, read-only access to this customer's statements (no login required).
+  shareToken        String?   @unique
+  shareTokenExpires DateTime?
   branch        Branch      @relation(fields: [branchId], references: [id])
   invoices      Invoice[]
   debts         CustomerDebt[]
+  cylinders     Cylinder[]         @relation("CylinderCustomer")
+  cylinderEvents CylinderEvent[]    @relation("CylinderEventCustomer")
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
 
@@ -195,6 +203,7 @@ model Product {
   invoiceItems        InvoiceItem[]
   inventoryBalances   InventoryBalance[]
   cylinderMovements   CylinderMovement[]
+  cylinders           Cylinder[]
   dailyReconciliationItems DailyReconciliationItem[]
   createdAt           DateTime            @default(now())
   updatedAt           DateTime            @updatedAt
@@ -249,6 +258,7 @@ model Invoice {
   payments          Payment[]
   customerDebts     CustomerDebt[]
   cylinderMovements CylinderMovement[]
+  cylinderEvents    CylinderEvent[]
   createdAt         DateTime      @default(now())
   updatedAt         DateTime      @updatedAt
 
@@ -344,6 +354,7 @@ model DailyReconciliation {
   discrepancyApprovedBy User?                 @relation("ReconciliationApprovals", fields: [discrepancyApprovedById], references: [id])
   items               DailyReconciliationItem[]
   movements           CylinderMovement[]
+  cylinderEvents      CylinderEvent[]
   createdAt           DateTime                @default(now())
   updatedAt           DateTime                @updatedAt
 
@@ -405,4 +416,59 @@ model CylinderMovement {
   @@index([branchId, productId, createdAt])
   @@index([invoiceId])
   @@index([reconciliationId])
+}
+
+// Per-cylinder serial tracking (optional, additive). Existing count-based flow is
+// untouched; serials are recorded here when operators choose to scan/track them.
+enum CylinderStatus {
+  AVAILABLE
+  FILLED
+  OUT
+  RETURNED
+  RETIRED
+}
+
+model Cylinder {
+  id           String        @id @default(cuid())
+  branchId     String
+  productId    String
+  serial       String
+  status       CylinderStatus @default(AVAILABLE)
+  location     String? // e.g. "Warehouse", "In transit - <salesman>", "Customer <name>"
+  customerId   String?
+  branch       Branch        @relation(fields: [branchId], references: [id])
+  product      Product       @relation(fields: [productId], references: [id])
+  customer     Customer?     @relation("CylinderCustomer", fields: [customerId], references: [id])
+  events       CylinderEvent[]
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  @@unique([branchId, serial])
+  @@index([branchId])
+  @@index([productId])
+  @@index([status])
+  @@index([customerId])
+}
+
+model CylinderEvent {
+  id               String               @id @default(cuid())
+  cylinderId       String
+  branchId         String
+  type             CylinderMovementType
+  invoiceId        String?
+  reconciliationId  String?
+  salesmanId       String?
+  customerId       String?
+  note             String?
+  createdAt        DateTime            @default(now())
+  cylinder         Cylinder            @relation(fields: [cylinderId], references: [id], onDelete: Cascade)
+  branch           Branch              @relation(fields: [branchId], references: [id])
+  invoice          Invoice?            @relation(fields: [invoiceId], references: [id])
+  reconciliation   DailyReconciliation? @relation(fields: [reconciliationId], references: [id])
+  salesman         User?               @relation(fields: [salesmanId], references: [id])
+  customer         Customer?          @relation("CylinderEventCustomer", fields: [customerId], references: [id])
+
+  @@index([cylinderId, createdAt])
+  @@index([branchId])
+  @@index([customerId])
 }

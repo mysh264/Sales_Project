@@ -6,6 +6,7 @@ import { Card, CardHeader } from "@/components/ui/Card";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Stat } from "@/components/ui/Stat";
 import { ButtonLink } from "@/components/ui/Button";
+import { StatementShareButton } from "@/components/StatementShareButton";
 import { formatOmr } from "@/lib/money";
 import { getBranchScope, branchWhere } from "@/lib/branch-scope";
 import { Prisma } from "@/generated/prisma/client";
@@ -97,12 +98,13 @@ export default async function StatementsPage({
                   <th className="text-right">Open Invoices</th>
                   <th className="text-right">Balance</th>
                   <th className="text-right">Statement</th>
+                  <th className="text-right">Share</th>
                 </tr>
               </thead>
               <tbody>
                 {rows.length === 0 ? (
                   <tr>
-                    <td className="px-4 py-10 text-center font-bold text-slate-500" colSpan={6}>
+                    <td className="px-4 py-10 text-center font-bold text-slate-500" colSpan={7}>
                       No customers with outstanding balances.
                     </td>
                   </tr>
@@ -119,6 +121,11 @@ export default async function StatementsPage({
                           <Link href={`/finance/statements/${r.id}`} className="ui-btn ui-btn-ghost ui-btn-sm">
                             Open
                           </Link>
+                        </div>
+                      </td>
+                      <td>
+                        <div className="flex justify-end">
+                          <StatementShareButton customerId={r.id} />
                         </div>
                       </td>
                     </tr>

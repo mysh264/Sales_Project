@@ -19,9 +19,10 @@ function endOfDay(value?: string) {
 
 export async function GET(request: NextRequest) {
   const currentUser = await getCurrentUser();
-  if (!currentUser || currentUser.role !== "ADMIN") {
+  if (!currentUser || (currentUser.role !== "ADMIN" && currentUser.role !== "GENERAL_MANAGER")) {
     return new Response("Unauthorized", { status: 403 });
   }
+  const isGM = currentUser.role === "GENERAL_MANAGER";
 
   const sp = request.nextUrl.searchParams;
   const userId = sp.get("userId")?.trim() === "all" ? undefined : sp.get("userId")?.trim() || undefined;
@@ -31,6 +32,7 @@ export async function GET(request: NextRequest) {
   const endDate = endOfDay(sp.get("endDate") || undefined);
 
   const where = {
+    ...(isGM && currentUser.branchId ? { user: { branchId: currentUser.branchId } } : {}),
     ...(userId ? { userId } : {}),
     ...(action ? { action } : {}),
     ...(targetId ? { targetId: { contains: targetId, mode: "insensitive" as const } } : {}),
