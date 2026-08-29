@@ -1,10 +1,11 @@
 import Link from "next/link";
 import { forbidden, redirect } from "next/navigation";
 import { logAction } from "@/lib/audit";
-import { formatDateDMY } from "@/lib/date-format";
 import { getCurrentUser } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { AuditLogTable } from "./AuditLogTable";
+import { businessDayRange } from "@/lib/business-date";
+import { OmanDateInput } from "@/components/OmanDateInput";
 
 export const dynamic = "force-dynamic";
 
@@ -26,10 +27,20 @@ const ACTION_GROUPS: Record<string, { label: string; actions: string[] }> = {
   invoice_deletions: { label: "Invoice Deletions", actions: ["DELETE_INVOICE"] },
   inventory_changes: {
     label: "Inventory Changes",
-    actions: ["UPDATE_INVENTORY", "PROCESS_MORNING_LOAD", "PROCESS_EVENING_RETURN"],
+    actions: ["ADJUST_INVENTORY"],
   },
-  user_changes: { label: "User / Permission Changes", actions: ["CREATE_USER", "UPDATE_PERMISSION"] },
+  reconciliation: {
+    label: "Daily Reconciliation",
+    actions: ["CREATE_RECONCILIATION", "UPDATE_RECONCILIATION", "APPROVE_RECONCILIATION_DISCREPANCY"],
+  },
+  user_changes: { label: "User / Permission Changes", actions: ["CREATE_USER", "UPDATE_PERMISSION", "UPDATE_USER_STATUS"] },
+  password_resets: { label: "Password Resets", actions: ["RESET_USER_PASSWORD"] },
   role_changes: { label: "Role Changes", actions: ["CREATE_ROLE", "UPDATE_ROLE", "DELETE_ROLE"] },
+  branch_changes: { label: "Branch Changes", actions: ["CREATE_BRANCH", "UPDATE_BRANCH"] },
+  product_changes: {
+    label: "Product Changes",
+    actions: ["CREATE_PRODUCT", "UPDATE_PRODUCT", "DELETE_PRODUCT", "RESTORE_PRODUCT"],
+  },
   debt_collection: { label: "Debt Collection", actions: ["COLLECT_DEBT"] },
   pricing: { label: "Price Management", actions: ["UPDATE_PRICE_RULE"] },
   security_breaches: { label: "Security Breaches", actions: ["SECURITY_BREACH"] },
@@ -47,14 +58,14 @@ function parsePageSize(value: string | undefined) {
 
 function startOfDay(value?: string) {
   if (!value) return undefined;
-  const date = new Date(`${value}T00:00:00.000Z`);
-  return Number.isNaN(date.getTime()) ? undefined : date;
+  const date = new Date(`${value}T12:00:00.000Z`);
+  return Number.isNaN(date.getTime()) ? undefined : businessDayRange(date).start;
 }
 
 function endOfDay(value?: string) {
   if (!value) return undefined;
-  const date = new Date(`${value}T23:59:59.999Z`);
-  return Number.isNaN(date.getTime()) ? undefined : date;
+  const date = new Date(`${value}T12:00:00.000Z`);
+  return Number.isNaN(date.getTime()) ? undefined : new Date(businessDayRange(date).end.getTime() - 1);
 }
 
 function buildQueryString(params: Record<string, string | number | undefined>) {
@@ -155,8 +166,8 @@ export default async function AuditLogsPage({ searchParams }: AuditLogsPageProps
               <Link href="/admin" className="rounded bg-slate-950 px-4 py-2 text-sm font-black text-white">
                 Back to Admin
               </Link>
-              <Link href="/admin-console" className="rounded border border-slate-300 px-4 py-2 text-sm font-black text-slate-900">
-                Console
+              <Link href="/admin/users" className="rounded border border-slate-300 px-4 py-2 text-sm font-black text-slate-900">
+                Users
               </Link>
             </div>
           </div>
@@ -170,8 +181,7 @@ export default async function AuditLogsPage({ searchParams }: AuditLogsPageProps
               <div className="grid grid-cols-1 gap-3">
                 <label className="block">
                   <span className="text-xs font-black uppercase tracking-wide text-slate-500">Date From</span>
-                  <input
-                    type="date"
+                  <OmanDateInput
                     name="startDate"
                     defaultValue={resolvedSearchParams.startDate ?? ""}
                     className="mt-2 h-12 w-full rounded-lg border border-slate-300 px-3 text-sm font-bold"
@@ -179,8 +189,7 @@ export default async function AuditLogsPage({ searchParams }: AuditLogsPageProps
                 </label>
                 <label className="block">
                   <span className="text-xs font-black uppercase tracking-wide text-slate-500">Date To</span>
-                  <input
-                    type="date"
+                  <OmanDateInput
                     name="endDate"
                     defaultValue={resolvedSearchParams.endDate ?? ""}
                     className="mt-2 h-12 w-full rounded-lg border border-slate-300 px-3 text-sm font-bold"
@@ -304,7 +313,7 @@ export default async function AuditLogsPage({ searchParams }: AuditLogsPageProps
             <AuditLogTable
               logs={logs.map((log) => ({
                 id: log.id,
-                timestamp: formatDateDMY(log.timestamp),
+                timestamp: log.timestamp.toISOString(),
                 action: log.action,
                 targetModel: log.targetModel,
                 targetId: log.targetId,

@@ -1,8 +1,14 @@
-import { PrismaClient, UserRole } from "@prisma/client";
+import { PrismaClient, UserRole } from "@/generated/prisma/client";
 import bcrypt from "bcryptjs";
+import { PrismaPg } from "@prisma/adapter-pg";
 import { DEFAULT_ROLE_PERMISSIONS } from "../lib/permissions";
 
-const prisma = new PrismaClient();
+const connectionString = process.env.DATABASE_URL;
+if (!connectionString) throw new Error("DATABASE_URL is required.");
+const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString, connectionTimeoutMillis: 5_000 }) });
+const adminSeedPassword = process.env.SEED_ADMIN_PASSWORD ?? "";
+const demoSeedPassword = process.env.SEED_DEMO_PASSWORD ?? "";
+const seedDemoUsers = process.env.SEED_DEMO_USERS === "true";
 
 const companyData = {
   name: "NATIONAL INDUSTRIAL GAS PLANT - OMAN",
@@ -79,23 +85,23 @@ const products = [
 const seedUsers = [
   {
     email: "admin@mahmoudbox.com",
-    password: "SuperSecure123!",
+    password: adminSeedPassword,
     role: UserRole.ADMIN,
     fullName: "Mahmoud Master Admin",
     phone: "+96890000010",
     needsBranch: false,
   },
   {
-    email: "accountant@test.local",
-    password: "Pass123!",
-    role: UserRole.ACCOUNTANT,
-    fullName: "Test Accountant",
-    phone: "+96890000011",
-    needsBranch: true,
+    email: "gm@test.local",
+    password: demoSeedPassword,
+    role: UserRole.GENERAL_MANAGER,
+    fullName: "Test General Manager",
+    phone: "+96890000017",
+    needsBranch: false,
   },
   {
     email: "manager@test.local",
-    password: "Pass123!",
+    password: demoSeedPassword,
     role: UserRole.MANAGER,
     fullName: "Test Manager",
     phone: "+96890000012",
@@ -103,7 +109,7 @@ const seedUsers = [
   },
   {
     email: "loader@test.local",
-    password: "Pass123!",
+    password: demoSeedPassword,
     role: UserRole.LOADER,
     fullName: "Test Loader",
     phone: "+96890000013",
@@ -111,7 +117,7 @@ const seedUsers = [
   },
   {
     email: "salesman@test.local",
-    password: "Pass123!",
+    password: demoSeedPassword,
     role: UserRole.SALESMAN,
     fullName: "Test Salesman",
     phone: "+96890000014",
@@ -119,7 +125,7 @@ const seedUsers = [
   },
   {
     email: "salesman-a@test.local",
-    password: "Pass123!",
+    password: demoSeedPassword,
     role: UserRole.SALESMAN,
     fullName: "Test Salesman A",
     phone: "+96890000015",
@@ -128,7 +134,7 @@ const seedUsers = [
   },
   {
     email: "salesman-b@test.local",
-    password: "Pass123!",
+    password: demoSeedPassword,
     role: UserRole.SALESMAN,
     fullName: "Test Salesman B",
     phone: "+96890000016",
@@ -138,6 +144,12 @@ const seedUsers = [
 ];
 
 async function main() {
+  if (adminSeedPassword.length < 12) {
+    throw new Error("SEED_ADMIN_PASSWORD must be set to at least 12 characters.");
+  }
+  if (seedDemoUsers && demoSeedPassword.length < 12) {
+    throw new Error("SEED_DEMO_PASSWORD must be set to at least 12 characters when SEED_DEMO_USERS=true.");
+  }
   const company =
     (await prisma.company.findFirst({ where: { vatNumber: companyData.vatNumber } })) ??
     (await prisma.company.create({ data: companyData }));
@@ -269,19 +281,21 @@ async function main() {
       }
     }
 
-    await prisma.inventoryBalance.upsert({
-      where: { branchId_productId: { branchId: branch.id, productId: product.id } },
-      update: {},
-      create: {
-        branchId: branch.id,
-        productId: product.id,
-        fullCount: 0,
-        emptyCount: 0,
-      },
-    });
+    for (const targetBranch of branches) {
+      await prisma.inventoryBalance.upsert({
+        where: { branchId_productId: { branchId: targetBranch.id, productId: product.id } },
+        update: {},
+        create: {
+          branchId: targetBranch.id,
+          productId: product.id,
+          fullCount: 0,
+          emptyCount: 0,
+        },
+      });
+    }
   }
 
-  for (const user of seedUsers) {
+  for (const user of seedUsers.filter((entry) => entry.role === UserRole.ADMIN || seedDemoUsers)) {
     const passwordHash = await bcrypt.hash(user.password, 12);
     const targetBranch = user.branchCode === "BRANCH_A" ? branchA : user.branchCode === "BRANCH_B" ? branchB : user.needsBranch ? branch : null;
 
@@ -311,7 +325,7 @@ async function main() {
   }
 
   console.log(
-    "Seed complete: company, branch, products, price rules, inventory balances, roles, and role test accounts are ready.",
+    `Seed complete: master data and admin account are ready${seedDemoUsers ? " with demo users" : ""}.`,
   );
 }
 

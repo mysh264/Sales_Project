@@ -3,7 +3,8 @@ import { redirect } from "next/navigation";
 import { createRole, updateRole } from "@/app/actions/roles";
 import { PermissionChecklist } from "@/app/admin/roles/PermissionChecklist";
 import { getCurrentUser } from "@/lib/session";
-import { normalizePermissions } from "@/lib/permissions";
+import { normalizePermissions, Permissions } from "@/lib/permissions";
+import { requirePermission } from "@/lib/permission-guard";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -26,9 +27,7 @@ export default async function RolesPage({ searchParams }: RolesPageProps) {
     redirect("/login");
   }
 
-  if (currentUser.role !== "ADMIN") {
-    redirect("/admin");
-  }
+  await requirePermission(Permissions.Roles_Update);
 
   const params = (await searchParams) ?? {};
   const selectedRoleId = parseSelectedRoleId(params);

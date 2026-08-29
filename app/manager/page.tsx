@@ -1,10 +1,12 @@
-import { DebtStatus, InvoiceStatus, Prisma } from "@prisma/client";
+import { DebtStatus, InvoiceStatus, Prisma } from "@/generated/prisma/client";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getFinancialSummary } from "@/app/actions/finance";
+import { OmanDateInput } from "@/components/OmanDateInput";
 import { formatDateTimeDMY } from "@/lib/date-format";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser, hasGlobalSalesAccess } from "@/lib/session";
+import { hasPermission, Permissions } from "@/lib/permissions";
 
 export const dynamic = "force-dynamic";
 
@@ -83,7 +85,8 @@ export default async function ManagerDashboardPage({
   const requestedBranchId = hasGlobalAccess ? params.branchId?.trim() || null : branchId;
   const requestedUserId = params.userId?.trim() || null;
   const customerFilter = params.customer?.trim() || "";
-  const statusFilter = params.status?.trim() || "";
+  const requestedStatus = params.status?.trim() || "";
+  const statusFilter = requestedStatus === InvoiceStatus.CANCELLED ? InvoiceStatus.CANCELLED : InvoiceStatus.ISSUED;
   const branch =
     currentUser.branch ??
     (branchId
@@ -110,9 +113,9 @@ export default async function ManagerDashboardPage({
     }),
     prisma.user.findMany({
       where: hasGlobalAccess
-        ? undefined
+        ? { role: "SALESMAN" }
         : branch?.id
-          ? { branchId: branch.id }
+          ? { branchId: branch.id, role: "SALESMAN" }
           : { id: "__no_user__" },
       orderBy: { fullName: "asc" },
       select: { id: true, fullName: true, branchId: true },
@@ -136,7 +139,7 @@ export default async function ManagerDashboardPage({
           },
         }
       : {}),
-    ...(statusFilter && statusFilter !== "ALL" ? { status: statusFilter as InvoiceStatus } : { status: "ISSUED" }),
+    status: statusFilter,
     createdAt: {
       gte: startDate,
       lt: endDateExclusive,
@@ -144,22 +147,22 @@ export default async function ManagerDashboardPage({
   };
 
   const debtWhere: Prisma.CustomerDebtWhereInput = {
-    ...(hasGlobalAccess
-      ? requestedBranchId
-        ? { customer: { branchId: requestedBranchId } }
-        : {}
-      : { customer: { branchId: branch?.id ?? "" } }),
-    ...(requestedUserId ? { invoice: { salesmanId: requestedUserId } } : {}),
-    ...(customerFilter
-      ? {
-          customer: {
+    customer: {
+      ...(hasGlobalAccess
+        ? requestedBranchId
+          ? { branchId: requestedBranchId }
+          : {}
+        : { branchId: branch?.id ?? "" }),
+      ...(customerFilter
+        ? {
             name: {
               contains: customerFilter,
               mode: "insensitive" as const,
             },
-          },
-        }
-      : {}),
+          }
+        : {}),
+    },
+    ...(requestedUserId ? { invoice: { salesmanId: requestedUserId } } : {}),
     balanceAmount: { gt: new Prisma.Decimal(0) },
     status: { in: activeDebtStatuses },
     createdAt: {
@@ -188,10 +191,13 @@ export default async function ManagerDashboardPage({
     prisma.cylinderMovement.count({ where: movementWhere }),
     prisma.user.count({
       where: {
+        ...(!hasGlobalAccess ? { branchId: branchId ?? "__no_branch__" } : {}),
         OR: [{ hasGlobalAccess: true }, { allowGlobalSalesView: true }],
       },
     }),
-    prisma.user.count(),
+    prisma.user.count({
+      where: !hasGlobalAccess ? { branchId: branchId ?? "__no_branch__" } : undefined,
+    }),
   ]);
 
   const latestInvoices = await prisma.invoice.findMany({
@@ -230,9 +236,11 @@ export default async function ManagerDashboardPage({
             <Link href="/manager/all-sales" className="rounded bg-green-700 px-4 py-2 text-sm font-black text-white">
               All Sales
             </Link>
-            <Link href="/general-manager/users" className="rounded border border-slate-300 bg-white px-4 py-2 text-sm font-black text-slate-950">
-              User Management
-            </Link>
+            {hasPermission(currentUser, Permissions.Users_Update) ? (
+              <Link href="/manager/users" className="rounded border border-slate-300 bg-white px-4 py-2 text-sm font-black text-slate-950">
+                User Management
+              </Link>
+            ) : null}
           </div>
         </header>
 
@@ -243,11 +251,11 @@ export default async function ManagerDashboardPage({
           <form method="get" className="grid grid-cols-1 gap-4 p-4 md:grid-cols-2 xl:grid-cols-4">
             <label className="block">
               <span className="text-xs font-black uppercase tracking-wide text-slate-500">Start Date</span>
-              <input name="start" type="date" defaultValue={params.start ?? ""} className="mt-2 h-12 w-full rounded border border-slate-300 px-3 text-sm font-bold" />
+              <OmanDateInput name="start" defaultValue={params.start ?? ""} className="mt-2 h-12 w-full rounded border border-slate-300 px-3 text-sm font-bold" />
             </label>
             <label className="block">
               <span className="text-xs font-black uppercase tracking-wide text-slate-500">End Date</span>
-              <input name="end" type="date" defaultValue={params.end ?? ""} className="mt-2 h-12 w-full rounded border border-slate-300 px-3 text-sm font-bold" />
+              <OmanDateInput name="end" defaultValue={params.end ?? ""} className="mt-2 h-12 w-full rounded border border-slate-300 px-3 text-sm font-bold" />
             </label>
             <label className="block">
               <span className="text-xs font-black uppercase tracking-wide text-slate-500">Branch</span>
@@ -277,12 +285,9 @@ export default async function ManagerDashboardPage({
             </label>
             <label className="block">
               <span className="text-xs font-black uppercase tracking-wide text-slate-500">Status</span>
-              <select name="status" defaultValue={statusFilter || "ALL"} className="mt-2 h-12 w-full rounded border border-slate-300 px-3 text-sm font-bold">
-                <option value="ALL">Open / Partial</option>
-                <option value="OPEN">Open</option>
-                <option value="PARTIALLY_PAID">Partially Paid</option>
-                <option value="PAID">Paid</option>
-                <option value="WRITTEN_OFF">Written Off</option>
+              <select name="status" defaultValue={statusFilter} className="mt-2 h-12 w-full rounded border border-slate-300 px-3 text-sm font-bold">
+                <option value="ISSUED">Issued</option>
+                <option value="CANCELLED">Cancelled</option>
               </select>
             </label>
             <div className="md:col-span-2 xl:col-span-4 flex gap-3">
@@ -377,7 +382,7 @@ export default async function ManagerDashboardPage({
               <p className="mt-2 text-3xl font-black text-slate-950">{globalViewUsers}</p>
             </article>
             <div className="flex items-center">
-              <Link href="/general-manager/users" className="rounded bg-slate-950 px-4 py-3 text-sm font-black text-white">
+              <Link href="/manager/users" className="rounded bg-slate-950 px-4 py-3 text-sm font-black text-white">
                 Open Employee Directory
               </Link>
             </div>

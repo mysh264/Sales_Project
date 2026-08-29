@@ -1,8 +1,10 @@
-import { Prisma } from "@prisma/client";
+import { Prisma } from "@/generated/prisma/client";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { formatDateTimeDMY } from "@/lib/date-format";
 import { prisma } from "@/lib/prisma";
+import { getCurrentUser } from "@/lib/session";
+import { invoiceAccessWhere } from "@/lib/invoice-access";
 import { ClearNewInvoiceStorage } from "./ClearNewInvoiceStorage";
 
 export const dynamic = "force-dynamic";
@@ -18,9 +20,10 @@ function money(value: Prisma.Decimal | number | null | undefined) {
 
 export default async function ReceiptPage({ params }: ReceiptPageProps) {
   const { invoiceId } = await params;
+  const currentUser = await getCurrentUser();
 
-  const invoice = await prisma.invoice.findUnique({
-    where: { id: invoiceId },
+  const invoice = await prisma.invoice.findFirst({
+    where: { id: invoiceId, ...invoiceAccessWhere(currentUser) },
     include: {
       customer: true,
       items: {
@@ -180,8 +183,14 @@ export default async function ReceiptPage({ params }: ReceiptPageProps) {
           )}
           {invoice.customerCredit.greaterThan(0) ? (
             <div className="flex justify-between gap-2 font-black text-green-700">
-              <span>Change Returned</span>
+              <span>Credit Added</span>
               <span>{money(invoice.customerCredit)} {invoice.currency}</span>
+            </div>
+          ) : null}
+          {invoice.creditApplied.greaterThan(0) ? (
+            <div className="flex justify-between gap-2 font-black text-emerald-700">
+              <span>Previous Credit Applied</span>
+              <span>{money(invoice.creditApplied)} {invoice.currency}</span>
             </div>
           ) : null}
         </section>

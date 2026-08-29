@@ -3,6 +3,8 @@ import { redirect } from "next/navigation";
 import { saveBranch } from "@/app/actions/branches";
 import { getCurrentUser } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
+import { requirePermission } from "@/lib/permission-guard";
+import { Permissions } from "@/lib/permissions";
 
 export const dynamic = "force-dynamic";
 
@@ -19,9 +21,7 @@ export default async function AdminBranchesPage({ searchParams }: BranchPageProp
     redirect("/login");
   }
 
-  if (currentUser.role !== "ADMIN" && currentUser.role !== "GENERAL_MANAGER") {
-    redirect("/admin");
-  }
+  await requirePermission(Permissions.Branches_Update);
 
   const params = (await searchParams) ?? {};
   const [branches, branchToEdit] = await Promise.all([

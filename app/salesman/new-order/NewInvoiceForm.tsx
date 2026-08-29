@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import { OmanDateInput } from "@/components/OmanDateInput";
 
 type CustomerOption = {
   id: string;
@@ -31,6 +32,14 @@ type NewInvoiceFormProps = {
   customers: CustomerOption[];
   products: ProductOption[];
   customerDebtBalances: Record<string, string>;
+  customerCreditBalances: Record<string, string>;
+  searchCustomersAction?: (query: string) => Promise<Array<{
+    id: string;
+    name: string;
+    phone: string;
+    address: string;
+    vatNumber: string;
+  }>>;
   errorMessage?: string;
 };
 
@@ -56,7 +65,6 @@ type SavedInvoiceData = {
   customerDraft: CustomerDraft;
   showAdvanced: boolean;
   manualSerialValue: string;
-  invoiceDateValue: string;
   currency: string;
   taxRate: string;
   cashAmount: string;
@@ -78,21 +86,15 @@ function makeId() {
   return globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2);
 }
 
-function todayInputValue() {
-  const now = new Date();
-  const timezoneOffset = now.getTimezoneOffset() * 60_000;
-  return new Date(now.getTime() - timezoneOffset).toISOString().slice(0, 10);
-}
-
 function toNumber(value: string) {
   const parsed = Number.parseFloat(value);
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-function formatOmr(value: number) {
+function formatOmr(value: number, currencyCode = "OMR") {
   return new Intl.NumberFormat("en-OM", {
     style: "currency",
-    currency: "OMR",
+    currency: currencyCode,
     minimumFractionDigits: 3,
     maximumFractionDigits: 3,
   }).format(value);
@@ -122,12 +124,16 @@ export function NewInvoiceForm({
   customers,
   products,
   customerDebtBalances,
+  customerCreditBalances,
+  searchCustomersAction,
   errorMessage,
 }: NewInvoiceFormProps) {
   const [customerQuery, setCustomerQuery] = useState("");
   const [selectedCustomer, setSelectedCustomer] = useState<CustomerOption | null>(null);
   const [showCustomerPicker, setShowCustomerPicker] = useState(false);
   const [showCustomerModal, setShowCustomerModal] = useState(false);
+  const [serverCustomers, setServerCustomers] = useState<CustomerOption[]>([]);
+  const [searchingCustomers, setSearchingCustomers] = useState(false);
   const [customerDraft, setCustomerDraft] = useState<CustomerDraft>({
     name: "",
     phone: "",
@@ -137,7 +143,6 @@ export function NewInvoiceForm({
   const [submissionToken, setSubmissionToken] = useState(() => makeId());
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [manualSerialValue, setManualSerialValue] = useState(invoiceSerial);
-  const [invoiceDateValue, setInvoiceDateValue] = useState(todayInputValue());
   const [currency, setCurrency] = useState(defaultCurrency);
   const [taxRate, setTaxRate] = useState(defaultTaxRate);
   const [cashAmount, setCashAmount] = useState("");
@@ -175,18 +180,46 @@ export function NewInvoiceForm({
         ],
   );
 
-  const filteredCustomers = useMemo(() => {
-    const query = customerQuery.trim().toLowerCase();
-
-    if (!query) {
-      return customers.slice(0, 8);
+  // When a server-side search action is provided, query the backend (debounced) instead of
+  // filtering the full branch list in the browser. Falls back to the initial branch list for
+  // an empty query so the picker still shows options before typing.
+  useEffect(() => {
+    if (!searchCustomersAction) {
+      return;
     }
+    const query = customerQuery.trim();
+    if (!query) {
+      setServerCustomers([]);
+      return;
+    }
+    let cancelled = false;
+    setSearchingCustomers(true);
+    const handle = window.setTimeout(async () => {
+      try {
+        const results = await searchCustomersAction(query);
+        if (!cancelled) setServerCustomers(results);
+      } catch {
+        if (!cancelled) setServerCustomers([]);
+      } finally {
+        if (!cancelled) setSearchingCustomers(false);
+      }
+    }, 250);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(handle);
+    };
+  }, [customerQuery, searchCustomersAction]);
 
-    return customers.filter((customer) => {
-      const haystack = `${customer.name} ${customer.phone}`.toLowerCase();
-      return haystack.includes(query);
-    }).slice(0, 8);
-  }, [customerQuery, customers]);
+  const filteredCustomers = useMemo(() => {
+    const source = serverCustomers.length > 0 || (searchCustomersAction && customerQuery.trim()) ? serverCustomers : customers;
+    const query = customerQuery.trim().toLowerCase();
+    if (!query || source === serverCustomers) {
+      return source.slice(0, 8);
+    }
+    return source
+      .filter((customer) => `${customer.name} ${customer.phone}`.toLowerCase().includes(query))
+      .slice(0, 8);
+  }, [customerQuery, customers, serverCustomers, searchCustomersAction]);
 
   function selectCustomer(customer: CustomerOption) {
     setSelectedCustomer(customer);
@@ -288,7 +321,6 @@ export function NewInvoiceForm({
       setSubmissionToken(data.submissionToken ?? makeId());
       setShowAdvanced(Boolean(data.showAdvanced));
       setManualSerialValue(data.manualSerialValue ?? data.invoiceSerialValue ?? invoiceSerial);
-      setInvoiceDateValue(data.invoiceDateValue ?? todayInputValue());
       setCurrency(data.currency ?? defaultCurrency);
       setTaxRate(data.taxRate ? Math.round(toNumber(data.taxRate)).toString() : defaultTaxRate);
       setCashAmount(data.cashAmount ?? "");
@@ -332,7 +364,6 @@ export function NewInvoiceForm({
       customerDraft,
       showAdvanced,
       manualSerialValue,
-      invoiceDateValue,
       currency,
       taxRate,
       cashAmount,
@@ -365,7 +396,6 @@ export function NewInvoiceForm({
     debtCollectionAmount,
     hasHydrated,
     manualSerialValue,
-    invoiceDateValue,
     productRows,
     selectedCustomer?.id,
     submissionToken,
@@ -425,6 +455,9 @@ export function NewInvoiceForm({
 
     return toNumber(customerDebtBalances[selectedCustomer.id] ?? "0");
   }, [customerDebtBalances, selectedCustomer?.id]);
+  const selectedCustomerCredit = selectedCustomer
+    ? toNumber(customerCreditBalances[selectedCustomer.id] ?? "0")
+    : 0;
   const debtCollectionValue = useMemo(() => {
     if (!applyDebtCollection) {
       return 0;
@@ -465,13 +498,12 @@ export function NewInvoiceForm({
     <form
       action={action}
       onSubmit={handleSubmit}
-      encType="multipart/form-data"
+      data-hydrated={hasHydrated ? "true" : "false"}
       className="mx-auto flex max-w-screen-2xl flex-col gap-6 pb-[calc(env(safe-area-inset-bottom)+1.5rem)] md:pb-8"
     >
       <input type="hidden" name="invoiceSerial" value={invoiceSerial} />
       <input type="hidden" name="submissionToken" value={submissionToken} />
       <input type="hidden" name="manualSerial" value={manualSerialValue} />
-      <input type="hidden" name="invoiceDate" value={invoiceDateValue} />
       <input type="hidden" name="customerId" value={selectedCustomer?.id === "new" ? "" : selectedCustomer?.id ?? ""} />
       <input type="hidden" name="customerName" value={selectedCustomerName} />
       <input type="hidden" name="customerPhone" value={selectedCustomerPhone} />
@@ -516,8 +548,14 @@ export function NewInvoiceForm({
       {selectedCustomerDebt > 0 ? (
         <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-4 text-amber-950 shadow-sm">
           <p className="text-sm font-black uppercase tracking-wide">Debt Collection Alert</p>
-          <p className="mt-2 text-lg font-black">Existing Debt: {formatOmr(selectedCustomerDebt)}</p>
+          <p className="mt-2 text-lg font-black">Existing Debt: {formatOmr(selectedCustomerDebt, currency)}</p>
           <p className="mt-1 text-sm font-bold text-amber-900">You can collect part of this balance while saving the invoice.</p>
+        </div>
+      ) : null}
+      {selectedCustomerCredit > 0 ? (
+        <div className="rounded-lg bg-emerald-50 p-4 text-emerald-900">
+          <p className="text-sm font-black uppercase tracking-wide">Available Customer Credit</p>
+          <p className="mt-2 text-lg font-black">{formatOmr(selectedCustomerCredit, currency)} will be applied automatically.</p>
         </div>
       ) : null}
 
@@ -535,15 +573,6 @@ export function NewInvoiceForm({
               value={manualSerialValue}
               onChange={(event) => setManualSerialValue(event.target.value)}
               className={`mt-2 h-12 ${fieldClass(manualSerialValue)}`}
-            />
-          </label>
-          <label className="block rounded-xl border border-slate-200 bg-slate-50 p-4">
-            <span className="text-xs font-black uppercase tracking-wide text-slate-500">Date</span>
-            <input
-              type="date"
-              value={invoiceDateValue}
-              onChange={(event) => setInvoiceDateValue(event.target.value)}
-              className={`mt-2 h-12 ${fieldClass(invoiceDateValue)}`}
             />
           </label>
           <button
@@ -566,11 +595,12 @@ export function NewInvoiceForm({
               </div>
               <button
                 type="button"
+                disabled={!hasHydrated}
                 onClick={() => {
                   setCustomerDraft((current) => ({ ...current, name: current.name || customerQuery }));
                   setShowCustomerModal(true);
                 }}
-                className="rounded bg-slate-950 px-3 py-2 text-xs font-black text-white"
+                className="rounded bg-slate-950 px-3 py-2 text-xs font-black text-white disabled:cursor-wait disabled:bg-slate-400"
               >
                 Add New Customer
               </button>
@@ -606,7 +636,11 @@ export function NewInvoiceForm({
                     </button>
                   ))}
 
-                  {filteredCustomers.length === 0 ? (
+                  {searchingCustomers ? (
+                    <p className="px-4 py-3 text-sm font-bold text-slate-500">Searching…</p>
+                  ) : null}
+
+                  {filteredCustomers.length === 0 && !searchingCustomers ? (
                     <div className="px-4 py-4">
                       <p className="text-sm font-bold text-slate-500">No matching customer found.</p>
                       <button
@@ -697,15 +731,15 @@ export function NewInvoiceForm({
             <div className="mt-4 grid grid-cols-1 gap-3">
               <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
                 <p className="text-xs font-black uppercase tracking-wide text-slate-500">Items Subtotal</p>
-                <p className="mt-1 text-2xl font-black text-slate-950">{formatOmr(itemsSubtotal)}</p>
+                <p className="mt-1 text-2xl font-black text-slate-950">{formatOmr(itemsSubtotal, currency)}</p>
               </div>
               <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
                 <p className="text-xs font-black uppercase tracking-wide text-slate-500">VAT</p>
-                <p className="mt-1 text-2xl font-black text-slate-950">{formatOmr(vatAmount)}</p>
+                <p className="mt-1 text-2xl font-black text-slate-950">{formatOmr(vatAmount, currency)}</p>
               </div>
               <div className="rounded-xl border border-slate-200 bg-slate-950 p-4 text-white">
                 <p className="text-xs font-black uppercase tracking-wide text-slate-300">Invoice Total</p>
-                <p className="mt-1 text-3xl font-black">{formatOmr(invoiceTotal)}</p>
+                <p className="mt-1 text-3xl font-black">{formatOmr(invoiceTotal, currency)}</p>
               </div>
             </div>
           </aside>
@@ -845,7 +879,7 @@ export function NewInvoiceForm({
                             <p className="text-[11px] font-black uppercase tracking-wide text-slate-500 md:hidden">Item Total</p>
                             <p className="text-xs font-bold text-slate-500">Row Total</p>
                           </div>
-                          <p className="text-2xl font-black text-slate-950">{formatOmr(lineItems[index]?.itemTotal ?? 0)}</p>
+                          <p className="text-2xl font-black text-slate-950">{formatOmr(lineItems[index]?.itemTotal ?? 0, currency)}</p>
                         </div>
                       </div>
                     </div>
@@ -892,15 +926,15 @@ export function NewInvoiceForm({
             <div className="mt-4 grid grid-cols-1 gap-3">
               <div className="rounded-xl border border-slate-200 bg-white p-4">
                 <p className="text-xs font-black uppercase tracking-wide text-slate-500">Items Subtotal</p>
-                <p className="mt-1 text-2xl font-black text-slate-950">{formatOmr(itemsSubtotal)}</p>
+                <p className="mt-1 text-2xl font-black text-slate-950">{formatOmr(itemsSubtotal, currency)}</p>
               </div>
               <div className="rounded-xl border border-slate-200 bg-white p-4">
                 <p className="text-xs font-black uppercase tracking-wide text-slate-500">VAT</p>
-                <p className="mt-1 text-2xl font-black text-slate-950">{formatOmr(vatAmount)}</p>
+                <p className="mt-1 text-2xl font-black text-slate-950">{formatOmr(vatAmount, currency)}</p>
               </div>
               <div className="rounded-xl border border-slate-200 bg-white p-4">
                 <p className="text-xs font-black uppercase tracking-wide text-slate-500">Invoice Total</p>
-                <p className="mt-1 text-3xl font-black text-slate-950">{formatOmr(invoiceTotal)}</p>
+                <p className="mt-1 text-3xl font-black text-slate-950">{formatOmr(invoiceTotal, currency)}</p>
               </div>
             </div>
           </aside>
@@ -933,7 +967,7 @@ export function NewInvoiceForm({
 
           <div className={`rounded-xl border px-4 py-4 text-center text-2xl font-black ${balanceStatusClass}`}>
             <p className="text-xs font-black uppercase tracking-wide opacity-80">Remaining Balance</p>
-            <p className="mt-2 text-4xl font-black">{formatOmr(remainingBalance)}</p>
+            <p className="mt-2 text-4xl font-black">{formatOmr(remainingBalance, currency)}</p>
             <p className="mt-2 text-sm font-bold">{balanceStatusMessage}</p>
           </div>
 
@@ -942,7 +976,7 @@ export function NewInvoiceForm({
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <p className="text-sm font-black uppercase tracking-wide text-amber-900">Collect Outstanding Debt</p>
-                  <p className="text-sm font-bold text-amber-800">Current balance: {formatOmr(selectedCustomerDebt)}</p>
+                  <p className="text-sm font-bold text-amber-800">Current balance: {formatOmr(selectedCustomerDebt, currency)}</p>
                 </div>
                 <button
                   type="button"
@@ -981,7 +1015,7 @@ export function NewInvoiceForm({
               </div>
 
               <p className="mt-3 text-sm font-bold text-amber-900">
-                Remaining after apply: {formatOmr(remainingDebtAfterCollection)}
+                Remaining after apply: {formatOmr(remainingDebtAfterCollection, currency)}
               </p>
             </section>
           ) : null}
@@ -990,7 +1024,7 @@ export function NewInvoiceForm({
             <div className="rounded-xl border border-green-200 bg-green-50 px-4 py-4 text-green-800">
               <p className="text-sm font-black uppercase tracking-wide">Overpayment</p>
               <p className="mt-2 text-lg font-black leading-tight md:text-xl">
-                Change to be returned: {formatOmr(overpaymentAmount)}
+                Change to be returned: {formatOmr(overpaymentAmount, currency)}
               </p>
             </div>
           ) : null}
@@ -999,7 +1033,7 @@ export function NewInvoiceForm({
             <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-4 text-red-700">
               <p className="text-sm font-black uppercase tracking-wide">Debt Warning</p>
               <p className="mt-2 text-lg font-black leading-tight md:text-xl">
-                Warning: Payment is incomplete. {formatOmr(remainingBalance)} will be recorded as Customer Debt.
+                Warning: Payment is incomplete. {formatOmr(remainingBalance, currency)} will be recorded as Customer Debt.
               </p>
             </div>
           ) : null}
@@ -1044,11 +1078,10 @@ export function NewInvoiceForm({
                 </label>
                 <label className="block">
                   <span className="text-sm font-black text-slate-700">Check Date</span>
-                  <input
+                  <OmanDateInput
                     name="checkDate"
-                    type="date"
                     value={checkDate}
-                    onChange={(event) => setCheckDate(event.target.value)}
+                    onValueChange={setCheckDate}
                     className={`mt-2 h-12 ${fieldClass(checkDate)}`}
                   />
                 </label>

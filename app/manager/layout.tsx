@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { logout } from "@/app/actions/auth";
-import { AdminConsoleLink } from "@/components/AdminConsoleLink";
 
 export default function ManagerLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
@@ -12,9 +11,26 @@ export default function ManagerLayout({ children }: Readonly<{ children: React.R
               Home
             </Link>
             <Link href="/manager/dashboard" className="rounded border border-slate-300 bg-white px-4 py-2 text-sm font-black text-slate-900">
-              Finance Dashboard
+              Finance & Debts
             </Link>
-            <AdminConsoleLink className="rounded bg-purple-700 px-4 py-2 text-sm font-black text-white" />
+            <Link href="/manager/all-sales" className="rounded border border-slate-300 bg-white px-4 py-2 text-sm font-black text-slate-900">
+              Sales
+            </Link>
+            <Link href="/manager/reconciliation" className="rounded border border-slate-300 bg-white px-4 py-2 text-sm font-black text-slate-900">
+              Reconciliation
+            </Link>
+            <Link href="/manager/inventory" className="rounded border border-slate-300 bg-white px-4 py-2 text-sm font-black text-slate-900">
+              Inventory
+            </Link>
+            <Link href="/manager/settings" className="rounded border border-slate-300 bg-white px-4 py-2 text-sm font-black text-slate-900">
+              Pricing
+            </Link>
+            <Link href="/manager/users" className="rounded border border-slate-300 bg-white px-4 py-2 text-sm font-black text-slate-900">
+              Team
+            </Link>
+            <Link href="/profile/security" className="rounded border border-slate-300 bg-white px-4 py-2 text-sm font-black text-slate-900">
+              Security
+            </Link>
           </div>
           <form action={logout}>
             <button type="submit" className="rounded bg-red-700 px-4 py-2 text-sm font-black text-white">

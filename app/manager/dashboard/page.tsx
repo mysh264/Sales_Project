@@ -1,7 +1,8 @@
-import { DebtStatus, Prisma } from "@prisma/client";
+import { DebtStatus, Prisma } from "@/generated/prisma/client";
 import Link from "next/link";
 import { forbidden, redirect } from "next/navigation";
 import { getFinancialSummary } from "@/app/actions/finance";
+import { writeOffDebt } from "@/app/actions/manager";
 import { formatDateTimeDMY } from "@/lib/date-format";
 import { Permissions } from "@/lib/permissions";
 import { checkPermission, requirePermission } from "@/lib/permission-guard";
@@ -82,6 +83,20 @@ async function getFinanceUser() {
 export default async function ManagerDashboardPage({ searchParams }: ManagerDashboardPageProps) {
   const currentUser = await getFinanceUser();
   const hasGlobalAccess = hasGlobalSalesAccess(currentUser);
+  const workspaceHome =
+    currentUser.role === "ADMIN" ? "/admin" : currentUser.role === "GENERAL_MANAGER" ? "/general-manager" : "/manager";
+  const pricingPath =
+    currentUser.role === "ADMIN"
+      ? "/admin/products"
+      : currentUser.role === "GENERAL_MANAGER"
+        ? "/general-manager/products"
+        : "/manager/settings";
+  const resetPath =
+    currentUser.role === "ADMIN"
+      ? "/admin/finance"
+      : currentUser.role === "GENERAL_MANAGER"
+        ? "/general-manager/finance"
+        : "/manager/dashboard";
 
   if (!currentUser.branchId && !hasGlobalAccess) {
     redirect("/manager");
@@ -90,7 +105,10 @@ export default async function ManagerDashboardPage({ searchParams }: ManagerDash
   const summary = await getFinancialSummary();
   const params = (await searchParams) ?? {};
   const customerFilter = params.customer?.trim() || "";
-  const statusFilter = params.status?.trim() || "";
+  const requestedStatus = params.status?.trim() || "";
+  const statusFilter = Object.values(DebtStatus).includes(requestedStatus as DebtStatus)
+    ? (requestedStatus as DebtStatus)
+    : "";
 
   const scopeBranchId = !hasGlobalAccess ? currentUser.branchId ?? "" : "";
 
@@ -112,9 +130,9 @@ export default async function ManagerDashboardPage({ searchParams }: ManagerDash
           },
         }
       : {}),
-    ...(statusFilter && statusFilter !== "ALL"
+    ...(statusFilter
       ? {
-          status: statusFilter as DebtStatus,
+          status: statusFilter,
         }
       : {
           status: {
@@ -179,11 +197,7 @@ export default async function ManagerDashboardPage({ searchParams }: ManagerDash
 
   const recentFinancialAudits = await prisma.auditLog.findMany({
     where: {
-      ...(scopedTargetIds.size > 0
-        ? {
-            targetId: { in: Array.from(scopedTargetIds) },
-          }
-        : {}),
+      ...(scopeBranchId ? { targetId: { in: Array.from(scopedTargetIds) } } : {}),
       targetModel: {
         in: ["Invoice", "CustomerDebt", "DebtPayment", "Payment"],
       },
@@ -214,14 +228,14 @@ export default async function ManagerDashboardPage({ searchParams }: ManagerDash
                 {summary.scopeLabel} Financial Overview
               </h1>
               <p className="mt-2 max-w-3xl text-sm font-bold text-slate-600">
-                Daily revenue, VAT, and debt tracking for managers and accountants.
+                Daily revenue, VAT, and debt tracking for the consolidated Manager account.
               </p>
             </div>
             <div className="flex flex-wrap gap-3">
-              <Link href="/manager" className="rounded border border-slate-300 bg-white px-4 py-2 text-sm font-black text-slate-900">
-                Back to Branch Dashboard
+              <Link href={workspaceHome} className="rounded border border-slate-300 bg-white px-4 py-2 text-sm font-black text-slate-900">
+                Back to Dashboard
               </Link>
-              <Link href="/manager/settings" className="rounded bg-slate-950 px-4 py-2 text-sm font-black text-white">
+              <Link href={pricingPath} className="rounded bg-slate-950 px-4 py-2 text-sm font-black text-white">
                 Price Settings
               </Link>
             </div>
@@ -239,9 +253,9 @@ export default async function ManagerDashboardPage({ searchParams }: ManagerDash
           </article>
           <article className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
             <p className="text-xs font-black uppercase tracking-wide text-slate-500">Total Outstanding Debt</p>
-            <p className="mt-2 text-3xl font-black text-red-700">{formatOmr(summary.totalOutstandingDebtToday)}</p>
+            <p className="mt-2 text-3xl font-black text-red-700">{formatOmr(summary.totalOutstandingDebt)}</p>
             <p className="mt-3 text-xs font-bold text-slate-500">
-              Pending invoice debt collection recorded today: {formatOmr(summary.pendingDebtCollectionToday)}
+              Pending invoice debt collection recorded today: {formatOmr(summary.debtCollectedToday)}
             </p>
           </article>
         </section>
@@ -277,7 +291,7 @@ export default async function ManagerDashboardPage({ searchParams }: ManagerDash
                 <button type="submit" className="rounded bg-slate-950 px-4 py-2 text-sm font-black text-white">
                   Apply Filters
                 </button>
-                <Link href="/manager/dashboard" className="rounded border border-slate-300 bg-white px-4 py-2 text-sm font-black text-slate-900">
+                <Link href={resetPath} className="rounded border border-slate-300 bg-white px-4 py-2 text-sm font-black text-slate-900">
                   Reset
                 </Link>
               </div>
@@ -300,6 +314,7 @@ export default async function ManagerDashboardPage({ searchParams }: ManagerDash
                       <th className="px-4 py-2 text-right">Balance</th>
                       <th className="px-4 py-2">Status</th>
                       <th className="px-4 py-2">Updated</th>
+                      <th className="px-4 py-2 text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-200">
@@ -322,6 +337,28 @@ export default async function ManagerDashboardPage({ searchParams }: ManagerDash
                         <td className="px-4 py-2">{statusBadge(debt.status)}</td>
                         <td className="whitespace-nowrap px-4 py-2 font-bold text-slate-700">
                           {formatDateTimeDMY(debt.updatedAt)}
+                        </td>
+                        <td className="whitespace-nowrap px-4 py-2 text-right">
+                          {debt.balanceAmount.greaterThan(0) && debt.status !== "WRITTEN_OFF" ? (
+                            <form action={writeOffDebt} className="flex justify-end gap-2">
+                              <input type="hidden" name="debtId" value={debt.id} />
+                              <input
+                                name="reason"
+                                required
+                                minLength={5}
+                                placeholder="Write-off reason"
+                                className="h-9 w-40 rounded border border-slate-300 px-2 text-xs font-bold"
+                              />
+                              <button
+                                type="submit"
+                                className="h-9 rounded bg-slate-700 px-3 text-xs font-black text-white"
+                              >
+                                Write Off
+                              </button>
+                            </form>
+                          ) : (
+                            <span className="text-xs font-bold text-slate-400">—</span>
+                          )}
                         </td>
                       </tr>
                     ))}

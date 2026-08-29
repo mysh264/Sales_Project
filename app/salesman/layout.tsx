@@ -15,6 +15,9 @@ export default function SalesmanLayout({ children }: Readonly<{ children: React.
               Home
             </Link>
             <AdminConsoleLink className="hidden min-h-14 items-center justify-center rounded-lg bg-purple-700 px-4 text-lg font-black text-white md:flex" />
+            <Link href="/profile/security" className="flex min-h-14 items-center rounded-lg border border-slate-300 px-4 text-lg font-black text-slate-900">
+              Security
+            </Link>
           </div>
           <form action={logout} className="ml-auto">
             <button type="submit" className="min-h-14 rounded-lg bg-red-700 px-4 text-lg font-black text-white">

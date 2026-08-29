@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Prisma } from "@prisma/client";
+import { Prisma } from "@/generated/prisma/client";
 import { formatDateTimeDMY } from "@/lib/date-format";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser, hasGlobalSalesAccess } from "@/lib/session";
@@ -78,6 +78,7 @@ export default async function CustomerDebtPage({ params }: CustomerPageProps) {
           <p className="text-sm font-black uppercase tracking-wide text-slate-300">Customer Details</p>
           <h1 className="mt-1 text-3xl font-black">{customer.name}</h1>
           <p className="mt-2 text-sm font-semibold text-slate-200">{customer.phone ?? "No phone on file"}</p>
+          <p className="mt-1 text-sm font-semibold text-emerald-200">Available credit: {formatOmr(customer.creditBalance)}</p>
         </header>
 
         <Link

@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Cylinder Operations Platform — National Industrial Gas Plant</title>
+<style>
+  :root {
+    --bg: #070b16; --panel: #0e1626; --accent: #38bdf8; --accent2: #a78bfa;
+    --ok: #34d399; --warn: #fbbf24; --text: #e8eef7; --muted: #9aa7bd; --border: #1c2742;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+    background: #04060d; color: var(--text);
+  }
+  /* Stage: each slide fills the viewport on screen, prints as 16:9 */
+  .slide {
+    width: 100%;
+    min-height: 100vh;
+    display: flex; flex-direction: column; justify-content: center;
+    padding: 5vh 6vw;
+    background:
+      radial-gradient(60vw 40vh at 88% -10%, rgba(56,189,248,0.16), transparent 60%),
+      radial-gradient(48vw 36vh at 2% 110%, rgba(167,139,250,0.14), transparent 60%),
+      var(--panel);
+    border-bottom: 1px solid var(--border);
+    page-break-after: always; overflow: hidden; position: relative;
+  }
+  .slide.center { align-items: center; text-align: center; }
+  h1 { font-size: clamp(34px, 5vw, 60px); line-height: 1.06; letter-spacing: -0.02em; color: #fff; }
+  h2 { font-size: clamp(26px, 3.4vw, 42px); line-height: 1.1; letter-spacing: -0.01em; color: #fff; margin-bottom: 2vh; }
+  p { font-size: clamp(15px, 1.5vw, 21px); color: var(--muted); }
+  .kicker { display:inline-block; font-size: clamp(11px,1.2vw,15px); font-weight:800; letter-spacing:0.18em; text-transform:uppercase; color:var(--accent); margin-bottom: 1.5vh; }
+  .lead { font-size: clamp(16px,1.8vw,23px); color:#c5d0e0; max-width: 60ch; margin-top: 1.5vh; }
+  .grid { display:grid; gap: clamp(12px,1.4vw,20px); margin-top: 3vh; width:100%; }
+  .grid.c2 { grid-template-columns: 1fr 1fr; }
+  .grid.c3 { grid-template-columns: repeat(3, 1fr); }
+  .grid.c4 { grid-template-columns: repeat(4, 1fr); }
+  .card { background: rgba(255,255,255,0.04); border:1px solid var(--border); border-radius:16px; padding: clamp(14px,1.6vw,22px); }
+  .card .t { font-weight:800; color:#fff; font-size: clamp(17px,1.7vw,22px); margin-bottom: 8px; }
+  .card .d { color: var(--muted); font-size: clamp(14px,1.35vw,17px); line-height:1.4; }
+  .tag { display:inline-block; font-size: clamp(12px,1.2vw,15px); font-weight:700; padding:5px 14px; border-radius:999px; margin: 6px 8px 0 0; background: rgba(56,189,248,0.12); color:var(--accent); border:1px solid rgba(56,189,248,0.28); }
+  .stat-row { display:flex; gap: clamp(12px,1.6vw,22px); margin-top: 4vh; width:100%; }
+  .stat { flex:1; background: rgba(255,255,255,0.045); border:1px solid var(--border); border-radius:16px; padding: clamp(16px,2vw,26px); text-align:center; }
+  .stat .n { font-size: clamp(34px,4.4vw,52px); font-weight:900; color:#fff; letter-spacing:-0.02em; }
+  .stat .l { font-size: clamp(13px,1.3vw,16px); color: var(--muted); margin-top: 10px; }
+
+  .flow { display:grid; grid-template-columns: 1.4fr 0.4fr 1.4fr 0.4fr 1.4fr 0.4fr 1.4fr 0.4fr 1.4fr; align-items:stretch; margin-top: 3vh; gap:0; width:100%; }
+  .node { background: rgba(56,189,248,0.07); border:1px solid var(--border); border-radius:14px; padding: clamp(12px,1.4vw,18px) 8px; text-align:center; display:flex; flex-direction:column; justify-content:center; }
+  .node .ic { font-size: clamp(22px,2.4vw,30px); }
+  .node .t { font-weight:800; color:#fff; margin-top:8px; font-size: clamp(13px,1.4vw,17px); }
+  .node .d { color: var(--muted); font-size: clamp(11px,1.1vw,13.5px); margin-top:4px; }
+  .arrow { align-self:center; color: var(--accent); font-size: clamp(18px,2vw,26px); font-weight:900; text-align:center; }
+
+  .ps { display:grid; grid-template-columns: 1fr 1fr; gap: clamp(12px,1.4vw,18px); margin-top: 2vh; width:100%; }
+  .ps .pain, .ps .fix { border-radius:14px; padding: clamp(14px,1.6vw,20px); }
+  .ps .pain { background: rgba(251,191,36,0.09); border:1px solid rgba(251,191,36,0.3); }
+  .ps .fix { background: rgba(52,211,153,0.09); border:1px solid rgba(52,211,153,0.3); }
+  .ps h4 { font-size: clamp(12px,1.2vw,14px); text-transform:uppercase; letter-spacing:0.1em; margin-bottom:10px; }
+  .ps .pain h4 { color: var(--warn); } .ps .fix h4 { color: var(--ok); }
+  .ps li { font-size: clamp(14px,1.4vw,17px); color: var(--text); margin:6px 0 6px 18px; line-height:1.35; }
+
+  .figure { margin:0; display:flex; flex-direction:column; align-items:center; }
+  .figure .cap { font-size: clamp(11px,1.1vw,13px); color:var(--muted); margin-top:8px; text-align:center; }
+  .laptop { width:100%; max-width:300px; background:#0f1422; border-radius:12px 12px 0 0; padding:7px 7px 0; border:1px solid #2a3550; border-bottom:none; box-shadow:0 12px 30px rgba(0,0,0,0.5); }
+  .laptop .screen { background:#fff; border-radius:3px; overflow:hidden; line-height:0; max-height:260px; }
+  .laptop .screen img { width:100%; height:auto; display:block; }
+  .laptop .bar { height:7px; background:#1b2236; border-radius:0 0 7px 7px; margin:0 -7px; position:relative; }
+  .laptop .bar::after { content:""; position:absolute; left:50%; top:2px; transform:translateX(-50%); width:50px; height:3px; background:#39456b; border-radius:4px; }
+  .laptop .base { height:11px; background:#2a3450; border-radius:0 0 10px 10px; margin:0 -7px -1px; position:relative; }
+  .laptop .base::after { content:""; position:absolute; left:50%; bottom:-6px; transform:translateX(-50%); width:100px; height:6px; background:#1a2238; border-radius:0 0 9px 9px; }
+  .iphone { width: clamp(110px,13vw,150px); background:#0c0f1a; border-radius:24px; padding:9px 9px 12px; border:3px solid #2b3656; box-shadow:0 14px 30px rgba(0,0,0,0.55), inset 0 0 0 2px #05070d; position:relative; }
+  .iphone .notch { position:absolute; top:9px; left:50%; transform:translateX(-50%); width:56px; height:12px; background:#05070d; border-radius:9px; z-index:2; }
+  .iphone .screen { background:#fff; border-radius:16px; overflow:hidden; line-height:0; max-height:300px; }
+  .iphone .screen img { width:100%; height:auto; display:block; }
+  .iphone .home { position:absolute; bottom:4px; left:50%; transform:translateX(-50%); width:56px; height:3px; background:#2b3656; border-radius:4px; z-index:2; }
+  .sub { color: var(--muted); margin-top: 1.5vh; font-size: clamp(13px,1.3vw,16px); }
+  .pill-row { display:flex; flex-wrap:wrap; gap:8px; margin-top: 3vh; justify-content:center; }
+  .center .lead, .center .kicker, .center h1 { text-align:center; }
+  @page { size: 1280px 720px; margin: 0; }
+  @media print {
+    body { background:#000; }
+    .slide { width: 1280px; height: 720px; min-height:0; border-radius:0; border-bottom:none; padding: 46px 56px; justify-content:center; }
+  }
+</style>
+</head>
+<body>
+
+<!-- 1 · COVER -->
+<section class="slide center">
+  <div class="kicker">National Industrial Gas Plant · Oman</div>
+  <h1>Cylinder Operations,<br/>Finally Under Control</h1>
+  <p class="lead">One platform to track every cylinder from the warehouse to the customer, capture every sale, and know exactly who did what — across all your branches.</p>
+  <div class="stat-row">
+    <div class="stat"><div class="n">100%</div><div class="l">Cylinder traceability,<br/>warehouse → customer</div></div>
+    <div class="stat"><div class="n">0</div><div class="l">Untracked sales —<br/>every invoice is logged</div></div>
+    <div class="stat"><div class="n">24/7</div><div class="l">Audit trail of<br/>every action</div></div>
+  </div>
+  <div class="pill-row">
+    <span class="tag">Web &amp; Mobile</span><span class="tag">Multi-branch</span>
+    <span class="tag">Role-based access</span><span class="tag">Full audit log</span>
+  </div>
+</section>
+
+<!-- 2 · WHY -->
+<section class="slide">
+  <div class="kicker">Why this exists</div>
+  <h2>The three leaks every cylinder business has</h2>
+  <div class="grid c3">
+    <div class="card"><div class="t">🫥 Missing cylinders</div><div class="d">Between the warehouse and the customer, cylinders disappear — and no one can say where, or whose route.</div></div>
+    <div class="card"><div class="t">💸 Cash leaks</div><div class="d">Hand-written invoices, cash collected but not recorded, debt that no one can reconcile at month-end.</div></div>
+    <div class="card"><div class="t">🕳️ No accountability</div><div class="d">When something is wrong, there is no record of who changed it, when, or from where.</div></div>
+  </div>
+  <p class="lead" style="margin-top:4vh; font-size:clamp(18px,2vw,24px); color:#fff;">This platform closes all three — and proves it with data.</p>
+</section>
+
+<!-- 3 · LIFECYCLE -->
+<section class="slide">
+  <div class="kicker">The Big Picture</div>
+  <h2>Every cylinder, end to end</h2>
+  <div class="flow">
+    <div class="node"><div class="ic">🏭</div><div class="t">Warehouse</div><div class="d">Stock &amp; cylinder master</div></div>
+    <div class="arrow">→</div>
+    <div class="node"><div class="ic">🚚</div><div class="t">Loader hand-off</div><div class="d">Morning load per salesman</div></div>
+    <div class="arrow">→</div>
+    <div class="node"><div class="ic">🧑‍🔧</div><div class="t">Salesman</div><div class="d">Delivers &amp; invoices on phone</div></div>
+    <div class="arrow">→</div>
+    <div class="node"><div class="ic">🏪</div><div class="t">Customer</div><div class="d">Delivery / collection</div></div>
+    <div class="arrow">→</div>
+    <div class="node"><div class="ic">⚖️</div><div class="t">Reconcile</div><div class="d">Loaded vs invoiced</div></div>
+  </div>
+  <div class="grid c3" style="margin-top:4vh;">
+    <div class="card"><div class="t">No more "missing"</div><div class="d">Hand-offs are recorded, so a variance shows up per route — not at month-end.</div></div>
+    <div class="card"><div class="t">Cash clarity</div><div class="d">Every delivery is an invoice; debt and collections are tracked per customer.</div></div>
+    <div class="card"><div class="t">Accountability</div><div class="d">Each step is tied to a person and a time, visible in the audit trail.</div></div>
+  </div>
+</section>
+
+<!-- 4 · WHAT YOU GET -->
+<section class="slide">
+  <div class="kicker">What you get</div>
+  <h2>Six capabilities, one system</h2>
+  <div class="grid c3">
+    <div class="card"><div class="t">Sales &amp; Invoicing</div><div class="d">Guided invoicing with correct totals &amp; VAT, on phone or desktop.</div></div>
+    <div class="card"><div class="t">Inventory &amp; Logistics</div><div class="d">Morning loads and daily reconciliation, route by route.</div></div>
+    <div class="card"><div class="t">Finance &amp; Audit</div><div class="d">Debt, collections and write-offs — all with a paper trail.</div></div>
+    <div class="card"><div class="t">User &amp; Role control</div><div class="d">5 roles, customizable permissions, branch-scoped access.</div></div>
+    <div class="card"><div class="t">Security</div><div class="d">Strong passwords, multi-factor login, lockout on attacks.</div></div>
+    <div class="card"><div class="t">Multi-branch</div><div class="d">One system, many branches, each seeing only its own data.</div></div>
+  </div>
+</section>
+
+<!-- 5 · TOUR -->
+<section class="slide">
+  <div class="kicker">Inside the application</div>
+  <h2>Real screens, real data</h2>
+  <div class="grid c3">
+    <div class="figure"><div class="laptop"><div class="screen"><img src="shot_admin.png" alt="Admin"/></div><div class="bar"></div><div class="base"></div></div><div class="cap">Admin console</div></div>
+    <div class="figure"><div class="laptop"><div class="screen"><img src="shot_roles.png" alt="Roles"/></div><div class="bar"></div><div class="base"></div></div><div class="cap">Role management</div></div>
+    <div class="figure"><div class="laptop"><div class="screen"><img src="shot_users.png" alt="Users"/></div><div class="bar"></div><div class="base"></div></div><div class="cap">User directory</div></div>
+    <div class="figure"><div class="laptop"><div class="screen"><img src="shot_manager.png" alt="Manager"/></div><div class="bar"></div><div class="base"></div></div><div class="cap">Manager dashboard</div></div>
+    <div class="figure"><div class="laptop"><div class="screen"><img src="shot_neworder.png" alt="New invoice"/></div><div class="bar"></div><div class="base"></div></div><div class="cap">Salesman — new invoice</div></div>
+    <div class="figure"><div class="laptop"><div class="screen"><img src="shot_audit.png" alt="Audit"/></div><div class="bar"></div><div class="base"></div></div><div class="cap">Audit logs</div></div>
+  </div>
+</section>
+
+<!-- 6 · MOBILE -->
+<section class="slide">
+  <div class="kicker">Mobile &amp; Responsive</div>
+  <h2>Your team uses it on the road</h2>
+  <p class="lead">The same application, fully responsive — salesmen take orders and managers approve on their phones. No second app to build or maintain.</p>
+  <div class="grid c4" style="margin-top:4vh;">
+    <div class="figure"><div class="iphone"><div class="notch"></div><div class="screen"><img src="shot_m_login.png" alt="Login"/></div><div class="home"></div></div><div class="cap">Login</div></div>
+    <div class="figure"><div class="iphone"><div class="notch"></div><div class="screen"><img src="shot_m_admin.png" alt="Admin"/></div><div class="home"></div></div><div class="cap">Admin on phone</div></div>
+    <div class="figure"><div class="iphone"><div class="notch"></div><div class="screen"><img src="shot_m_users.png" alt="Users"/></div><div class="home"></div></div><div class="cap">User directory</div></div>
+    <div class="figure"><div class="iphone"><div class="notch"></div><div class="screen"><img src="shot_m_neworder.png" alt="Order"/></div><div class="home"></div></div><div class="cap">Order entry</div></div>
+  </div>
+</section>
+
+<!-- 7 · SALES -->
+<section class="slide">
+  <div class="kicker">Capability · Sales</div>
+  <h2>Sales &amp; Invoicing</h2>
+  <div class="ps">
+    <div class="pain"><h4>Before</h4><ul><li>Invoices written by hand — totals and VAT don't add up</li><li>No record of who sold what, or when</li><li>Salesmen can't be tracked branch by branch</li></ul></div>
+    <div class="fix"><h4>Now</h4><ul><li>Guided invoicing with live, accurate totals &amp; VAT</li><li>Every sale logged with customer, cylinder, salesman</li><li>Managers see all branch sales, filterable &amp; auditable</li></ul></div>
+  </div>
+  <div class="grid c2" style="margin-top:3vh;">
+    <div class="figure"><div class="laptop"><div class="screen"><img src="shot_neworder.png" alt="New invoice"/></div><div class="bar"></div><div class="base"></div></div><div class="cap">New invoice — product library, live totals</div></div>
+    <div class="figure"><div class="laptop"><div class="screen"><img src="shot_allsales.png" alt="All sales"/></div><div class="bar"></div><div class="base"></div></div><div class="cap">Branch sales review</div></div>
+  </div>
+</section>
+
+<!-- 8 · LOGISTICS -->
+<section class="slide">
+  <div class="kicker">Capability · Logistics</div>
+  <h2>Inventory &amp; Reconciliation</h2>
+  <div class="ps">
+    <div class="pain"><h4>Before</h4><ul><li>Cylinders "disappear" between warehouse and customer</li><li>Reconciliation done late, by memory</li><li>Variance blamed on "the route", never traced</li></ul></div>
+    <div class="fix"><h4>Now</h4><ul><li>Morning load recorded per salesman, per cylinder</li><li>Evening match of loaded vs invoiced</li><li>Variances flagged per route, immediately</li></ul></div>
+  </div>
+  <div class="grid c2" style="margin-top:3vh;">
+    <div class="figure"><div class="laptop"><div class="screen"><img src="shot_loader.png" alt="Loader"/></div><div class="bar"></div><div class="base"></div></div><div class="cap">Loader console</div></div>
+    <div class="figure"><div class="laptop"><div class="screen"><img src="shot_reconcile_log.png" alt="Reconcile"/></div><div class="bar"></div><div class="base"></div></div><div class="cap">Reconciliation — variance detection</div></div>
+  </div>
+</section>
+
+<!-- 9 · FINANCE -->
+<section class="slide">
+  <div class="kicker">Capability · Finance</div>
+  <h2>Finance &amp; Receivables</h2>
+  <div class="ps">
+    <div class="pain"><h4>Before</h4><ul><li>Customer debt in notebooks or spreadsheets</li><li>Write-offs untraceable — "who approved that?"</li><li>No clear branch financial position</li></ul></div>
+    <div class="fix"><h4>Now</h4><ul><li>Debt &amp; collections per customer, per branch</li><li>Write-offs need permission + full audit entry</li><li>Reconciliation overview at a glance</li></ul></div>
+  </div>
+  <div class="grid c2" style="margin-top:3vh;">
+    <div class="figure"><div class="laptop"><div class="screen"><img src="shot_reconcile_fin.png" alt="Finance"/></div><div class="bar"></div><div class="base"></div></div><div class="cap">Reconciliation overview</div></div>
+    <div class="figure"><div class="laptop"><div class="screen"><img src="shot_manager.png" alt="Manager"/></div><div class="bar"></div><div class="base"></div></div><div class="cap">Manager dashboard</div></div>
+  </div>
+</section>
+
+<!-- 10 · TRUST -->
+<section class="slide">
+  <div class="kicker">Trust &amp; Control</div>
+  <h2>Who can see what — and it's all logged</h2>
+  <div class="grid c2">
+    <div class="card"><div class="t">Right access, per role</div><div class="d">Five built-in roles plus customizable permission profiles. A salesman sees his routes; a manager sees the branch; an admin sees everything. Branch data is scoped automatically.</div></div>
+    <div class="card"><div class="t">Protected by design</div><div class="d">Strong password hashing, multi-factor login with recovery codes, and lockout after repeated failed attempts.</div></div>
+    <div class="card"><div class="t">Every action is recorded</div><div class="d">Create, change or delete — the system logs who, what, before/after, and from where. Disputes are resolved in seconds.</div></div>
+    <div class="card"><div class="t">You stay in control</div><div class="d">The user directory shows who created and who last changed each account. Nothing is anonymous.</div></div>
+  </div>
+</section>
+
+<!-- 11 · PROOF -->
+<section class="slide">
+  <div class="kicker">Proof it works</div>
+  <h2>Not just built — verified</h2>
+  <div class="grid c2">
+    <div class="card"><div class="t">✓ Code quality</div><div class="d">Type-check and linting pass with zero errors or warnings. 16 automated tests pass.</div></div>
+    <div class="card"><div class="t">✓ Production build</div><div class="d">The application builds and runs as a standalone server, ready to deploy.</div></div>
+    <div class="card"><div class="t">✓ Live tested</div><div class="d">Protected screens correctly require login; the system reports its own health status.</div></div>
+    <div class="card"><div class="t">✓ Real data</div><div class="d">The screenshots in this deck are from a live, working instance — not mockups.</div></div>
+  </div>
+</section>
+
+<!-- 12 · CLOSE -->
+<section class="slide center">
+  <div class="kicker">What's next</div>
+  <h1 style="font-size:clamp(30px,4.4vw,52px);">Ready to run your branches on one screen</h1>
+  <p class="lead">Next steps we recommend: automated tests on every update, a warehouse screen, bulk customer/product import, and exportable reports (reconciliation, debt aging, sales by cylinder).</p>
+  <div class="pill-row">
+    <span class="tag">Deployable today</span><span class="tag">Branch-scoped</span>
+    <span class="tag">Audited</span><span class="tag">Mobile-ready</span>
+  </div>
+  <p class="sub">National Industrial Gas Plant · Operations Platform</p>
+</section>
+
+</body>
+</html>

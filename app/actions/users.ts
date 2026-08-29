@@ -1,12 +1,13 @@
 "use server";
 
-import { Prisma, UserRole } from "@prisma/client";
+import { Prisma, UserRole } from "@/generated/prisma/client";
 import bcrypt from "bcryptjs";
 import { revalidatePath } from "next/cache";
 import { logAction, auditSnapshot } from "@/lib/audit";
-import { DEFAULT_ROLE_PERMISSIONS, Permissions } from "@/lib/permissions";
+import { DEFAULT_ROLE_PERMISSIONS, Permissions, canAssignProfile, getEffectivePermissions, normalizePermissions, type Permission } from "@/lib/permissions";
 import { requirePermission } from "@/lib/permission-guard";
 import { prisma } from "@/lib/prisma";
+import { getBranchScope, requireBranchAccess } from "@/lib/branch-scope";
 
 function text(formData: FormData, key: string) {
   const value = formData.get(key);
@@ -21,11 +22,21 @@ function parseRole(value: string) {
   throw new Error("Invalid user role.");
 }
 
-async function resolvePermissionProfileId(tx: Prisma.TransactionClient, role: UserRole, roleId: string | null) {
+async function resolvePermissionProfileId(
+  tx: Prisma.TransactionClient,
+  role: UserRole,
+  roleId: string | null,
+  actorRole: UserRole,
+  actorPermissions: Permission[],
+) {
   if (roleId) {
     const customRole = await tx.role.findUnique({ where: { id: roleId } });
     if (!customRole) {
       throw new Error("Selected permission profile was not found.");
+    }
+    const profilePermissions = normalizePermissions(customRole.permissions);
+    if (!canAssignProfile(actorRole, actorPermissions, profilePermissions)) {
+      throw new Error("You cannot assign a permission profile containing permissions you do not have.");
     }
 
     return customRole.id;
@@ -45,6 +56,16 @@ async function resolvePermissionProfileId(tx: Prisma.TransactionClient, role: Us
   return builtInRole.id;
 }
 
+function requireRoleManagement(actorRole: UserRole, targetRole: UserRole) {
+  if (actorRole === "ADMIN") return;
+  if (actorRole === "GENERAL_MANAGER" && targetRole !== "ADMIN") return;
+  if (
+    actorRole === "MANAGER" &&
+    (targetRole === "LOADER" || targetRole === "SALESMAN")
+  ) return;
+  throw new Error("You cannot assign or manage this account type.");
+}
+
 export async function createUser(formData: FormData) {
   const fullName = text(formData, "fullName");
   const phone = text(formData, "phone");
@@ -58,19 +79,21 @@ export async function createUser(formData: FormData) {
     throw new Error("Full name, email, and password are required.");
   }
 
-  if (password.length < 8) {
-    throw new Error("Password must be at least 8 characters.");
-  }
-
-  if (branchId) {
-    await prisma.branch.findUniqueOrThrow({ where: { id: branchId } });
+  if (password.length < 12) {
+    throw new Error("Password must be at least 12 characters.");
   }
 
   const passwordHash = await bcrypt.hash(password, 12);
-  await requirePermission(Permissions.Users_Update);
+  const { user: actor } = await requirePermission(Permissions.Users_Update);
+  const scope = await getBranchScope();
+  requireRoleManagement(actor.role, role);
+  if (branchId) {
+    requireBranchAccess(scope, branchId);
+    await prisma.branch.findUniqueOrThrow({ where: { id: branchId } });
+  }
 
   await prisma.$transaction(async (tx) => {
-    const permissionProfileId = await resolvePermissionProfileId(tx, role, roleId);
+    const permissionProfileId = await resolvePermissionProfileId(tx, role, roleId, actor.role, getEffectivePermissions(actor));
     const user = await tx.user.create({
       data: {
         fullName,
@@ -87,7 +110,7 @@ export async function createUser(formData: FormData) {
     });
 
     await logAction(
-      user.id,
+      actor.id,
       "CREATE_USER",
       "User",
       user.id,
@@ -110,6 +133,8 @@ export async function createUser(formData: FormData) {
   });
 
   revalidatePath("/general-manager/users");
+  revalidatePath("/manager/users");
+  revalidatePath("/admin/users");
   revalidatePath("/admin");
 }
 
@@ -121,18 +146,24 @@ export async function toggleUserStatus(formData: FormData) {
     throw new Error("Missing user.");
   }
 
-  await requirePermission(Permissions.Users_Update);
+  const { user: actor } = await requirePermission(Permissions.Users_Update);
+  const scope = await getBranchScope();
 
   await prisma.$transaction(async (tx) => {
     const user = await tx.user.findUniqueOrThrow({ where: { id: userId } });
+    if (user.id === actor.id) {
+      throw new Error("You cannot deactivate your own account.");
+    }
+    requireRoleManagement(actor.role, user.role);
+    if (user.branchId) requireBranchAccess(scope, user.branchId);
     const updatedUser = await tx.user.update({
       where: { id: userId },
-      data: { isActive: !currentStatus },
+      data: { isActive: !currentStatus, sessionVersion: { increment: 1 } },
     });
 
     await logAction(
-      userId,
-      "UPDATE_PERMISSION",
+      actor.id,
+      "UPDATE_USER_STATUS",
       "User",
       userId,
       auditSnapshot(user),
@@ -142,6 +173,8 @@ export async function toggleUserStatus(formData: FormData) {
   });
 
   revalidatePath("/general-manager/users");
+  revalidatePath("/manager/users");
+  revalidatePath("/admin/users");
   revalidatePath("/admin");
 }
 
@@ -155,26 +188,34 @@ export async function updateUserRole(formData: FormData) {
     throw new Error("Missing user.");
   }
 
+  const { user: actor } = await requirePermission(Permissions.Users_Update);
+  const scope = await getBranchScope();
+  if (userId === actor.id && role !== UserRole.ADMIN) {
+    throw new Error("You cannot remove your own administrator role.");
+  }
+  requireRoleManagement(actor.role, role);
   if (branchId) {
+    requireBranchAccess(scope, branchId);
     await prisma.branch.findUniqueOrThrow({ where: { id: branchId } });
   }
 
-  await requirePermission(Permissions.Users_Update);
-
   await prisma.$transaction(async (tx) => {
     const user = await tx.user.findUniqueOrThrow({ where: { id: userId } });
-    const permissionProfileId = await resolvePermissionProfileId(tx, role, roleId);
+    requireRoleManagement(actor.role, user.role);
+    if (user.branchId) requireBranchAccess(scope, user.branchId);
+    const permissionProfileId = await resolvePermissionProfileId(tx, role, roleId, actor.role, getEffectivePermissions(actor));
     const updatedUser = await tx.user.update({
       where: { id: userId },
       data: {
         role,
         branchId,
         roleId: permissionProfileId,
+        sessionVersion: { increment: 1 },
       },
     });
 
     await logAction(
-      userId,
+      actor.id,
       "UPDATE_PERMISSION",
       "User",
       userId,
@@ -185,6 +226,8 @@ export async function updateUserRole(formData: FormData) {
   });
 
   revalidatePath("/general-manager/users");
+  revalidatePath("/manager/users");
+  revalidatePath("/admin/users");
   revalidatePath("/manager");
   revalidatePath("/loader");
   revalidatePath("/admin");
@@ -198,20 +241,25 @@ export async function toggleGlobalSalesView(formData: FormData) {
     throw new Error("Missing user.");
   }
 
-  await requirePermission(Permissions.Users_Update);
+  const { user: actor } = await requirePermission(Permissions.Users_Update);
+  if (actor.role !== "ADMIN" && actor.role !== "GENERAL_MANAGER") {
+    throw new Error("Only administrators and general managers can grant global access.");
+  }
 
   await prisma.$transaction(async (tx) => {
     const user = await tx.user.findUniqueOrThrow({ where: { id: userId } });
+    requireRoleManagement(actor.role, user.role);
     const updatedUser = await tx.user.update({
       where: { id: userId },
       data: {
         hasGlobalAccess: !currentStatus,
         allowGlobalSalesView: !currentStatus,
+        sessionVersion: { increment: 1 },
       },
     });
 
     await logAction(
-      userId,
+      actor.id,
       "UPDATE_PERMISSION",
       "User",
       userId,
@@ -222,6 +270,8 @@ export async function toggleGlobalSalesView(formData: FormData) {
   });
 
   revalidatePath("/general-manager/users");
+  revalidatePath("/manager/users");
+  revalidatePath("/admin/users");
   revalidatePath("/manager");
   revalidatePath("/admin");
 }

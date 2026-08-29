@@ -20,6 +20,9 @@ export default function LoaderLayout({ children }: Readonly<{ children: React.Re
             Daily Reconciliation
           </Link>
           <AdminConsoleLink className="flex min-h-12 items-center justify-center rounded-lg bg-purple-700 px-4 text-sm font-black text-white" />
+          <Link href="/profile/security" className="flex min-h-12 items-center justify-center rounded-lg border border-slate-300 px-4 text-sm font-black text-slate-900">
+            Security
+          </Link>
           <form action={logout}>
             <button
               type="submit"

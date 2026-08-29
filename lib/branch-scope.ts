@@ -1,4 +1,4 @@
-import type { UserRole } from "@prisma/client";
+import type { UserRole } from "@/generated/prisma/client";
 import { getCurrentUser } from "@/lib/session";
 
 export type BranchScope = {
@@ -17,7 +17,8 @@ export async function getBranchScope() {
   }
 
   const isAdmin = user.role === "ADMIN";
-  const canSeeAllBranches = isAdmin || Boolean(user.hasGlobalAccess ?? user.allowGlobalSalesView);
+  const canSeeAllBranches =
+    isAdmin || user.role === "GENERAL_MANAGER" || Boolean(user.hasGlobalAccess ?? user.allowGlobalSalesView);
 
   return {
     userId: user.id,
@@ -38,4 +39,14 @@ export function branchWhere(scope: BranchScope | null | undefined) {
   }
 
   return { branchId: scope.branchId };
+}
+
+export function canAccessBranch(scope: BranchScope | null | undefined, branchId: string | null | undefined) {
+  return Boolean(scope && (scope.canSeeAllBranches || (scope.branchId && scope.branchId === branchId)));
+}
+
+export function requireBranchAccess(scope: BranchScope | null | undefined, branchId: string | null | undefined) {
+  if (!canAccessBranch(scope, branchId)) {
+    throw new Error("Unauthorized branch access.");
+  }
 }

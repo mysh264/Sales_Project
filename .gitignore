@@ -14,3 +14,7 @@ yarn-error.log*
 pnpm-debug.log*
 
 *.tsbuildinfo
+storage/
+generated/
+playwright-report/
+test-results/

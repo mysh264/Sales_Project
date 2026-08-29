@@ -2,12 +2,12 @@ import Link from "next/link";
 import { SalesmanHandoffPicker } from "./SalesmanHandoffPicker";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser, hasGlobalSalesAccess } from "@/lib/session";
+import { businessDate } from "@/lib/business-date";
 
 export const dynamic = "force-dynamic";
 
 function startOfDay() {
-  const now = new Date();
-  return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  return businessDate();
 }
 
 function formatNumber(value: number) {

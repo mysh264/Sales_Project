@@ -1,9 +1,12 @@
 import { prisma } from "@/lib/prisma";
 import Link from "next/link";
+import { requirePermission } from "@/lib/permission-guard";
+import { Permissions } from "@/lib/permissions";
 
 export const dynamic = "force-dynamic";
 
 export default async function AdminConsolePage() {
+  await requirePermission(Permissions.Users_Read);
   const [userCount, activeUsers, branchCount, productCount, invoiceCount, users] = await Promise.all([
     prisma.user.count(),
     prisma.user.count({ where: { isActive: true } }),
@@ -53,7 +56,7 @@ export default async function AdminConsolePage() {
             <Link href="/admin/branches" className="inline-flex rounded border border-slate-300 px-4 py-2 text-sm font-black text-slate-900">
               Branches
             </Link>
-            <Link href="/admin-console" className="inline-flex rounded border border-slate-300 px-4 py-2 text-sm font-black text-slate-900">
+            <Link href="/admin/users" className="inline-flex rounded border border-slate-300 px-4 py-2 text-sm font-black text-slate-900">
               User Management
             </Link>
             <Link href="/admin/products" className="inline-flex rounded border border-slate-300 px-4 py-2 text-sm font-black text-slate-900">

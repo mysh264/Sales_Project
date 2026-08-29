@@ -29,7 +29,7 @@ export async function saveProduct(formData: FormData) {
     throw new Error("Name, gas type, and cylinder size are required.");
   }
 
-  await requirePermission(Permissions.Products_Update);
+  const { user: actor } = await requirePermission(Permissions.Products_Update);
 
   await prisma.$transaction(async (tx) => {
     if (productId) {
@@ -51,7 +51,7 @@ export async function saveProduct(formData: FormData) {
       });
 
       await logAction(
-        existing.id,
+        actor.id,
         "UPDATE_PRODUCT",
         "Product",
         updated.id,
@@ -76,9 +76,21 @@ export async function saveProduct(formData: FormData) {
           isActive: true,
         },
       });
+      const branches = await tx.branch.findMany({ select: { id: true } });
+      if (branches.length > 0) {
+        await tx.inventoryBalance.createMany({
+          data: branches.map((branch) => ({
+            branchId: branch.id,
+            productId: created.id,
+            fullCount: 0,
+            emptyCount: 0,
+          })),
+          skipDuplicates: true,
+        });
+      }
 
       await logAction(
-        created.id,
+        actor.id,
         "CREATE_PRODUCT",
         "Product",
         created.id,
@@ -90,6 +102,7 @@ export async function saveProduct(formData: FormData) {
   });
 
   revalidatePath("/admin/products");
+  revalidatePath("/general-manager/products");
   revalidatePath("/admin");
   revalidatePath("/admin-console");
   redirect("/admin/products");
@@ -103,17 +116,17 @@ export async function toggleProductStatus(formData: FormData) {
     throw new Error("Missing product.");
   }
 
-  await requirePermission(Permissions.Products_Update);
+  const { user: actor } = await requirePermission(Permissions.Products_Update);
 
   await prisma.$transaction(async (tx) => {
     const existing = await tx.product.findUniqueOrThrow({ where: { id: productId } });
     const updated = await tx.product.update({
       where: { id: productId },
-      data: { isActive: !currentStatus },
+      data: { isActive: !existing.isActive },
     });
 
     await logAction(
-      existing.id,
+      actor.id,
       currentStatus ? "DELETE_PRODUCT" : "RESTORE_PRODUCT",
       "Product",
       updated.id,
@@ -124,6 +137,7 @@ export async function toggleProductStatus(formData: FormData) {
   });
 
   revalidatePath("/admin/products");
+  revalidatePath("/general-manager/products");
   revalidatePath("/admin");
   revalidatePath("/admin-console");
 }

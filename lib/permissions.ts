@@ -1,4 +1,4 @@
-import type { Role, UserRole } from "@prisma/client";
+import type { Role, UserRole } from "@/generated/prisma/client";
 
 export const SYSTEM_RESOURCES = [
   "Sales",
@@ -118,22 +118,6 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     "Logistics_Read",
     "Finance_Read",
     "Finance_Update",
-    "Audit_Read",
-  ]),
-  ACCOUNTANT: normalizePermissions([
-    "Sales_Read",
-    "Products_Read",
-    "Products_Update",
-    "Finance_Read",
-    "Finance_Update",
-    "Audit_Read",
-  ]),
-  ACCOUNTANT_MANAGER: normalizePermissions([
-    "Sales_Read",
-    "Products_Read",
-    "Products_Update",
-    "Finance_Read",
-    "Finance_Update",
     "Users_Read",
     "Users_Update",
     "Audit_Read",
@@ -180,4 +164,21 @@ export function hasAnyPermission(user: PermissionSource | null | undefined, perm
 
   const granted = new Set(getEffectivePermissions(user));
   return permissions.some((permission) => granted.has(permission));
+}
+
+// Whether `actor` may assign a permission `profile` to another user.
+// ADMIN may assign any profile; everyone else may only assign profiles whose
+// permissions are a subset of their own effective permissions (no privilege
+// escalation). This is a pure function so the rule can be unit-tested without a DB.
+export function canAssignProfile(
+  actorRole: UserRole,
+  actorPermissions: Permission[],
+  profilePermissions: Permission[],
+): boolean {
+  if (actorRole === "ADMIN") {
+    return true;
+  }
+
+  const actorSet = new Set(actorPermissions);
+  return profilePermissions.every((permission) => actorSet.has(permission));
 }

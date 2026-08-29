@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { submitMorningLoad } from "@/app/actions/logistics";
+import { submitMorningLoad } from "@/app/actions/loader";
 
 type SalesmanOption = {
   id: string;

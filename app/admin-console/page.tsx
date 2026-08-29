@@ -1,7 +1,8 @@
-import { UserRole } from "@prisma/client";
+import { UserRole } from "@/generated/prisma/client";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createUser, toggleGlobalSalesView, toggleUserStatus, updateUserRole } from "@/app/actions/users";
+import { resetUserPassword } from "@/app/actions/security";
 import { getCurrentUser } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 
@@ -69,12 +70,8 @@ export default async function AdminConsolePage() {
               <Link href="/admin/audit-logs" className="rounded border border-slate-300 bg-white px-4 py-2 text-sm font-black text-slate-950">
                 Audit Logs
               </Link>
-              <Link href="/general-manager/users" className="rounded border border-slate-300 bg-white px-4 py-2 text-sm font-black text-slate-950">
-                User Management
-              </Link>
-              <Link href="/admin/products" className="rounded border border-slate-300 bg-white px-4 py-2 text-sm font-black text-slate-950">
-                Product Master
-              </Link>
+              <Link href="/admin/finance" className="rounded border border-slate-300 bg-white px-4 py-2 text-sm font-black text-slate-950">Finance</Link>
+              <Link href="/admin/reconciliation" className="rounded border border-slate-300 bg-white px-4 py-2 text-sm font-black text-slate-950">Reconciliation</Link>
             </div>
           </div>
         </header>
@@ -112,7 +109,7 @@ export default async function AdminConsolePage() {
             </label>
             <label className="block">
               <span className="text-sm font-black text-slate-700">Password</span>
-              <input name="password" type="password" minLength={8} required className="mt-1 h-11 w-full rounded border border-slate-300 px-3 text-sm font-bold" />
+              <input name="password" type="password" minLength={12} required className="mt-1 h-11 w-full rounded border border-slate-300 px-3 text-sm font-bold" />
             </label>
             <label className="block">
               <span className="text-sm font-black text-slate-700">Role</span>
@@ -188,7 +185,10 @@ export default async function AdminConsolePage() {
                     </td>
                     <td className="px-4 py-2 font-bold text-slate-700">{user.phone ?? "No phone"}</td>
                     <td className="whitespace-nowrap px-4 py-2">
-                      <form action={toggleGlobalSalesView}>
+                      {user.id === currentUser.id ? (
+                        <span className="text-xs font-black text-slate-500">Protected Admin</span>
+                      ) : (
+                        <form action={toggleGlobalSalesView}>
                         <input type="hidden" name="userId" value={user.id} />
                         <input type="hidden" name="currentStatus" value={String(user.hasGlobalAccess ?? user.allowGlobalSalesView)} />
                         <button
@@ -199,7 +199,8 @@ export default async function AdminConsolePage() {
                         >
                           {(user.hasGlobalAccess ?? user.allowGlobalSalesView) ? "Enabled" : "Disabled"}
                         </button>
-                      </form>
+                        </form>
+                      )}
                     </td>
                     <td className="whitespace-nowrap px-4 py-2">
                       <span
@@ -212,6 +213,10 @@ export default async function AdminConsolePage() {
                     </td>
                     <td className="px-4 py-2">
                       <div className="flex justify-end gap-2">
+                        {user.id === currentUser.id ? (
+                          <span className="rounded bg-slate-200 px-3 py-2 text-xs font-black text-slate-700">Current Account</span>
+                        ) : (
+                          <>
                         <form action={toggleUserStatus}>
                           <input type="hidden" name="userId" value={user.id} />
                           <input type="hidden" name="currentStatus" value={String(user.isActive)} />
@@ -248,6 +253,13 @@ export default async function AdminConsolePage() {
                             Save
                           </button>
                         </form>
+                        <form action={resetUserPassword} className="flex gap-2">
+                          <input type="hidden" name="userId" value={user.id} />
+                          <input name="newPassword" type="password" required minLength={12} placeholder="New password" className="h-9 w-36 rounded border px-2 text-xs" />
+                          <button className="h-9 rounded bg-amber-700 px-3 text-xs font-black text-white">Reset</button>
+                        </form>
+                          </>
+                        )}
                       </div>
                     </td>
                   </tr>

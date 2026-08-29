@@ -3,6 +3,8 @@ import { redirect } from "next/navigation";
 import { saveProduct, toggleProductStatus } from "@/app/actions/products";
 import { getCurrentUser } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
+import { requirePermission } from "@/lib/permission-guard";
+import { Permissions } from "@/lib/permissions";
 
 export const dynamic = "force-dynamic";
 
@@ -19,9 +21,7 @@ export default async function AdminProductsPage({ searchParams }: ProductsPagePr
     redirect("/login");
   }
 
-  if (currentUser.role !== "ADMIN") {
-    redirect("/admin");
-  }
+  await requirePermission(Permissions.Products_Update);
 
   const params = (await searchParams) ?? {};
 

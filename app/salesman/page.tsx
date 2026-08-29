@@ -1,15 +1,15 @@
-import { PaymentMethod, Prisma } from "@prisma/client";
+import { PaymentMethod, Prisma } from "@/generated/prisma/client";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { formatDateTimeDMY } from "@/lib/date-format";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
+import { businessDayRange } from "@/lib/business-date";
 
 export const dynamic = "force-dynamic";
 
 function startOfToday() {
-  const now = new Date();
-  return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  return businessDayRange().start;
 }
 
 function formatOmr(value: Prisma.Decimal | number | null | undefined) {
@@ -47,7 +47,7 @@ export default async function SalesmanDashboardPage() {
     },
     orderBy: { updatedAt: "desc" },
     take: 5,
-  }).catch(() => []);
+  });
 
   const todaySales = await prisma.invoice
     .aggregate({
@@ -57,8 +57,7 @@ export default async function SalesmanDashboardPage() {
         status: "ISSUED",
         createdAt: { gte: today },
       },
-    })
-    .catch(() => ({ _sum: { totalAmount: new Prisma.Decimal(0) } }));
+    });
 
   const cashCollectedToday = await prisma.payment
     .aggregate({
@@ -68,8 +67,7 @@ export default async function SalesmanDashboardPage() {
         createdAt: { gte: today },
         invoice: { salesmanId: currentUser.id },
       },
-    })
-    .catch(() => ({ _sum: { amount: new Prisma.Decimal(0) } }));
+    });
 
   const transfersCollectedToday = await prisma.payment
     .aggregate({
@@ -79,8 +77,7 @@ export default async function SalesmanDashboardPage() {
         createdAt: { gte: today },
         invoice: { salesmanId: currentUser.id },
       },
-    })
-    .catch(() => ({ _sum: { amount: new Prisma.Decimal(0) } }));
+    });
 
   const checksCollectedToday = await prisma.payment
     .aggregate({
@@ -90,8 +87,7 @@ export default async function SalesmanDashboardPage() {
         createdAt: { gte: today },
         invoice: { salesmanId: currentUser.id },
       },
-    })
-    .catch(() => ({ _sum: { amount: new Prisma.Decimal(0) } }));
+    });
 
   const todayPayments = await prisma.payment.findMany({
     where: {
@@ -102,15 +98,14 @@ export default async function SalesmanDashboardPage() {
       invoice: { include: { customer: true } },
     },
     orderBy: { createdAt: "desc" },
-  }).catch(() => []);
+  });
 
   const latestInvoice = await prisma.invoice
     .findFirst({
       where: { salesmanId: currentUser.id },
       select: { id: true },
       orderBy: { createdAt: "desc" },
-    })
-    .catch(() => null);
+    });
 
   const stats = [
     { label: "Salesman", value: currentUser.fullName, tone: "bg-ink text-white" },

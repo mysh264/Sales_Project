@@ -1,5 +1,7 @@
-import { Prisma } from "@prisma/client";
+import { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
+import { requirePermission } from "@/lib/permission-guard";
+import { Permissions } from "@/lib/permissions";
 
 export const dynamic = "force-dynamic";
 
@@ -19,6 +21,7 @@ function formatOmr(value: Prisma.Decimal | number | null | undefined) {
 }
 
 export default async function GeneralManagerPage() {
+  await requirePermission(Permissions.Finance_Read);
   const monthStart = startOfMonth();
 
   const [globalRevenue, globalDebt, globalCylinderVolume, branches] = await Promise.all([
@@ -187,4 +190,3 @@ export default async function GeneralManagerPage() {
     </main>
   );
 }
-

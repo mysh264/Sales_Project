@@ -1,8 +1,9 @@
 import { redirect } from "next/navigation";
 import { createOrder } from "@/app/actions/sales";
+import { searchCustomers } from "@/app/actions/customer-search";
 import { buildInvoiceSerial } from "@/lib/invoice";
 import { prisma } from "@/lib/prisma";
-import { getCurrentUser, hasGlobalSalesAccess } from "@/lib/session";
+import { getCurrentUser } from "@/lib/session";
 import { NewInvoiceForm } from "./NewInvoiceForm";
 
 export const dynamic = "force-dynamic";
@@ -20,19 +21,16 @@ export default async function NewOrderPage({ searchParams }: NewOrderPageProps) 
     redirect("/login");
   }
   const branchId = salesman.branchId;
-  const hasGlobalAccess = hasGlobalSalesAccess(salesman);
 
   if (!branchId) {
     redirect("/login");
   }
 
-  const customerWhere = hasGlobalAccess ? {} : { branchId };
-  const debtWhere = hasGlobalAccess
-    ? { balanceAmount: { gt: 0 } }
-    : {
-        balanceAmount: { gt: 0 },
-        customer: { branchId },
-      };
+  const customerWhere = { branchId };
+  const debtWhere = {
+    balanceAmount: { gt: 0 },
+    customer: { branchId },
+  };
 
   const [customers, products, customerDebtRows] = await Promise.all([
     prisma.customer.findMany({
@@ -44,7 +42,7 @@ export default async function NewOrderPage({ searchParams }: NewOrderPageProps) 
       include: {
         priceRules: {
           orderBy: { startsAt: "desc" },
-          where: { endsAt: null },
+          where: { endsAt: null, branchId },
         },
       },
       orderBy: { name: "asc" },
@@ -64,17 +62,11 @@ export default async function NewOrderPage({ searchParams }: NewOrderPageProps) 
     cylinderSize: product.cylinderSize,
     pressure: product.pressure,
     minPrice:
-      product.priceRules.find((rule) => rule.branchId === branchId)?.minPrice.toFixed(3) ??
-      product.priceRules[0]?.minPrice.toFixed(3) ??
-      "0.000",
+      product.priceRules.find((rule) => rule.branchId === branchId)?.minPrice.toFixed(3) ?? "0.000",
     maxPrice:
-      product.priceRules.find((rule) => rule.branchId === branchId)?.maxPrice.toFixed(3) ??
-      product.priceRules[0]?.maxPrice.toFixed(3) ??
-      "0.000",
+      product.priceRules.find((rule) => rule.branchId === branchId)?.maxPrice.toFixed(3) ?? "0.000",
     defaultPrice:
-      product.priceRules.find((rule) => rule.branchId === branchId)?.minPrice.toFixed(3) ??
-      product.priceRules[0]?.minPrice.toFixed(3) ??
-      "0.000",
+      product.priceRules.find((rule) => rule.branchId === branchId)?.minPrice.toFixed(3) ?? "0.000",
   }));
 
   const customerData = customers.map((customer) => ({
@@ -84,6 +76,9 @@ export default async function NewOrderPage({ searchParams }: NewOrderPageProps) 
     address: customer.address ?? "",
     vatNumber: customer.vatNumber ?? "",
   }));
+  const customerCreditBalances = Object.fromEntries(
+    customers.map((customer) => [customer.id, customer.creditBalance.toFixed(3)]),
+  );
 
   const customerDebtBalances = customerDebtRows.reduce<Record<string, string>>((accumulator, debt) => {
     const current = Number.parseFloat(accumulator[debt.customerId] ?? "0");
@@ -94,9 +89,9 @@ export default async function NewOrderPage({ searchParams }: NewOrderPageProps) 
 
   const resolvedSearchParams = (await searchParams) ?? {};
   const errorMessage = typeof resolvedSearchParams.error === "string" ? resolvedSearchParams.error : "";
-  const defaultTaxRate = salesman.branch.defaultTaxRate.toNumber() > 0
-    ? Math.round(salesman.branch.defaultTaxRate.toNumber()).toString()
-    : "5";
+  const defaultTaxRate = salesman.branch.defaultTaxRate.gt(0)
+    ? salesman.branch.defaultTaxRate.toFixed(4)
+    : "5.0000";
 
   return (
     <main className="min-h-screen bg-gray-50 px-3 py-4 md:px-6 md:py-6">
@@ -109,7 +104,9 @@ export default async function NewOrderPage({ searchParams }: NewOrderPageProps) 
         action={createOrder}
         customers={customerData}
         products={productData}
-        customerDebtBalances={customerDebtBalances}
+      customerDebtBalances={customerDebtBalances}
+      customerCreditBalances={customerCreditBalances}
+        searchCustomersAction={searchCustomers}
         errorMessage={errorMessage}
       />
     </main>

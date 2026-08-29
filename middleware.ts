@@ -1,10 +1,18 @@
-import type { UserRole } from "@prisma/client";
+import type { UserRole } from "@/generated/prisma/client";
 import { jwtVerify } from "jose/jwt/verify";
 import { NextRequest, NextResponse } from "next/server";
 import { allowedForPath, getJwtSecret, roleHome, sessionCookieName, type SessionPayload } from "@/lib/auth";
 
+function redirectPath(request: NextRequest, pathname: string) {
+  const configuredOrigin = process.env.APP_ORIGIN;
+  const headerHost = request.headers.get("x-forwarded-host") || request.headers.get("host");
+  const safeHeaderHost = headerHost && /^[a-zA-Z0-9.:[\]-]+$/.test(headerHost) ? headerHost : null;
+  const origin = configuredOrigin || `${request.headers.get("x-forwarded-proto") || request.nextUrl.protocol.replace(":", "")}://${safeHeaderHost || request.nextUrl.host}`;
+  return NextResponse.redirect(new URL(pathname, origin));
+}
+
 function loginRedirect(request: NextRequest) {
-  return NextResponse.redirect(new URL("/login", request.url));
+  return redirectPath(request, "/login");
 }
 
 function unauthorizedResponse() {
@@ -12,7 +20,7 @@ function unauthorizedResponse() {
 }
 
 function homeForRole(role: UserRole, request: NextRequest) {
-  return NextResponse.redirect(new URL(roleHome[role], request.url));
+  return redirectPath(request, roleHome[role]);
 }
 
 async function readSession(request: NextRequest) {
@@ -58,6 +66,7 @@ export async function middleware(request: NextRequest) {
 export const config = {
   matcher: [
     "/",
+    "/api/:path*",
     "/admin/:path*",
     "/admin-console/:path*",
     "/salesman/:path*",
@@ -67,5 +76,6 @@ export const config = {
     "/finance/:path*",
     "/general-manager/:path*",
     "/print/:path*",
+    "/profile/:path*",
   ],
 };

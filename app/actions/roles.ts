@@ -84,6 +84,10 @@ export async function updateRole(formData: FormData) {
       where: { id: roleId },
       data: { name, permissions },
     });
+    await tx.user.updateMany({
+      where: { roleId },
+      data: { sessionVersion: { increment: 1 } },
+    });
 
     await logAction(actorId, "UPDATE_ROLE", "Role", role.id, auditSnapshot(existing), auditSnapshot(role), { tx });
   });

@@ -15,7 +15,15 @@ CREATE TABLE IF NOT EXISTS "AuditLog" (
 CREATE INDEX IF NOT EXISTS "AuditLog_userId_timestamp_idx" ON "AuditLog"("userId", "timestamp");
 CREATE INDEX IF NOT EXISTS "AuditLog_targetModel_targetId_idx" ON "AuditLog"("targetModel", "targetId");
 
-ALTER TABLE "AuditLog"
-  ADD CONSTRAINT "AuditLog_userId_fkey"
-  FOREIGN KEY ("userId") REFERENCES "User"("id")
-  ON UPDATE CASCADE ON DELETE RESTRICT;
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'AuditLog_userId_fkey'
+  ) THEN
+    ALTER TABLE "AuditLog"
+      ADD CONSTRAINT "AuditLog_userId_fkey"
+      FOREIGN KEY ("userId") REFERENCES "User"("id")
+      ON UPDATE CASCADE ON DELETE RESTRICT;
+  END IF;
+END
+$$;

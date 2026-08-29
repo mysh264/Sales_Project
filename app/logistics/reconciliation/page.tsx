@@ -1,12 +1,13 @@
 import Link from "next/link";
 import { forbidden, redirect } from "next/navigation";
-import { submitEveningReconcile } from "@/app/actions/logistics";
+import { submitEveningReconcile } from "@/app/actions/loader";
 import { ReconciliationWorkbench } from "./ReconciliationWorkbench";
 import { formatDateDMY } from "@/lib/date-format";
 import { Permissions } from "@/lib/permissions";
 import { checkPermission } from "@/lib/permission-guard";
 import { getCurrentUser, hasGlobalSalesAccess } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
+import { businessDate } from "@/lib/business-date";
 
 export const dynamic = "force-dynamic";
 
@@ -24,8 +25,7 @@ function formatNumber(value: number) {
 }
 
 function todayDate() {
-  const now = new Date();
-  return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  return businessDate();
 }
 
 export default async function LogisticsReconciliationPage({ searchParams }: ReconciliationPageProps) {

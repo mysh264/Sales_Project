@@ -10,8 +10,17 @@ export default function AdminLayout({ children }: Readonly<{ children: React.Rea
             <Link href="/admin" className="rounded bg-slate-950 px-4 py-2 text-sm font-black text-white">
               Home
             </Link>
-            <Link href="/admin-console" className="rounded border border-slate-300 px-4 py-2 text-sm font-black text-slate-900">
-              Admin Console
+            <Link href="/admin/users" className="rounded border border-slate-300 px-4 py-2 text-sm font-black text-slate-900">
+              Users
+            </Link>
+            <Link href="/admin/finance" className="rounded border border-slate-300 px-4 py-2 text-sm font-black text-slate-900">
+              Finance
+            </Link>
+            <Link href="/admin/sales" className="rounded border border-slate-300 px-4 py-2 text-sm font-black text-slate-900">
+              Sales
+            </Link>
+            <Link href="/admin/reconciliation" className="rounded border border-slate-300 px-4 py-2 text-sm font-black text-slate-900">
+              Reconciliation
             </Link>
             <Link href="/admin/audit-logs" className="rounded border border-slate-300 px-4 py-2 text-sm font-black text-slate-900">
               Audit Logs
@@ -19,11 +28,17 @@ export default function AdminLayout({ children }: Readonly<{ children: React.Rea
             <Link href="/admin/products" className="rounded border border-slate-300 px-4 py-2 text-sm font-black text-slate-900">
               Products
             </Link>
+            <Link href="/admin/inventory" className="rounded border border-slate-300 px-4 py-2 text-sm font-black text-slate-900">
+              Inventory
+            </Link>
             <Link href="/admin/roles" className="rounded border border-slate-300 px-4 py-2 text-sm font-black text-slate-900">
               Roles
             </Link>
             <Link href="/admin/branches" className="rounded border border-slate-300 px-4 py-2 text-sm font-black text-slate-900">
               Branches
+            </Link>
+            <Link href="/profile/security" className="rounded border border-slate-300 px-4 py-2 text-sm font-black text-slate-900">
+              Security
             </Link>
           </div>
           <form action={logout}>

@@ -1,4 +1,3 @@
-import { Prisma } from "@prisma/client";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { formatDateDMY } from "@/lib/date-format";
@@ -7,6 +6,9 @@ import { checkPermission, requirePermission } from "@/lib/permission-guard";
 import { getCurrentUser } from "@/lib/session";
 import { hasGlobalSalesAccess } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
+import { approveReconciliationDiscrepancy } from "@/app/actions/manager";
+import { OmanDateInput } from "@/components/OmanDateInput";
+import { businessDate } from "@/lib/business-date";
 
 export const dynamic = "force-dynamic";
 
@@ -41,9 +43,12 @@ function nextDay(date: Date) {
 }
 
 function dayKey(value: Date) {
-  const year = value.getFullYear();
-  const month = `${value.getMonth() + 1}`.padStart(2, "0");
-  const day = `${value.getDate()}`.padStart(2, "0");
+  // Attribute invoices to the Muscat business day, not server-local time, so a sale at
+  // 00:00–04:00 Muscat (20:00–24:00 UTC) is not mis-bucketed to the previous day.
+  const d = businessDate(value);
+  const year = d.getUTCFullYear();
+  const month = `${d.getUTCMonth() + 1}`.padStart(2, "0");
+  const day = `${d.getUTCDate()}`.padStart(2, "0");
   return `${year}-${month}-${day}`;
 }
 
@@ -69,6 +74,14 @@ export default async function ReconciliationOverviewPage({
   }
 
   const params = (await searchParams) ?? {};
+  const workspaceHome =
+    currentUser.role === "ADMIN" ? "/admin" : currentUser.role === "MANAGER" ? "/manager" : "/general-manager";
+  const resetPath =
+    currentUser.role === "ADMIN"
+      ? "/admin/reconciliation"
+      : currentUser.role === "MANAGER"
+        ? "/manager/reconciliation"
+        : "/general-manager/reconciliation";
   const startDate = parseDate(params.start) ?? startOfMonth();
   const endDateInput = parseDate(params.end);
   const endDateExclusive = endDateInput ? nextDay(endDateInput) : endOfMonth();
@@ -92,9 +105,9 @@ export default async function ReconciliationOverviewPage({
     }),
     prisma.user.findMany({
       where: hasGlobalAccess
-        ? undefined
+        ? { role: "SALESMAN", isActive: true }
         : currentUser.branchId
-          ? { branchId: currentUser.branchId }
+          ? { branchId: currentUser.branchId, role: "SALESMAN", isActive: true }
           : { id: "__no_user__" },
       orderBy: { fullName: "asc" },
       select: { id: true, fullName: true },
@@ -124,6 +137,7 @@ export default async function ReconciliationOverviewPage({
     }),
     prisma.invoice.findMany({
       where: {
+        status: "ISSUED",
         createdAt: {
           gte: startDate,
           lt: endDateExclusive,
@@ -172,6 +186,7 @@ export default async function ReconciliationOverviewPage({
       calculatedSold,
       actualInvoiced,
       variance,
+      status: reconciliation.status,
     };
   });
 
@@ -202,11 +217,8 @@ export default async function ReconciliationOverviewPage({
               </p>
             </div>
             <div className="flex flex-wrap gap-3">
-              <Link href="/manager" className="rounded border border-slate-300 bg-white px-4 py-2 text-sm font-black text-slate-900">
-                Back to Manager
-              </Link>
-              <Link href="/loader" className="rounded bg-slate-950 px-4 py-2 text-sm font-black text-white">
-                Loader Dashboard
+              <Link href={workspaceHome} className="rounded border border-slate-300 bg-white px-4 py-2 text-sm font-black text-slate-900">
+                Back to Dashboard
               </Link>
             </div>
           </div>
@@ -240,11 +252,11 @@ export default async function ReconciliationOverviewPage({
           <form method="get" className="grid grid-cols-1 gap-4 p-4 md:grid-cols-2 xl:grid-cols-4">
             <label className="block">
               <span className="text-xs font-black uppercase tracking-wide text-slate-500">Start Date</span>
-              <input name="start" type="date" defaultValue={params.start ?? ""} className="mt-2 h-12 w-full rounded border border-slate-300 px-3 text-sm font-bold" />
+              <OmanDateInput name="start" defaultValue={params.start ?? ""} className="mt-2 h-12 w-full rounded border border-slate-300 px-3 text-sm font-bold" />
             </label>
             <label className="block">
               <span className="text-xs font-black uppercase tracking-wide text-slate-500">End Date</span>
-              <input name="end" type="date" defaultValue={params.end ?? ""} className="mt-2 h-12 w-full rounded border border-slate-300 px-3 text-sm font-bold" />
+              <OmanDateInput name="end" defaultValue={params.end ?? ""} className="mt-2 h-12 w-full rounded border border-slate-300 px-3 text-sm font-bold" />
             </label>
             <label className="block">
               <span className="text-xs font-black uppercase tracking-wide text-slate-500">Branch</span>
@@ -270,7 +282,7 @@ export default async function ReconciliationOverviewPage({
             </label>
             <div className="md:col-span-2 xl:col-span-4 flex gap-3">
               <button type="submit" className="rounded bg-slate-950 px-4 py-2 text-sm font-black text-white">Apply Filters</button>
-              <Link href="/finance/reconciliation-overview" className="rounded border border-slate-300 bg-white px-4 py-2 text-sm font-black text-slate-900">Reset</Link>
+              <Link href={resetPath} className="rounded border border-slate-300 bg-white px-4 py-2 text-sm font-black text-slate-900">Reset</Link>
             </div>
           </form>
         </section>
@@ -296,12 +308,13 @@ export default async function ReconciliationOverviewPage({
                   <th className="px-4 py-3">Calculated Sold</th>
                   <th className="px-4 py-3">Actual Invoiced</th>
                   <th className="px-4 py-3">Variance</th>
+                  <th className="px-4 py-3">Approval</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200">
                 {rows.length === 0 ? (
                   <tr>
-                    <td className="px-4 py-5 font-bold text-slate-600" colSpan={10}>
+                    <td className="px-4 py-5 font-bold text-slate-600" colSpan={11}>
                       No routes found in this range.
                     </td>
                   </tr>
@@ -319,6 +332,17 @@ export default async function ReconciliationOverviewPage({
                       <td className="px-4 py-3 font-bold text-slate-700">{formatNumber(row.actualInvoiced)}</td>
                       <td className={`px-4 py-3 font-black ${row.variance === 0 ? "text-slate-950" : "text-red-700"}`}>
                         {formatNumber(row.variance)}
+                      </td>
+                      <td className="px-4 py-3">
+                        {row.status === "DISCREPANCY_PENDING" ? (
+                          <form action={approveReconciliationDiscrepancy} className="flex min-w-72 gap-2">
+                            <input type="hidden" name="reconciliationId" value={row.id} />
+                            <input name="reason" required minLength={5} placeholder="Approval reason" className="h-10 flex-1 rounded border px-2" />
+                            <button className="rounded bg-amber-700 px-3 font-black text-white">Approve</button>
+                          </form>
+                        ) : (
+                          <span className="font-bold text-emerald-700">Closed</span>
+                        )}
                       </td>
                     </tr>
                   ))

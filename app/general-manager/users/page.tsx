@@ -1,11 +1,15 @@
-import { UserRole } from "@prisma/client";
+import { UserRole } from "@/generated/prisma/client";
 import Link from "next/link";
 import { createUser, toggleGlobalSalesView, toggleUserStatus, updateUserRole } from "@/app/actions/users";
 import { prisma } from "@/lib/prisma";
+import { requirePermission } from "@/lib/permission-guard";
+import { Permissions } from "@/lib/permissions";
+import { getBranchScope } from "@/lib/branch-scope";
+import { getCurrentUser } from "@/lib/session";
+import { resetUserPassword } from "@/app/actions/security";
+import { getEffectivePermissions, normalizePermissions } from "@/lib/permissions";
 
 export const dynamic = "force-dynamic";
-
-const roleOptions = Object.values(UserRole);
 
 function roleLabel(role: UserRole) {
   return role.replaceAll("_", " ");
@@ -16,10 +20,7 @@ function roleBadgeClass(role: UserRole) {
     case "GENERAL_MANAGER":
       return "bg-purple-100 text-purple-800";
     case "MANAGER":
-    case "ACCOUNTANT_MANAGER":
       return "bg-blue-100 text-blue-800";
-    case "ACCOUNTANT":
-      return "bg-cyan-100 text-cyan-800";
     case "LOADER":
       return "bg-orange-100 text-orange-800";
     case "SALESMAN":
@@ -30,29 +31,73 @@ function roleBadgeClass(role: UserRole) {
 }
 
 export default async function GeneralManagerUsersPage() {
-  const [users, branches, roles] = await Promise.all([
+  await requirePermission(Permissions.Users_Update);
+  const currentUser = await getCurrentUser();
+  const scope = await getBranchScope();
+  const isManager = currentUser?.role === "MANAGER";
+  const actorPermissionSet = new Set(getEffectivePermissions(currentUser));
+  const roleOptions =
+    currentUser?.role === "ADMIN"
+      ? Object.values(UserRole)
+      : currentUser?.role === "GENERAL_MANAGER"
+        ? Object.values(UserRole).filter((role) => role !== "ADMIN")
+        : [UserRole.LOADER, UserRole.SALESMAN];
+  const [users, branches, allRoles, auditEntries] = await Promise.all([
     prisma.user.findMany({
+      where: scope?.canSeeAllBranches ? undefined : { branchId: scope?.branchId ?? "__no_branch__" },
       include: { branch: true, roleProfile: true },
       orderBy: [{ role: "asc" }, { fullName: "asc" }],
     }),
     prisma.branch.findMany({
+      where: scope?.canSeeAllBranches ? undefined : { id: scope?.branchId ?? "__no_branch__" },
       orderBy: { name: "asc" },
     }),
     prisma.role.findMany({
       orderBy: { name: "asc" },
     }),
+    prisma.auditLog.findMany({
+      where: {
+        targetModel: "User",
+        action: { in: ["CREATE_USER", "UPDATE_PERMISSION", "UPDATE_USER_STATUS"] },
+      },
+      orderBy: { timestamp: "desc" },
+      select: { targetId: true, userId: true, action: true, timestamp: true, user: { select: { fullName: true } } },
+    }),
   ]);
+  const roles = allRoles.filter((role) =>
+    normalizePermissions(role.permissions).every((permission) => actorPermissionSet.has(permission)),
+  );
+
+  // Derive "created by" and "last modified by" from the audit trail. The audit query returns
+  // newest-first, so the first CREATE_USER per user is the creation actor and the first
+  // change (any of the three actions) is the latest modifier.
+  const createdBy = new Map<string, string>();
+  const lastModifiedBy = new Map<string, string>();
+  for (const entry of auditEntries) {
+    const name = entry.user?.fullName ?? "Unknown";
+    if (entry.action === "CREATE_USER" && !createdBy.has(entry.targetId)) {
+      createdBy.set(entry.targetId, name);
+    }
+    if (!lastModifiedBy.has(entry.targetId)) {
+      lastModifiedBy.set(entry.targetId, name);
+    }
+  }
 
   return (
     <main className="min-h-screen bg-slate-50 p-4 md:p-8">
       <div className="mx-auto flex max-w-7xl flex-col gap-8">
         <header className="flex items-start justify-between gap-4">
           <div>
-            <p className="text-sm font-black uppercase tracking-wide text-slate-500">General Manager</p>
+            <p className="text-sm font-black uppercase tracking-wide text-slate-500">
+              {isManager ? "Branch Manager" : "General Manager"}
+            </p>
             <h1 className="text-3xl font-black text-slate-950">User Management</h1>
+            <p className="mt-2 text-sm font-bold text-slate-600">
+              {isManager ? "Manage loaders and salespeople assigned to your branch." : "Manage employees and their access."}
+            </p>
           </div>
-          <Link href="/general-manager" className="rounded bg-slate-950 px-4 py-2 text-sm font-black text-white">
-            Back to Global Dashboard
+          <Link href={isManager ? "/manager" : "/general-manager"} className="rounded bg-slate-950 px-4 py-2 text-sm font-black text-white">
+            Back to Dashboard
           </Link>
         </header>
 
@@ -95,7 +140,7 @@ export default async function GeneralManagerUsersPage() {
               <input
                 name="password"
                 type="password"
-                minLength={8}
+                minLength={12}
                 required
                 className="mt-1 h-11 w-full rounded border border-slate-300 px-3 text-sm font-bold outline-none focus:border-slate-950"
               />
@@ -168,6 +213,8 @@ export default async function GeneralManagerUsersPage() {
                   <th className="px-4 py-2">Role</th>
                   <th className="px-4 py-2">Branch</th>
                   <th className="px-4 py-2">Contact</th>
+                  <th className="px-4 py-2">Created By</th>
+                  <th className="px-4 py-2">Last Modified By</th>
                   <th className="px-4 py-2">Global Sales</th>
                   <th className="px-4 py-2">Status</th>
                   <th className="px-4 py-2 text-right">Actions</th>
@@ -188,12 +235,21 @@ export default async function GeneralManagerUsersPage() {
                     <td className="whitespace-nowrap px-4 py-2 font-bold text-slate-700">
                       {user.branch?.name ?? "No Branch"}
                     </td>
+                    <td className="whitespace-nowrap px-4 py-2 font-bold text-slate-700">
+                      {createdBy.get(user.id) ?? "—"}
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-2 font-bold text-slate-700">
+                      {lastModifiedBy.get(user.id) ?? "—"}
+                    </td>
                     <td className="px-4 py-2">
                       <p className="font-bold text-slate-900">{user.email ?? "No email"}</p>
                       <p className="text-xs font-bold text-slate-500">{user.phone ?? "No phone"}</p>
                     </td>
                     <td className="whitespace-nowrap px-4 py-2">
-                      <form action={toggleGlobalSalesView}>
+                      {isManager ? (
+                        <span className="text-xs font-bold text-slate-500">Managed centrally</span>
+                      ) : (
+                        <form action={toggleGlobalSalesView}>
                         <input type="hidden" name="userId" value={user.id} />
                         <input type="hidden" name="currentStatus" value={String(user.hasGlobalAccess ?? user.allowGlobalSalesView)} />
                         <button
@@ -204,7 +260,8 @@ export default async function GeneralManagerUsersPage() {
                         >
                           {(user.hasGlobalAccess ?? user.allowGlobalSalesView) ? "Enabled" : "Disabled"}
                         </button>
-                      </form>
+                        </form>
+                      )}
                     </td>
                     <td className="whitespace-nowrap px-4 py-2">
                       <span
@@ -258,6 +315,11 @@ export default async function GeneralManagerUsersPage() {
                             Update
                           </button>
                         </form>
+                        <form action={resetUserPassword} className="flex gap-2">
+                          <input type="hidden" name="userId" value={user.id} />
+                          <input name="newPassword" type="password" required minLength={12} placeholder="New password" className="h-9 w-36 rounded border px-2 text-xs" />
+                          <button className="h-9 rounded bg-red-700 px-3 text-xs font-black text-white">Reset</button>
+                        </form>
 
                         <form action={toggleUserStatus}>
                           <input type="hidden" name="userId" value={user.id} />
@@ -277,7 +339,7 @@ export default async function GeneralManagerUsersPage() {
                 ))}
                 {users.length === 0 ? (
                   <tr>
-                    <td className="px-4 py-4 text-center font-bold text-slate-500" colSpan={7}>
+                    <td className="px-4 py-4 text-center font-bold text-slate-500" colSpan={9}>
                       No users found.
                     </td>
                   </tr>

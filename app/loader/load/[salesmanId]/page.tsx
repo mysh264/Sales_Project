@@ -3,6 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { processMorningLoad } from "@/app/actions/loader";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser, hasGlobalSalesAccess } from "@/lib/session";
+import { businessDate } from "@/lib/business-date";
 
 export const dynamic = "force-dynamic";
 
@@ -12,8 +13,7 @@ type MorningLoadPageProps = {
 };
 
 function todayDate() {
-  const now = new Date();
-  return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  return businessDate();
 }
 
 export default async function MorningLoadPage({ params, searchParams }: MorningLoadPageProps) {
@@ -103,7 +103,7 @@ export default async function MorningLoadPage({ params, searchParams }: MorningL
                 <label className="mt-3 block md:mt-0 md:w-56">
                   <span className="text-sm font-black text-slate-700">Full Cylinders Loaded</span>
                   <input
-                    name={`product-${product.id}-loaded`}
+                    name="morningFull"
                     type="number"
                     min="0"
                     inputMode="numeric"

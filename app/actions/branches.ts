@@ -29,7 +29,7 @@ export async function saveBranch(formData: FormData) {
     throw new Error("Branch name is required.");
   }
 
-  await requirePermission(Permissions.Branches_Update);
+  const { user: actor } = await requirePermission(Permissions.Branches_Update);
 
   const company = await prisma.company.findFirstOrThrow({
     orderBy: { createdAt: "asc" },
@@ -50,7 +50,7 @@ export async function saveBranch(formData: FormData) {
       });
 
       await logAction(
-        existing.id,
+        actor.id,
         "UPDATE_BRANCH",
         "Branch",
         updated.id,
@@ -70,9 +70,24 @@ export async function saveBranch(formData: FormData) {
           defaultTaxRate: "5.0000",
         },
       });
+      const products = await tx.product.findMany({
+        where: { isActive: true },
+        select: { id: true },
+      });
+      if (products.length > 0) {
+        await tx.inventoryBalance.createMany({
+          data: products.map((product) => ({
+            branchId: created.id,
+            productId: product.id,
+            fullCount: 0,
+            emptyCount: 0,
+          })),
+          skipDuplicates: true,
+        });
+      }
 
       await logAction(
-        created.id,
+        actor.id,
         "CREATE_BRANCH",
         "Branch",
         created.id,
@@ -84,6 +99,7 @@ export async function saveBranch(formData: FormData) {
   });
 
   revalidatePath("/admin/branches");
+  revalidatePath("/general-manager/branches");
   revalidatePath("/general-manager/users");
   revalidatePath("/admin");
   redirect("/admin/branches");

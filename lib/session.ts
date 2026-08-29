@@ -33,10 +33,14 @@ export async function getCurrentUser() {
     return null;
   }
 
-  return prisma.user.findUnique({
-    where: { id: session.userId },
+  const user = await prisma.user.findFirst({
+    where: { id: session.userId, isActive: true },
     include: { branch: true, roleProfile: true },
   });
+  if (!user || user.sessionVersion !== session.sessionVersion) {
+    return null;
+  }
+  return user;
 }
 
 export function hasGlobalSalesAccess(
@@ -46,5 +50,5 @@ export function hasGlobalSalesAccess(
     return false;
   }
 
-  return user.role === "ADMIN" || Boolean(user.hasGlobalAccess ?? user.allowGlobalSalesView);
+  return user.role === "ADMIN" || user.role === "GENERAL_MANAGER" || Boolean(user.hasGlobalAccess ?? user.allowGlobalSalesView);
 }

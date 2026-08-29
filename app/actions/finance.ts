@@ -1,19 +1,18 @@
 "use server";
 
-import { DebtStatus, Prisma } from "@prisma/client";
+import { DebtStatus, PaymentMethod, Prisma } from "@/generated/prisma/client";
 import { branchWhere, getBranchScope } from "@/lib/branch-scope";
 import { requirePermission } from "@/lib/permission-guard";
 import { Permissions } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
+import { businessDayRange } from "@/lib/business-date";
 
 function startOfDay() {
-  const now = new Date();
-  return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  return businessDayRange().start;
 }
 
 function endOfDay() {
-  const now = new Date();
-  return new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+  return businessDayRange().end;
 }
 
 function decimalToString(value: Prisma.Decimal | number | null | undefined) {
@@ -24,13 +23,23 @@ function decimalToString(value: Prisma.Decimal | number | null | undefined) {
   return new Prisma.Decimal(value ?? 0).toFixed(3);
 }
 
+export type CurrencyTotals = {
+  sales: string;
+  vat: string;
+  debtCollected: string;
+  outstandingDebt: string;
+};
+
 export type FinancialSummary = {
   scope: "global" | "branch";
   scopeLabel: string;
+  // Per-currency breakdown. Headline fields below mirror the branch's reporting currency
+  // (or OMR when global) so existing UI keeps working; the map is the source of truth.
+  byCurrency: Record<string, CurrencyTotals>;
   totalSalesToday: string;
   totalVatToday: string;
-  totalOutstandingDebtToday: string;
-  pendingDebtCollectionToday: string;
+  totalOutstandingDebt: string;
+  debtCollectedToday: string;
 };
 
 export type FinancialSummaryFilters = {
@@ -79,14 +88,11 @@ export async function getFinancialSummary(filters: FinancialSummaryFilters = {})
     status: {
       in: [DebtStatus.OPEN, DebtStatus.PARTIALLY_PAID],
     },
-    createdAt: {
-      gte: dayStart,
-      lt: dayEnd,
-    },
   };
 
-  const [invoiceTotals, debtTotals] = await Promise.all([
-    prisma.invoice.aggregate({
+  const [invoiceGroups, debts, debtPaymentSum] = await Promise.all([
+    prisma.invoice.groupBy({
+      by: ["currency"],
       where: invoiceWhere,
       _sum: {
         subtotalAmount: true,
@@ -94,20 +100,60 @@ export async function getFinancialSummary(filters: FinancialSummaryFilters = {})
         debtCollectionAmount: true,
       },
     }),
-    prisma.customerDebt.aggregate({
+    prisma.customerDebt.findMany({
       where: debtWhere,
-      _sum: {
-        balanceAmount: true,
+      include: { invoice: { select: { currency: true } } },
+    }),
+    prisma.debtPayment.aggregate({
+      where: {
+        createdAt: { gte: dayStart, lt: dayEnd },
+        method: { not: PaymentMethod.WRITE_OFF },
+        debt: {
+          invoice:
+            invoiceBranchFilter || targetSalesmanId
+              ? {
+                  ...(invoiceBranchFilter ?? {}),
+                  ...(targetSalesmanId ? { salesmanId: targetSalesmanId } : {}),
+                }
+              : undefined,
+        },
       },
+      _sum: { amount: true },
     }),
   ]);
+
+  const byCurrency: Record<string, CurrencyTotals> = {};
+  for (const group of invoiceGroups) {
+    const currency = group.currency || "OMR";
+    byCurrency[currency] = {
+      sales: decimalToString(group._sum.subtotalAmount),
+      vat: decimalToString(group._sum.taxAmount),
+      debtCollected: decimalToString(group._sum.debtCollectionAmount),
+      outstandingDebt: "0.000",
+    };
+  }
+  for (const debt of debts) {
+    const currency = debt.invoice.currency || "OMR";
+    const existing = byCurrency[currency] ?? { sales: "0.000", vat: "0.000", debtCollected: "0.000", outstandingDebt: "0.000" };
+    existing.outstandingDebt = decimalToString(new Prisma.Decimal(existing.outstandingDebt).add(debt.balanceAmount));
+    byCurrency[currency] = existing;
+  }
+
+  const reportingCurrency = user.branch?.defaultCurrency || "OMR";
+  const primary = byCurrency[reportingCurrency] ?? Object.values(byCurrency)[0] ?? {
+    sales: "0.000",
+    vat: "0.000",
+    debtCollected: "0.000",
+    outstandingDebt: "0.000",
+  };
 
   return {
     scope: globalAccess ? "global" : "branch",
     scopeLabel: globalAccess ? "Global" : user.branch?.name ?? "Branch",
-    totalSalesToday: decimalToString(invoiceTotals._sum.subtotalAmount),
-    totalVatToday: decimalToString(invoiceTotals._sum.taxAmount),
-    totalOutstandingDebtToday: decimalToString(debtTotals._sum.balanceAmount),
-    pendingDebtCollectionToday: decimalToString(invoiceTotals._sum.debtCollectionAmount),
+    byCurrency,
+    totalSalesToday: primary.sales,
+    totalVatToday: primary.vat,
+    totalOutstandingDebt: primary.outstandingDebt,
+    debtCollectedToday: decimalToString(debtPaymentSum._sum.amount),
   };
 }

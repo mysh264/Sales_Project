@@ -1,7 +1,11 @@
-import { Prisma } from "@prisma/client";
+import { Prisma } from "@/generated/prisma/client";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { OmanDateInput } from "@/components/OmanDateInput";
 import { formatDateTimeDMY } from "@/lib/date-format";
+import { invoiceAccessWhere } from "@/lib/invoice-access";
+import { Permissions } from "@/lib/permissions";
+import { requirePermission } from "@/lib/permission-guard";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser, hasGlobalSalesAccess } from "@/lib/session";
 
@@ -65,6 +69,7 @@ export default async function ManagerAllSalesPage({
   searchParams?: Promise<AllSalesSearchParams>;
 }) {
   const currentUser = await getCurrentUser();
+  await requirePermission(Permissions.Finance_Read);
 
   if (!currentUser) {
     redirect("/login");
@@ -74,6 +79,9 @@ export default async function ManagerAllSalesPage({
   const monthStart = parseDate(params.start) ?? startOfMonth();
   const monthEndExclusive = parseDate(params.end) ? nextDay(parseDate(params.end)!) : endOfMonth();
   const hasGlobalAccess = hasGlobalSalesAccess(currentUser);
+  const workspaceHome = currentUser.role === "ADMIN" ? "/admin" : "/manager";
+  const pricingPath = currentUser.role === "ADMIN" ? "/admin/products" : "/manager/settings";
+  const resetPath = currentUser.role === "ADMIN" ? "/admin/sales" : "/manager/all-sales";
   const branchId = currentUser.branchId;
   const requestedBranchId = hasGlobalAccess ? params.branchId?.trim() || null : branchId;
   const requestedUserId = params.userId?.trim() || null;
@@ -87,6 +95,8 @@ export default async function ManagerAllSalesPage({
   const invoiceWhere = {
     ...(branchWhere ?? {}),
     ...(requestedUserId ? { salesmanId: requestedUserId } : {}),
+    ...invoiceAccessWhere(currentUser),
+    status: "ISSUED" as const,
     createdAt: { gte: monthStart, lt: monthEndExclusive },
   };
 
@@ -112,9 +122,9 @@ export default async function ManagerAllSalesPage({
     }),
     prisma.user.findMany({
       where: hasGlobalAccess
-        ? undefined
+        ? { role: "SALESMAN" }
         : currentUser.branchId
-          ? { branchId: currentUser.branchId }
+          ? { branchId: currentUser.branchId, role: "SALESMAN" }
           : { id: "__no_user__" },
       orderBy: { fullName: "asc" },
       select: { id: true, fullName: true, branchId: true },
@@ -135,10 +145,10 @@ export default async function ManagerAllSalesPage({
         </header>
 
         <div className="flex flex-wrap gap-3">
-          <Link href="/manager" className="rounded bg-slate-950 px-4 py-2 text-sm font-black text-white">
-            Back to Branch Dashboard
+          <Link href={workspaceHome} className="rounded bg-slate-950 px-4 py-2 text-sm font-black text-white">
+            Back to Dashboard
           </Link>
-          <Link href="/manager/settings" className="rounded border border-slate-300 bg-white px-4 py-2 text-sm font-black text-slate-950">
+          <Link href={pricingPath} className="rounded border border-slate-300 bg-white px-4 py-2 text-sm font-black text-slate-950">
             Price Settings
           </Link>
         </div>
@@ -161,11 +171,11 @@ export default async function ManagerAllSalesPage({
           <form method="get" className="grid grid-cols-1 gap-4 p-4 md:grid-cols-2 xl:grid-cols-4">
             <label className="block">
               <span className="text-xs font-black uppercase tracking-wide text-slate-500">Start Date</span>
-              <input name="start" type="date" defaultValue={params.start ?? ""} className="mt-2 h-12 w-full rounded border border-slate-300 px-3 text-sm font-bold" />
+              <OmanDateInput name="start" defaultValue={params.start ?? ""} className="mt-2 h-12 w-full rounded border border-slate-300 px-3 text-sm font-bold" />
             </label>
             <label className="block">
               <span className="text-xs font-black uppercase tracking-wide text-slate-500">End Date</span>
-              <input name="end" type="date" defaultValue={params.end ?? ""} className="mt-2 h-12 w-full rounded border border-slate-300 px-3 text-sm font-bold" />
+              <OmanDateInput name="end" defaultValue={params.end ?? ""} className="mt-2 h-12 w-full rounded border border-slate-300 px-3 text-sm font-bold" />
             </label>
             <label className="block">
               <span className="text-xs font-black uppercase tracking-wide text-slate-500">Branch</span>
@@ -191,7 +201,7 @@ export default async function ManagerAllSalesPage({
             </label>
             <div className="md:col-span-2 xl:col-span-4 flex gap-3">
               <button type="submit" className="rounded bg-slate-950 px-4 py-2 text-sm font-black text-white">Apply Filters</button>
-              <Link href="/manager/all-sales" className="rounded border border-slate-300 bg-white px-4 py-2 text-sm font-black text-slate-900">Reset</Link>
+              <Link href={resetPath} className="rounded border border-slate-300 bg-white px-4 py-2 text-sm font-black text-slate-900">Reset</Link>
             </div>
           </form>
         </section>

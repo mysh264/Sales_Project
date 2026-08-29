@@ -13,8 +13,18 @@ export function LoginForm() {
         setError("");
         startTransition(async () => {
           try {
-            await login(formData);
-            window.location.href = "/";
+            const role = await login(formData);
+            const destination =
+              role === "ADMIN"
+                ? "/admin"
+                : role === "GENERAL_MANAGER"
+                  ? "/general-manager"
+                  : role === "MANAGER"
+                    ? "/manager"
+                    : role === "LOADER"
+                      ? "/loader"
+                      : "/salesman";
+            window.location.assign(destination);
           } catch {
             setError("Invalid email or password.");
           }
@@ -31,6 +41,10 @@ export function LoginForm() {
           autoComplete="email"
           className="mt-2 h-14 w-full rounded-lg border-4 border-slate-300 px-4 text-lg font-bold outline-none focus:border-slate-950"
         />
+      </label>
+      <label className="block">
+        <span className="text-sm font-black uppercase tracking-wide text-slate-700">Authenticator Code (if enabled)</span>
+        <input name="mfaCode" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" className="mt-2 h-14 w-full rounded-lg border-4 border-slate-300 px-4 text-lg font-bold outline-none focus:border-slate-950" />
       </label>
 
       <label className="block">
@@ -56,4 +70,3 @@ export function LoginForm() {
     </form>
   );
 }
-

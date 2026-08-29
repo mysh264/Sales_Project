@@ -4,6 +4,7 @@ import { processEveningReturn } from "@/app/actions/loader";
 import { formatDateDMY } from "@/lib/date-format";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser, hasGlobalSalesAccess } from "@/lib/session";
+import { businessDate } from "@/lib/business-date";
 
 export const dynamic = "force-dynamic";
 
@@ -13,8 +14,7 @@ type EveningReturnPageProps = {
 };
 
 function todayDate() {
-  const now = new Date();
-  return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  return businessDate();
 }
 
 export default async function EveningReturnPage({ params, searchParams }: EveningReturnPageProps) {
@@ -54,11 +54,6 @@ export default async function EveningReturnPage({ params, searchParams }: Evenin
   }
 
   const reconciliation = salesman.salesmanReconciliations[0] ?? null;
-  const products = await prisma.product.findMany({
-    where: { isActive: true },
-    orderBy: { name: "asc" },
-  });
-
   if (!reconciliation) {
     return (
       <main className="min-h-screen bg-slate-100 p-4 md:p-8">
