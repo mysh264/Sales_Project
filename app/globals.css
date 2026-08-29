@@ -4,16 +4,28 @@
 
 :root {
   color-scheme: light;
+  --brand: #4f46e5;
+  --brand-strong: #4338ca;
 }
 
 * {
   box-sizing: border-box;
 }
 
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
 body {
   margin: 0;
   background: #f8fafc;
-  color: #111827;
+  background-image: radial-gradient(1200px 600px at 100% -10%, #eef2ff 0%, rgba(238, 242, 255, 0) 60%),
+    radial-gradient(900px 500px at -10% 0%, #faf5ff 0%, rgba(250, 245, 255, 0) 55%);
+  background-attachment: fixed;
+  color: #0f172a;
+  font-feature-settings: "cv11", "ss01";
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 button,
@@ -23,27 +35,230 @@ textarea {
   font: inherit;
 }
 
-@media (max-width: 767px) {
-  .product-selection-table {
-    display: flex;
-    max-width: 100%;
-    flex-direction: column;
-    overflow: hidden;
+/* Consistent, visible focus ring for keyboard users */
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+  border-radius: 0.5rem;
+}
+
+/* Sleek scrollbars */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+*::-webkit-scrollbar {
+  height: 10px;
+  width: 10px;
+}
+*::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+  background-clip: content-box;
+}
+
+@layer components {
+  /* ---------- Card ---------- */
+  .ui-card {
+    @apply rounded-2xl border border-slate-200/80 bg-white shadow-card;
+  }
+  .ui-card-pad {
+    @apply p-5 md:p-6;
   }
 
-  .product-selection-table .product-selection-inner {
-    width: 100%;
-    min-width: 0;
-    max-width: 100%;
+  /* ---------- Buttons ---------- */
+  .ui-btn {
+    @apply inline-flex select-none items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold transition-all duration-150 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .ui-btn-primary {
+    @apply ui-btn bg-brand-600 text-white shadow-soft hover:bg-brand-700 hover:shadow-pop active:translate-y-px;
+  }
+  .ui-btn-ghost {
+    @apply ui-btn border border-slate-300 bg-white text-slate-800 hover:border-slate-400 hover:bg-slate-50;
+  }
+  .ui-btn-subtle {
+    @apply ui-btn bg-slate-100 text-slate-700 hover:bg-slate-200;
+  }
+  .ui-btn-danger {
+    @apply ui-btn bg-rose-600 text-white hover:bg-rose-700;
+  }
+  .ui-btn-success {
+    @apply ui-btn bg-emerald-600 text-white hover:bg-emerald-700;
+  }
+  .ui-btn-sm {
+    @apply px-3 py-2 text-xs;
+  }
+  .ui-btn-lg {
+    @apply px-5 py-3 text-base;
   }
 
-  .product-selection-table .product-selection-header {
+  /* ---------- Inputs ---------- */
+  .ui-input {
+    @apply h-12 w-full rounded-xl border border-slate-300 bg-white px-3.5 text-sm font-semibold text-slate-900 shadow-soft transition-colors placeholder:font-normal placeholder:text-slate-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-100;
+  }
+  .ui-label {
+    @apply mb-2 block text-xs font-bold uppercase tracking-wide text-slate-500;
+  }
+  .ui-field {
+    @apply block;
+  }
+
+  /* ---------- Badge ---------- */
+  .ui-badge {
+    @apply inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-bold;
+  }
+  .ui-badge-slate { @apply ui-badge bg-slate-100 text-slate-700; }
+  .ui-badge-brand { @apply ui-badge bg-brand-50 text-brand-700; }
+  .ui-badge-success { @apply ui-badge bg-emerald-50 text-emerald-700; }
+  .ui-badge-danger { @apply ui-badge bg-rose-50 text-rose-700; }
+  .ui-badge-warning { @apply ui-badge bg-amber-50 text-amber-700; }
+  .ui-badge-info { @apply ui-badge bg-sky-50 text-sky-700; }
+
+  /* ---------- Stat ---------- */
+  .ui-stat {
+    @apply ui-card ui-card-pad;
+  }
+  .ui-stat-label {
+    @apply text-xs font-bold uppercase tracking-wide text-slate-500;
+  }
+  .ui-stat-value {
+    @apply mt-2 text-3xl font-black tracking-tight text-slate-950;
+  }
+
+  /* ---------- Page header ---------- */
+  .ui-pagehead {
+    @apply mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between;
+  }
+  .ui-pagehead-eyebrow {
+    @apply text-xs font-bold uppercase tracking-wide text-brand-600;
+  }
+  .ui-pagehead-title {
+    @apply text-2xl font-black tracking-tight text-slate-950 md:text-3xl;
+  }
+
+  /* ---------- Section title ---------- */
+  .ui-section-title {
+    @apply text-lg font-black tracking-tight text-slate-950;
+  }
+
+  /* ---------- Tables ---------- */
+  .ui-table {
+    @apply w-full border-collapse text-left text-sm;
+  }
+  .ui-table thead th {
+    @apply bg-slate-50 px-4 py-3 text-xs font-bold uppercase tracking-wide text-slate-500;
+  }
+  .ui-table tbody tr {
+    @apply border-t border-slate-100 transition-colors hover:bg-brand-50/40;
+  }
+  .ui-table tbody td {
+    @apply px-4 py-3 align-middle text-slate-700;
+  }
+  .ui-table tbody td.is-strong {
+    @apply font-bold text-slate-950;
+  }
+  .ui-table .num {
+    @apply text-right font-bold tabular-nums text-slate-950;
+  }
+
+  /* ---------- Empty state ---------- */
+  .ui-empty {
+    @apply flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-slate-300 bg-slate-50/60 px-6 py-10 text-center;
+  }
+  .ui-empty-text {
+    @apply text-sm font-bold text-slate-500;
+  }
+
+  /* ---------- Top nav ---------- */
+  .ui-nav {
+    @apply sticky top-0 z-30 border-b border-slate-200/80 bg-white/85 backdrop-blur supports-[backdrop-filter]:bg-white/70 shadow-nav;
+  }
+  .ui-nav-link {
+    @apply inline-flex items-center rounded-xl px-3.5 py-2 text-sm font-bold text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900;
+  }
+  .ui-nav-link-active {
+    @apply bg-brand-600 text-white shadow-soft hover:bg-brand-700 hover:text-white;
+  }
+
+  /* ---------- Floating brand mark ---------- */
+  .ui-brandmark {
+    @apply flex items-center gap-2 rounded-xl bg-brand-gradient px-3 py-2 text-sm font-black text-white shadow-pop;
+  }
+
+  /* ---------- Disclosure (details/summary) ---------- */
+  .ui-details > summary {
+    @apply inline-flex list-none cursor-pointer select-none;
+  }
+  .ui-details > summary::-webkit-details-marker {
     display: none;
   }
+}
 
-  .product-selection-table .product-row {
-    display: flex;
-    max-width: 100%;
-    flex-direction: column;
+/* ============================================================
+   LEGACY NORMALIZER
+   Safely upgrades the recurring old page patterns (hand-rolled
+   utility classes) used by pages not yet migrated to components/ui,
+   so every route stays visually consistent with the new system.
+   Uses plain CSS (no @apply) to stay parser-safe.
+   ============================================================ */
+@layer components {
+  /* Soften depth on every legacy card/panel that used the old shadow-sm */
+  [class*="shadow-sm"] {
+    box-shadow: var(--shadow-card);
+  }
+
+  /* Legacy page body background -> subtle branded app surface */
+  main[class*="bg-slate-100"] {
+    background: #f6f7fb;
+  }
+
+  /* Legacy cards: rounded-lg border -> modern rounded-xl, softer border */
+  [class*="rounded-lg"][class*="border-slate-200"] {
+    border-radius: 1rem;
+    border-color: rgba(226, 232, 240, 0.7);
+  }
+
+  /* Legacy data tables: modern header/row treatment */
+  table.border-collapse {
+    width: 100%;
+    border-collapse: collapse;
+    text-align: left;
+    font-size: 0.875rem;
+  }
+  table.border-collapse thead {
+    background: #f8fafc;
+    font-size: 0.75rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #64748b;
+  }
+  table.border-collapse thead th {
+    padding: 0.75rem 1rem;
+  }
+  table.border-collapse tbody {
+    border-top: 1px solid #f1f5f9;
+  }
+  table.border-collapse tbody tr {
+    border-bottom: 1px solid #f1f5f9;
+    transition: background-color 0.15s ease;
+  }
+  table.border-collapse tbody tr:hover {
+    background: rgba(79, 70, 229, 0.05);
+  }
+  table.border-collapse tbody td {
+    padding: 0.75rem 1rem;
+    vertical-align: middle;
+    color: #475569;
+  }
+
+  /* Legacy stat number */
+  [class*="text-4xl"][class*="font-black"] {
+    letter-spacing: -0.02em;
   }
 }

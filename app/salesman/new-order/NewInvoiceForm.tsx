@@ -106,8 +106,8 @@ function percentRate(value: string) {
 
 function fieldClass(value: string, extra = "") {
   return [
-    "w-full rounded-xl border px-3 text-sm font-bold text-slate-900 outline-none transition-colors focus:border-slate-950",
-    value.trim() ? "border-green-200 bg-green-50/70 shadow-sm" : "border-slate-300 bg-white",
+    "ui-input",
+    value.trim() ? "border-emerald-300 bg-emerald-50/60" : "",
     extra,
   ]
     .filter(Boolean)
@@ -578,7 +578,7 @@ export function NewInvoiceForm({
           <button
             type="button"
             onClick={() => setShowAdvanced((current) => !current)}
-            className="rounded-xl bg-slate-950 px-4 py-4 text-sm font-black text-white shadow-sm"
+            className="ui-btn ui-btn-primary"
           >
             {showAdvanced ? "Hide Advanced Settings" : "Show Advanced Settings"}
           </button>
@@ -600,7 +600,7 @@ export function NewInvoiceForm({
                   setCustomerDraft((current) => ({ ...current, name: current.name || customerQuery }));
                   setShowCustomerModal(true);
                 }}
-                className="rounded bg-slate-950 px-3 py-2 text-xs font-black text-white disabled:cursor-wait disabled:bg-slate-400"
+                className="ui-btn ui-btn-primary ui-btn-sm disabled:cursor-wait disabled:opacity-60"
               >
                 Add New Customer
               </button>

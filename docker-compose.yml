@@ -31,6 +31,9 @@ services:
       DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL using the db service hostname}
       JWT_SECRET: ${JWT_SECRET:?Set a random JWT_SECRET of at least 32 characters}
       APP_ORIGIN: ${APP_ORIGIN:?Set the public HTTPS application origin}
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:?Set SEED_ADMIN_PASSWORD (>=12 chars) to bootstrap admin}
+      SEED_DEMO_PASSWORD: ${SEED_DEMO_PASSWORD:-}
+      SEED_DEMO_USERS: ${SEED_DEMO_USERS:-false}
       UPLOAD_DIR: /app/storage/uploads
       TZ: Asia/Muscat
       NEXT_TELEMETRY_DISABLED: "1"

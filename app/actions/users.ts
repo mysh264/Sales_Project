@@ -72,7 +72,9 @@ export async function createUser(formData: FormData) {
   const email = text(formData, "email").toLowerCase();
   const password = text(formData, "password");
   const role = parseRole(text(formData, "role"));
-  const branchId = text(formData, "branchId") || null;
+  // ADMIN and GENERAL_MANAGER are global roles; a branch assignment is meaningless for them
+  // (the app always treats them as global via hasGlobalSalesAccess) and only causes confusion.
+  const branchId = (role === "ADMIN" || role === "GENERAL_MANAGER") ? null : (text(formData, "branchId") || null);
   const roleId = text(formData, "roleId") || null;
 
   if (!fullName || !email || !password) {
@@ -181,7 +183,8 @@ export async function toggleUserStatus(formData: FormData) {
 export async function updateUserRole(formData: FormData) {
   const userId = text(formData, "userId");
   const role = parseRole(text(formData, "newRole"));
-  const branchId = text(formData, "newBranchId") || null;
+  // ADMIN and GENERAL_MANAGER are global roles; never scope them to a branch.
+  const branchId = (role === "ADMIN" || role === "GENERAL_MANAGER") ? null : (text(formData, "newBranchId") || null);
   const roleId = text(formData, "newRoleId") || null;
 
   if (!userId) {

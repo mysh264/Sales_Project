@@ -1,10 +1,15 @@
 import { UserRole } from "@/generated/prisma/client";
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createUser, toggleGlobalSalesView, toggleUserStatus, updateUserRole } from "@/app/actions/users";
 import { resetUserPassword } from "@/app/actions/security";
+import { ButtonLink } from "@/components/ui/Button";
+import { Card, CardHeader } from "@/components/ui/Card";
+import { PageHeader } from "@/components/ui/PageHeader";
+import { Stat } from "@/components/ui/Stat";
+import { StatusBadge, Badge } from "@/components/ui/Badge";
 import { getCurrentUser } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
+import RoleBranchEditor from "@/components/BranchSelect";
 
 export const dynamic = "force-dynamic";
 
@@ -43,87 +48,64 @@ export default async function AdminConsolePage() {
   ]);
 
   return (
-    <main className="min-h-screen bg-slate-50 p-4 md:p-8">
-      <div className="mx-auto flex max-w-screen-2xl flex-col gap-6">
-        <header className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-            <div>
-              <p className="text-sm font-black uppercase tracking-wide text-slate-500">System Administration</p>
-              <h1 className="mt-1 text-3xl font-black text-slate-950">Admin Console</h1>
-              <p className="mt-2 max-w-3xl text-sm font-bold text-slate-600">
-                Full system control. Admin can view and edit users, roles, branches, and operational access.
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-3">
-              <Link href="/admin" className="rounded bg-slate-950 px-4 py-2 text-sm font-black text-white">
-                Home
-              </Link>
-              <Link href="/admin/branches" className="rounded border border-slate-300 bg-white px-4 py-2 text-sm font-black text-slate-950">
-                Branches
-              </Link>
-              <Link href="/admin/products" className="rounded border border-slate-300 bg-white px-4 py-2 text-sm font-black text-slate-950">
-                Products
-              </Link>
-              <Link href="/admin/roles" className="rounded border border-slate-300 bg-white px-4 py-2 text-sm font-black text-slate-950">
-                Roles
-              </Link>
-              <Link href="/admin/audit-logs" className="rounded border border-slate-300 bg-white px-4 py-2 text-sm font-black text-slate-950">
-                Audit Logs
-              </Link>
-              <Link href="/admin/finance" className="rounded border border-slate-300 bg-white px-4 py-2 text-sm font-black text-slate-950">Finance</Link>
-              <Link href="/admin/reconciliation" className="rounded border border-slate-300 bg-white px-4 py-2 text-sm font-black text-slate-950">Reconciliation</Link>
-            </div>
-          </div>
-        </header>
+    <main className="min-h-screen bg-app-bg p-4 md:p-8">
+      <div className="mx-auto max-w-screen-2xl animate-fade-in">
+        <PageHeader
+          eyebrow="System Administration"
+          title="Admin Console"
+          description="Full system control. Admin can view and edit users, roles, branches, and operational access."
+          actions={
+            <>
+              <ButtonLink href="/admin/branches" variant="ghost">Branches</ButtonLink>
+              <ButtonLink href="/admin/products" variant="ghost">Products</ButtonLink>
+              <ButtonLink href="/admin/roles" variant="ghost">Roles</ButtonLink>
+              <ButtonLink href="/admin/audit-logs" variant="ghost">Audit Logs</ButtonLink>
+              <ButtonLink href="/admin/finance" variant="ghost">Finance</ButtonLink>
+              <ButtonLink href="/admin/reconciliation" variant="ghost">Reconciliation</ButtonLink>
+            </>
+          }
+        />
 
-        <section className="grid grid-cols-1 gap-4 md:grid-cols-4">
-          {[
-            { label: "Total Users", value: userCount },
-            { label: "Active Users", value: activeUsers },
-            { label: "Branches", value: branchCount },
-            { label: "Invoices", value: invoiceCount },
-          ].map((card) => (
-            <article key={card.label} className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-              <p className="text-xs font-black uppercase tracking-wide text-slate-500">{card.label}</p>
-              <p className="mt-2 text-3xl font-black text-slate-950">{card.value}</p>
-            </article>
-          ))}
+        <section className="grid grid-cols-2 gap-4 md:grid-cols-4">
+          <Stat label="Total Users" value={userCount} />
+          <Stat label="Active Users" value={activeUsers} tone="success" />
+          <Stat label="Branches" value={branchCount} />
+          <Stat label="Invoices" value={invoiceCount} />
         </section>
 
-        <section className="rounded-lg border border-slate-200 bg-white shadow-sm">
-          <div className="border-b border-slate-200 px-4 py-3">
-            <h2 className="text-lg font-black text-slate-950">Create Employee</h2>
-          </div>
-          <form action={createUser} className="grid grid-cols-1 gap-4 p-4 md:grid-cols-2 xl:grid-cols-3">
+        <Card className="mt-6">
+          <CardHeader title="Create Employee" description="Add a new team member and assign their role, branch and permission profile." />
+          <form action={createUser} className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
             <label className="block">
-              <span className="text-sm font-black text-slate-700">Full Name</span>
-              <input name="fullName" required className="mt-1 h-11 w-full rounded border border-slate-300 px-3 text-sm font-bold" />
+              <span className="ui-label">Full Name</span>
+              <input name="fullName" required className="ui-input" />
             </label>
             <label className="block">
-              <span className="text-sm font-black text-slate-700">Phone</span>
-              <input name="phone" className="mt-1 h-11 w-full rounded border border-slate-300 px-3 text-sm font-bold" />
+              <span className="ui-label">Phone</span>
+              <input name="phone" className="ui-input" />
             </label>
             <label className="block">
-              <span className="text-sm font-black text-slate-700">Email</span>
-              <input name="email" type="email" required className="mt-1 h-11 w-full rounded border border-slate-300 px-3 text-sm font-bold" />
+              <span className="ui-label">Email</span>
+              <input name="email" type="email" required className="ui-input" />
             </label>
             <label className="block">
-              <span className="text-sm font-black text-slate-700">Password</span>
-              <input name="password" type="password" minLength={12} required className="mt-1 h-11 w-full rounded border border-slate-300 px-3 text-sm font-bold" />
+              <span className="ui-label">Password</span>
+              <input name="password" type="password" minLength={12} required className="ui-input" />
             </label>
+            <div className="block">
+              <span className="ui-label">Role &amp; Branch</span>
+              <RoleBranchEditor
+                nameRole="role"
+                nameBranch="branchId"
+                roles={roleOptions}
+                branches={branches}
+                defaultRole="SALESMAN"
+                required
+              />
+            </div>
             <label className="block">
-              <span className="text-sm font-black text-slate-700">Role</span>
-              <select name="role" defaultValue="SALESMAN" className="mt-1 h-11 w-full rounded border border-slate-300 px-3 text-sm font-bold">
-                {roleOptions.map((role) => (
-                  <option key={role} value={role}>
-                    {roleLabel(role)}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="block">
-              <span className="text-sm font-black text-slate-700">Permission Profile</span>
-              <select name="roleId" defaultValue="" className="mt-1 h-11 w-full rounded border border-slate-300 px-3 text-sm font-bold">
+              <span className="ui-label">Permission Profile</span>
+              <select name="roleId" defaultValue="" className="ui-input">
                 <option value="">Use default profile</option>
                 {roles.map((role) => (
                   <option key={role.id} value={role.id}>
@@ -132,132 +114,106 @@ export default async function AdminConsolePage() {
                 ))}
               </select>
             </label>
-            <label className="block">
-              <span className="text-sm font-black text-slate-700">Branch</span>
-              <select name="branchId" defaultValue="" className="mt-1 h-11 w-full rounded border border-slate-300 px-3 text-sm font-bold">
-                <option value="">No Branch</option>
-                {branches.map((branch) => (
-                  <option key={branch.id} value={branch.id}>
-                    {branch.code} · {branch.name}
-                  </option>
-                ))}
-              </select>
-            </label>
             <div className="md:col-span-2 xl:col-span-3">
-              <button type="submit" className="h-11 rounded bg-slate-950 px-5 text-sm font-black text-white">
+              <button type="submit" className="ui-btn ui-btn-primary">
                 Create Employee
               </button>
             </div>
           </form>
-        </section>
+        </Card>
 
-        <section className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
-          <div className="border-b border-slate-200 px-4 py-3">
-            <h2 className="text-lg font-black text-slate-950">Employee Directory</h2>
-          </div>
+        <Card className="mt-6 overflow-hidden p-0">
+          <CardHeader title="Employee Directory" description="Manage roles, branches and access for every team member." />
           <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-left text-sm">
-              <thead className="bg-slate-100 text-xs font-black uppercase tracking-wide text-slate-600">
+            <table className="ui-table">
+              <thead>
                 <tr>
-                  <th className="px-4 py-2">Name</th>
-                  <th className="px-4 py-2">Role</th>
-                  <th className="px-4 py-2">Branch</th>
-                  <th className="px-4 py-2">Contact</th>
-                  <th className="px-4 py-2">Global Sales</th>
-                  <th className="px-4 py-2">Status</th>
-                  <th className="px-4 py-2 text-right">Actions</th>
+                  <th>Name</th>
+                  <th>Role</th>
+                  <th>Branch</th>
+                  <th>Contact</th>
+                  <th>Global Sales</th>
+                  <th>Status</th>
+                  <th className="text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-200">
+              <tbody>
                 {users.map((user) => (
-                  <tr key={user.id} className="hover:bg-slate-50">
-                    <td className="px-4 py-2">
+                  <tr key={user.id}>
+                    <td>
                       <p className="font-black text-slate-950">{user.fullName}</p>
-                      <p className="text-xs font-bold text-slate-500">{user.email ?? "No email"}</p>
+                      <p className="text-xs font-semibold text-slate-500">{user.email ?? "No email"}</p>
                     </td>
-                    <td className="whitespace-nowrap px-4 py-2">
-                      <span className="rounded bg-slate-100 px-2 py-1 text-xs font-black uppercase text-slate-800">
-                        {user.roleProfile?.name ?? roleLabel(user.role)}
-                      </span>
+                    <td>
+                      <Badge tone="slate">{user.roleProfile?.name ?? roleLabel(user.role)}</Badge>
                     </td>
-                    <td className="whitespace-nowrap px-4 py-2 font-bold text-slate-700">
-                      {user.branch?.code ?? "No Branch"}
-                    </td>
-                    <td className="px-4 py-2 font-bold text-slate-700">{user.phone ?? "No phone"}</td>
-                    <td className="whitespace-nowrap px-4 py-2">
+                    <td className="font-semibold text-slate-700">{user.branch?.code ?? "No Branch"}</td>
+                    <td className="font-semibold text-slate-700">{user.phone ?? "No phone"}</td>
+                    <td>
                       {user.id === currentUser.id ? (
-                        <span className="text-xs font-black text-slate-500">Protected Admin</span>
+                        <span className="ui-badge ui-badge-slate">Protected Admin</span>
                       ) : (
                         <form action={toggleGlobalSalesView}>
-                        <input type="hidden" name="userId" value={user.id} />
-                        <input type="hidden" name="currentStatus" value={String(user.hasGlobalAccess ?? user.allowGlobalSalesView)} />
-                        <button
-                          type="submit"
-                          className={`rounded px-3 py-2 text-xs font-black text-white ${
-                            (user.hasGlobalAccess ?? user.allowGlobalSalesView) ? "bg-indigo-700" : "bg-slate-500"
-                          }`}
-                        >
-                          {(user.hasGlobalAccess ?? user.allowGlobalSalesView) ? "Enabled" : "Disabled"}
-                        </button>
+                          <input type="hidden" name="userId" value={user.id} />
+                          <input type="hidden" name="currentStatus" value={String(user.hasGlobalAccess ?? user.allowGlobalSalesView)} />
+                          <button
+                            type="submit"
+                            className={`ui-badge ${user.hasGlobalAccess ?? user.allowGlobalSalesView ? "ui-badge-brand" : "ui-badge-slate"} cursor-pointer hover:opacity-80`}
+                          >
+                            {(user.hasGlobalAccess ?? user.allowGlobalSalesView) ? "Enabled" : "Disabled"}
+                          </button>
                         </form>
                       )}
                     </td>
-                    <td className="whitespace-nowrap px-4 py-2">
-                      <span
-                        className={`rounded px-2 py-1 text-xs font-black uppercase ${
-                          user.isActive ? "bg-green-100 text-green-800" : "bg-slate-200 text-slate-700"
-                        }`}
-                      >
-                        {user.isActive ? "Active" : "Inactive"}
-                      </span>
+                    <td>
+                      <StatusBadge status={user.isActive ? "ACTIVE" : "INACTIVE"} />
                     </td>
-                    <td className="px-4 py-2">
-                      <div className="flex justify-end gap-2">
+                    <td>
+                      <div className="flex flex-wrap justify-end gap-2">
                         {user.id === currentUser.id ? (
-                          <span className="rounded bg-slate-200 px-3 py-2 text-xs font-black text-slate-700">Current Account</span>
+                          <span className="ui-badge ui-badge-slate">Current Account</span>
                         ) : (
                           <>
-                        <form action={toggleUserStatus}>
-                          <input type="hidden" name="userId" value={user.id} />
-                          <input type="hidden" name="currentStatus" value={String(user.isActive)} />
-                          <button type="submit" className="rounded bg-red-700 px-3 py-2 text-xs font-black text-white">
-                            {user.isActive ? "Deactivate" : "Activate"}
-                          </button>
-                        </form>
-                        <form action={updateUserRole} className="flex gap-2">
-                          <input type="hidden" name="userId" value={user.id} />
-                          <select name="newRole" defaultValue={user.role} className="h-9 rounded border border-slate-300 px-2 text-xs font-bold">
-                            {roleOptions.map((role) => (
-                              <option key={role} value={role}>
-                                {roleLabel(role)}
-                              </option>
-                            ))}
-                          </select>
-                          <select name="newBranchId" defaultValue={user.branchId ?? ""} className="h-9 rounded border border-slate-300 px-2 text-xs font-bold">
-                            <option value="">No Branch</option>
-                            {branches.map((branch) => (
-                              <option key={branch.id} value={branch.id}>
-                                {branch.code}
-                              </option>
-                            ))}
-                          </select>
-                          <select name="newRoleId" defaultValue={user.roleId ?? ""} className="h-9 rounded border border-slate-300 px-2 text-xs font-bold">
-                            <option value="">Built-in profile</option>
-                            {roles.map((role) => (
-                              <option key={role.id} value={role.id}>
-                                {role.name}
-                              </option>
-                            ))}
-                          </select>
-                          <button type="submit" className="h-9 rounded bg-slate-900 px-3 text-xs font-black text-white">
-                            Save
-                          </button>
-                        </form>
-                        <form action={resetUserPassword} className="flex gap-2">
-                          <input type="hidden" name="userId" value={user.id} />
-                          <input name="newPassword" type="password" required minLength={12} placeholder="New password" className="h-9 w-36 rounded border px-2 text-xs" />
-                          <button className="h-9 rounded bg-amber-700 px-3 text-xs font-black text-white">Reset</button>
-                        </form>
+                            <form action={toggleUserStatus}>
+                              <input type="hidden" name="userId" value={user.id} />
+                              <input type="hidden" name="currentStatus" value={String(user.isActive)} />
+                              <button type="submit" className="ui-btn ui-btn-danger ui-btn-sm">
+                                {user.isActive ? "Deactivate" : "Activate"}
+                              </button>
+                            </form>
+                            <details className="ui-details">
+                              <summary className="ui-btn ui-btn-ghost ui-btn-sm">Edit</summary>
+                              <div className="mt-2 flex flex-col gap-2 rounded-xl border border-slate-200 bg-slate-50/70 p-3">
+                                <form action={updateUserRole} className="flex flex-wrap gap-2">
+                                  <input type="hidden" name="userId" value={user.id} />
+                                  <RoleBranchEditor
+                                    nameRole="newRole"
+                                    nameBranch="newBranchId"
+                                    roles={roleOptions}
+                                    branches={branches}
+                                    defaultRole={user.role}
+                                    defaultBranchId={user.branchId}
+                                    compact
+                                  />
+                                  <select name="newRoleId" defaultValue={user.roleId ?? ""} className="ui-input h-9 w-36 px-2 text-xs">
+                                    <option value="">Built-in profile</option>
+                                    {roles.map((role) => (
+                                      <option key={role.id} value={role.id}>
+                                        {role.name}
+                                      </option>
+                                    ))}
+                                  </select>
+                                  <button type="submit" className="ui-btn ui-btn-primary ui-btn-sm">
+                                    Save
+                                  </button>
+                                </form>
+                                <form action={resetUserPassword} className="flex gap-2">
+                                  <input type="hidden" name="userId" value={user.id} />
+                                  <input name="newPassword" type="password" required minLength={12} placeholder="New password" className="ui-input h-9 w-36 px-2 text-xs" />
+                                  <button className="ui-btn ui-btn-ghost ui-btn-sm">Reset</button>
+                                </form>
+                              </div>
+                            </details>
                           </>
                         )}
                       </div>
@@ -267,7 +223,7 @@ export default async function AdminConsolePage() {
               </tbody>
             </table>
           </div>
-        </section>
+        </Card>
       </div>
     </main>
   );

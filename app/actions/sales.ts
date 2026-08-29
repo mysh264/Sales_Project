@@ -13,6 +13,7 @@ import { getCurrentUser } from "@/lib/session";
 import { deletePrivateUpload, storePrivateUpload } from "@/lib/uploads";
 import { businessDate, businessDayRange } from "@/lib/business-date";
 import { logEvent } from "@/lib/logger";
+import { moneyToFixed } from "@/lib/money";
 
 function text(formData: FormData, key: string) {
   const value = formData.get(key);
@@ -263,9 +264,9 @@ export async function createOrder(formData: FormData) {
     const taxAmount = subtotal.mul(percentRate(taxRate));
     const totalAmount = subtotal.add(taxAmount);
     logEvent("info", "invoice.calculate", {
-      subtotal: subtotal.toFixed(3),
-      vatAmount: taxAmount.toFixed(3),
-      total: totalAmount.toFixed(3),
+      subtotal: moneyToFixed(subtotal),
+      vatAmount: moneyToFixed(taxAmount),
+      total: moneyToFixed(totalAmount),
     });
     const cashAmount = moneyValue(formData, "cashAmount");
     const checkAmount = moneyValue(formData, "checkAmount");

@@ -1,31 +1,16 @@
-import Link from "next/link";
-import { logout } from "@/app/actions/auth";
+import { TopNav } from "@/components/ui/TopNav";
 import { AdminConsoleLink } from "@/components/AdminConsoleLink";
 
-export default function SalesmanLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+export default async function SalesmanLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+  const adminLink = await AdminConsoleLink({ className: "ui-nav-link bg-purple-600 text-white hover:bg-purple-700" });
   return (
     <>
-      <nav className="bg-white px-3 py-3 shadow-sm print:hidden md:px-6">
-        <div className="mx-auto flex max-w-7xl items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <Link
-              href="/salesman"
-              className="flex min-h-14 items-center justify-center rounded-lg bg-slate-950 px-4 text-lg font-black text-white"
-            >
-              Home
-            </Link>
-            <AdminConsoleLink className="hidden min-h-14 items-center justify-center rounded-lg bg-purple-700 px-4 text-lg font-black text-white md:flex" />
-            <Link href="/profile/security" className="flex min-h-14 items-center rounded-lg border border-slate-300 px-4 text-lg font-black text-slate-900">
-              Security
-            </Link>
-          </div>
-          <form action={logout} className="ml-auto">
-            <button type="submit" className="min-h-14 rounded-lg bg-red-700 px-4 text-lg font-black text-white">
-              Logout
-            </button>
-          </form>
-        </div>
-      </nav>
+      <TopNav
+        brand="Sales"
+        homeHref="/salesman"
+        items={[{ href: "/profile/security", label: "Security" }]}
+        extra={adminLink ?? undefined}
+      />
       {children}
     </>
   );

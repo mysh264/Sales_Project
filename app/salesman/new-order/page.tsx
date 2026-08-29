@@ -5,6 +5,7 @@ import { buildInvoiceSerial } from "@/lib/invoice";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
 import { NewInvoiceForm } from "./NewInvoiceForm";
+import { PageHeader } from "@/components/ui/PageHeader";
 
 export const dynamic = "force-dynamic";
 
@@ -94,21 +95,28 @@ export default async function NewOrderPage({ searchParams }: NewOrderPageProps) 
     : "5.0000";
 
   return (
-    <main className="min-h-screen bg-gray-50 px-3 py-4 md:px-6 md:py-6">
-      <NewInvoiceForm
-        salesmanName={salesman.fullName}
-        branchName={salesman.branch.name}
-        defaultCurrency={salesman.branch.defaultCurrency}
-        defaultTaxRate={defaultTaxRate}
-        invoiceSerial={buildInvoiceSerial()}
-        action={createOrder}
-        customers={customerData}
-        products={productData}
-      customerDebtBalances={customerDebtBalances}
-      customerCreditBalances={customerCreditBalances}
-        searchCustomersAction={searchCustomers}
-        errorMessage={errorMessage}
-      />
+    <main className="min-h-screen bg-app-bg p-3 md:p-6">
+      <div className="mx-auto max-w-6xl animate-fade-in">
+        <PageHeader
+          eyebrow={`${salesman.branch.name} · ${salesman.branch.defaultCurrency}`}
+          title="New Cylinder Order"
+          description={`Invoice ${buildInvoiceSerial()} — create a customer invoice with live pricing.`}
+        />
+        <NewInvoiceForm
+          salesmanName={salesman.fullName}
+          branchName={salesman.branch.name}
+          defaultCurrency={salesman.branch.defaultCurrency}
+          defaultTaxRate={defaultTaxRate}
+          invoiceSerial={buildInvoiceSerial()}
+          action={createOrder}
+          customers={customerData}
+          products={productData}
+          customerDebtBalances={customerDebtBalances}
+          customerCreditBalances={customerCreditBalances}
+          searchCustomersAction={searchCustomers}
+          errorMessage={errorMessage}
+        />
+      </div>
     </main>
   );
 }

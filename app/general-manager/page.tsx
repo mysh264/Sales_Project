@@ -2,6 +2,10 @@ import { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/lib/permission-guard";
 import { Permissions } from "@/lib/permissions";
+import { Card, CardHeader } from "@/components/ui/Card";
+import { PageHeader } from "@/components/ui/PageHeader";
+import { Stat } from "@/components/ui/Stat";
+import { Badge } from "@/components/ui/Badge";
 
 export const dynamic = "force-dynamic";
 
@@ -98,86 +102,64 @@ export default async function GeneralManagerPage() {
   );
 
   const kpis = [
-    {
-      label: "Global Revenue",
-      value: formatOmr(globalRevenue._sum.totalAmount),
-      tone: "text-green-700",
-    },
-    {
-      label: "Global Outstanding Debt",
-      value: formatOmr(globalDebt._sum.balanceAmount),
-      tone: "text-red-700",
-    },
+    { label: "Global Revenue", value: formatOmr(globalRevenue._sum.totalAmount), tone: "success" as const },
+    { label: "Global Outstanding Debt", value: formatOmr(globalDebt._sum.balanceAmount), tone: "danger" as const },
     {
       label: "Global Cylinder Volume",
       value: (globalCylinderVolume._sum.fullCylindersDelivered ?? 0).toLocaleString("en-OM"),
-      tone: "text-slate-950",
+      tone: "default" as const,
     },
   ];
 
   return (
-    <main className="min-h-screen bg-slate-100 p-4 md:p-8">
-      <div className="mx-auto flex max-w-screen-xl flex-col gap-6">
-        <header className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
-          <p className="text-sm font-black uppercase tracking-wide text-slate-500">General Manager</p>
-          <h1 className="mt-1 text-3xl font-black text-slate-950 md:text-4xl">
-            NATIONAL INDUSTRIAL GAS PLANT - OMAN - Global Overview
-          </h1>
-        </header>
+    <main className="min-h-screen bg-app-bg p-4 md:p-8">
+      <div className="mx-auto flex max-w-screen-xl flex-col gap-6 animate-fade-in">
+        <PageHeader
+          eyebrow="General Manager"
+          title="Global Overview"
+          description="National Industrial Gas Plant — Oman. Consolidated performance across every branch."
+        />
 
         <section className="grid grid-cols-1 gap-4 md:grid-cols-3">
           {kpis.map((kpi) => (
-            <article key={kpi.label} className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
-              <p className="text-sm font-black uppercase tracking-wide text-slate-500">{kpi.label}</p>
-              <p className={`mt-3 text-4xl font-black ${kpi.tone}`}>{kpi.value}</p>
-            </article>
+            <Stat key={kpi.label} label={kpi.label} value={kpi.value} tone={kpi.tone} />
           ))}
         </section>
 
-        <section className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
-          <div className="border-b border-slate-200 px-4 py-3">
-            <h2 className="text-lg font-black text-slate-950">Branch Performance</h2>
-          </div>
+        <Card className="overflow-hidden p-0">
+          <CardHeader title="Branch Performance" description="Monthly revenue, active salesmen and outstanding debt per branch." />
           <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-left text-sm">
-              <thead className="bg-slate-100 text-xs font-black uppercase tracking-wide text-slate-600">
+            <table className="ui-table">
+              <thead>
                 <tr>
-                  <th className="px-4 py-2">Branch Name</th>
-                  <th className="px-4 py-2">Code</th>
-                  <th className="px-4 py-2 text-right">Active Salesmen</th>
-                  <th className="px-4 py-2 text-right">Monthly Revenue</th>
-                  <th className="px-4 py-2 text-right">Outstanding Debt</th>
-                  <th className="px-4 py-2">Status</th>
+                  <th>Branch Name</th>
+                  <th>Code</th>
+                  <th className="text-right">Active Salesmen</th>
+                  <th className="text-right">Monthly Revenue</th>
+                  <th className="text-right">Outstanding Debt</th>
+                  <th>Status</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-200">
+              <tbody>
                 {branchRows.map((branch) => (
-                  <tr key={branch.id} className="hover:bg-slate-50">
-                    <td className="whitespace-nowrap px-4 py-2 font-black text-slate-950">{branch.name}</td>
-                    <td className="whitespace-nowrap px-4 py-2 font-bold text-slate-600">{branch.code}</td>
-                    <td className="whitespace-nowrap px-4 py-2 text-right font-bold text-slate-900">
-                      {branch.activeSalesmen}
-                    </td>
-                    <td className="whitespace-nowrap px-4 py-2 text-right font-bold text-green-700">
-                      {formatOmr(branch.revenue)}
-                    </td>
-                    <td className="whitespace-nowrap px-4 py-2 text-right font-bold text-red-700">
-                      {formatOmr(branch.debt)}
-                    </td>
-                    <td className="whitespace-nowrap px-4 py-2">
-                      <span
-                        className={`rounded px-2 py-1 text-xs font-black uppercase ${
-                          branch.status === "High Debt" ? "bg-red-100 text-red-800" : "bg-green-100 text-green-800"
-                        }`}
-                      >
-                        {branch.status}
-                      </span>
+                  <tr key={branch.id}>
+                    <td className="is-strong">{branch.name}</td>
+                    <td className="font-semibold text-slate-600">{branch.code}</td>
+                    <td className="num">{branch.activeSalesmen}</td>
+                    <td className="num text-emerald-600">{formatOmr(branch.revenue)}</td>
+                    <td className="num text-rose-600">{formatOmr(branch.debt)}</td>
+                    <td>
+                      {branch.status === "High Debt" ? (
+                        <Badge tone="danger">High Debt</Badge>
+                      ) : (
+                        <Badge tone="success">Healthy</Badge>
+                      )}
                     </td>
                   </tr>
                 ))}
                 {branchRows.length === 0 ? (
                   <tr>
-                    <td className="px-4 py-4 text-center font-bold text-slate-500" colSpan={6}>
+                    <td className="px-4 py-10 text-center font-bold text-slate-500" colSpan={6}>
                       No branches configured.
                     </td>
                   </tr>
@@ -185,7 +167,7 @@ export default async function GeneralManagerPage() {
               </tbody>
             </table>
           </div>
-        </section>
+        </Card>
       </div>
     </main>
   );

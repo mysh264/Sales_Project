@@ -3,17 +3,16 @@ import { SalesmanHandoffPicker } from "./SalesmanHandoffPicker";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser, hasGlobalSalesAccess } from "@/lib/session";
 import { businessDate } from "@/lib/business-date";
+import { ButtonLink } from "@/components/ui/Button";
+import { Card, CardHeader } from "@/components/ui/Card";
+import { PageHeader } from "@/components/ui/PageHeader";
+import { Stat } from "@/components/ui/Stat";
+import { StatusBadge } from "@/components/ui/Badge";
 
 export const dynamic = "force-dynamic";
 
 function startOfDay() {
   return businessDate();
-}
-
-function formatNumber(value: number) {
-  return new Intl.NumberFormat("en-OM", {
-    maximumFractionDigits: 0,
-  }).format(value);
 }
 
 export default async function LoaderDashboardPage() {
@@ -50,42 +49,23 @@ export default async function LoaderDashboardPage() {
   const pendingReturns = reconciliations.filter((item) => item.status !== "EVENING_RECONCILED").length;
 
   return (
-    <main className="min-h-screen bg-slate-100 p-4 md:p-8">
-      <div className="mx-auto flex max-w-7xl flex-col gap-6">
-        <header className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-            <div>
-              <p className="text-sm font-black uppercase tracking-wide text-slate-500">Loader / Unloader</p>
-              <h1 className="mt-1 text-3xl font-black text-slate-950">Daily Route Dashboard</h1>
-              <p className="mt-2 max-w-3xl text-sm font-bold text-slate-600">
-                Select a salesman, record the hand-off, and close the route at the end of the day.
-              </p>
-              <p className="mt-2 text-xs font-black uppercase tracking-wide text-slate-500">
-                {hasGlobalAccess ? "Global view enabled" : currentUser?.branch?.name ? currentUser.branch.name : "Branch not assigned"}
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-3">
-              <Link href="/loader" className="rounded border border-slate-300 bg-white px-4 py-2 text-sm font-black text-slate-900">
-                Home
-              </Link>
-              <Link href="/logistics/reconciliation" className="rounded border border-slate-300 bg-white px-4 py-2 text-sm font-black text-slate-900">
-                Reconciliation
-              </Link>
-            </div>
-          </div>
-        </header>
+    <main className="min-h-screen bg-app-bg p-4 md:p-8">
+      <div className="mx-auto flex max-w-7xl flex-col gap-6 animate-fade-in">
+        <PageHeader
+          eyebrow="Loader / Unloader"
+          title="Daily Route Dashboard"
+          description="Select a salesman, record the hand-off, and close the route at the end of the day."
+          actions={
+            <>
+              <ButtonLink href="/loader" variant="ghost">Home</ButtonLink>
+              <ButtonLink href="/logistics/reconciliation" variant="ghost">Reconciliation</ButtonLink>
+            </>
+          }
+        />
 
         <section className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-            <p className="text-xs font-black uppercase tracking-wide text-slate-500">Today&apos;s Loads</p>
-            <div className="mt-2 text-4xl font-black text-slate-950">{formatNumber(todaysLoads)}</div>
-            <p className="mt-2 text-sm font-bold text-slate-600">Morning load hand-offs recorded today.</p>
-          </div>
-          <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-            <p className="text-xs font-black uppercase tracking-wide text-slate-500">Pending Returns</p>
-            <div className="mt-2 text-4xl font-black text-amber-700">{formatNumber(pendingReturns)}</div>
-            <p className="mt-2 text-sm font-bold text-slate-600">Routes still waiting for evening close-out.</p>
-          </div>
+          <Stat label="Today's Loads" value={todaysLoads} hint="Morning load hand-offs recorded today." />
+          <Stat label="Pending Returns" value={pendingReturns} tone="warning" hint="Routes still waiting for evening close-out." />
         </section>
 
         <SalesmanHandoffPicker
@@ -95,24 +75,21 @@ export default async function LoaderDashboardPage() {
           }))}
         />
 
-        <section className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
-          <div className="border-b border-slate-200 px-5 py-4">
-            <h2 className="text-lg font-black text-slate-950">Salesman Queue</h2>
-            <p className="mt-1 text-sm font-bold text-slate-600">Waiting and on-route salesmen for quick hand-off.</p>
-          </div>
+        <Card className="overflow-hidden p-0">
+          <CardHeader title="Salesman Queue" description="Waiting and on-route salesmen for quick hand-off." />
           <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-left text-sm">
-              <thead className="bg-slate-100 text-xs font-black uppercase tracking-wide text-slate-600">
+            <table className="ui-table">
+              <thead>
                 <tr>
-                  <th className="px-4 py-3">Salesman</th>
-                  <th className="px-4 py-3">Status</th>
-                  <th className="px-4 py-3 text-right">Actions</th>
+                  <th>Salesman</th>
+                  <th>Status</th>
+                  <th className="text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-200">
+              <tbody>
                 {salesmen.length === 0 ? (
                   <tr>
-                    <td className="px-4 py-4 font-bold text-slate-600" colSpan={3}>
+                    <td className="px-4 py-10 text-center font-bold text-slate-500" colSpan={3}>
                       No active salesmen are available.
                     </td>
                   </tr>
@@ -120,26 +97,24 @@ export default async function LoaderDashboardPage() {
                   salesmen.map((salesman) => {
                     const route = salesman.salesmanReconciliations[0] ?? null;
                     const isOnRoute = Boolean(route && route.status !== "EVENING_RECONCILED");
-                    const statusLabel = isOnRoute ? "On Route" : "Waiting";
-                    const statusTone = isOnRoute ? "bg-amber-100 text-amber-800" : "bg-slate-100 text-slate-700";
 
                     return (
-                      <tr key={salesman.id} className="hover:bg-slate-50">
-                        <td className="px-4 py-3 font-black text-slate-950">{salesman.fullName}</td>
-                        <td className="px-4 py-3">
-                          <span className={`rounded px-2 py-1 text-xs font-black uppercase ${statusTone}`}>{statusLabel}</span>
+                      <tr key={salesman.id}>
+                        <td className="is-strong">{salesman.fullName}</td>
+                        <td>
+                          <StatusBadge status={isOnRoute ? "ON_ROUTE" : "WAITING"} />
                         </td>
-                        <td className="px-4 py-3">
+                        <td>
                           <div className="flex justify-end gap-2">
                             <Link
                               href={`/loader/load/${salesman.id}`}
-                              className="rounded bg-emerald-700 px-3 py-2 text-xs font-black text-white"
+                              className="ui-btn ui-btn-success ui-btn-sm"
                             >
                               Morning Load
                             </Link>
                             <Link
                               href={`/loader/return/${salesman.id}`}
-                              className="rounded bg-amber-600 px-3 py-2 text-xs font-black text-white"
+                              className="ui-btn ui-btn-ghost ui-btn-sm"
                             >
                               Evening Return
                             </Link>
@@ -152,7 +127,7 @@ export default async function LoaderDashboardPage() {
               </tbody>
             </table>
           </div>
-        </section>
+        </Card>
       </div>
     </main>
   );
