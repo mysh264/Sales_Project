@@ -63,9 +63,9 @@ export function AuditLogTable({ logs }: AuditLogTableProps) {
   const [openLogId, setOpenLogId] = useState<string | null>(null);
 
   return (
-    <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+    <div className="overflow-hidden rounded-2xl border border-slate-200/70 bg-white shadow-card">
       <div className="overflow-x-auto">
-        <table className="w-full border-collapse text-left text-sm">
+        <table className="ui-table">
           <thead className="bg-slate-100 text-xs font-black uppercase tracking-wide text-slate-600">
             <tr>
               <th className="px-4 py-3">Timestamp</th>
@@ -99,7 +99,7 @@ export function AuditLogTable({ logs }: AuditLogTableProps) {
                       <button
                         type="button"
                         onClick={() => setOpenLogId(isOpen ? null : log.id)}
-                        className="rounded bg-slate-950 px-3 py-2 text-xs font-black text-white"
+                        className="ui-btn ui-btn-ghost ui-btn-sm"
                       >
                         {isOpen ? "Hide" : "Details"}
                       </button>
