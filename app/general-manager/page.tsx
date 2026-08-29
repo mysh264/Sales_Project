@@ -6,6 +6,8 @@ import { Card, CardHeader } from "@/components/ui/Card";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Stat } from "@/components/ui/Stat";
 import { Badge } from "@/components/ui/Badge";
+import { Donut, BarList, Trend, KpiCallout } from "@/components/ui/Chart";
+import { formatOmr } from "@/lib/money";
 
 export const dynamic = "force-dynamic";
 
@@ -14,81 +16,69 @@ function startOfMonth() {
   return new Date(now.getFullYear(), now.getMonth(), 1);
 }
 
-function formatOmr(value: Prisma.Decimal | number | null | undefined) {
-  const amount = value instanceof Prisma.Decimal ? value.toNumber() : Number(value ?? 0);
-  return new Intl.NumberFormat("en-OM", {
-    style: "currency",
-    currency: "OMR",
-    minimumFractionDigits: 3,
-    maximumFractionDigits: 3,
-  }).format(amount);
+function lastSixMonths() {
+  const now = new Date();
+  const months: { start: Date; end: Date; label: string }[] = [];
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const end = new Date(now.getFullYear(), now.getMonth() - i + 1, 1);
+    months.push({
+      start: d,
+      end,
+      label: d.toLocaleDateString("en-OM", { month: "short" }),
+    });
+  }
+  return months;
 }
 
 export default async function GeneralManagerPage() {
   await requirePermission(Permissions.Finance_Read);
   const monthStart = startOfMonth();
+  const months = lastSixMonths();
 
-  const [globalRevenue, globalDebt, globalCylinderVolume, branches] = await Promise.all([
+  const [globalRevenue, globalDebt, globalCylinderVolume, , monthlyRevenue, topBranches] = await Promise.all([
     prisma.invoice.aggregate({
       _sum: { totalAmount: true },
-      where: {
-        status: "ISSUED",
-        createdAt: { gte: monthStart },
-      },
+      where: { status: "ISSUED", createdAt: { gte: monthStart } },
     }),
     prisma.customerDebt.aggregate({
       _sum: { balanceAmount: true },
-      where: {
-        balanceAmount: { gt: new Prisma.Decimal(0) },
-        status: { in: ["OPEN", "PARTIALLY_PAID"] },
-      },
+      where: { balanceAmount: { gt: new Prisma.Decimal(0) }, status: { in: ["OPEN", "PARTIALLY_PAID"] } },
     }),
     prisma.invoiceItem.aggregate({
       _sum: { fullCylindersDelivered: true },
-      where: {
-        invoice: {
-          status: "ISSUED",
-          createdAt: { gte: monthStart },
-        },
-      },
+      where: { invoice: { status: "ISSUED", createdAt: { gte: monthStart } } },
     }),
+    prisma.branch.findMany({ orderBy: { name: "asc" } }),
+    Promise.all(
+      months.map((m) =>
+        prisma.invoice.aggregate({
+          _sum: { totalAmount: true },
+          where: { status: "ISSUED", createdAt: { gte: m.start, lt: m.end } },
+        }),
+      ),
+    ),
     prisma.branch.findMany({
       orderBy: { name: "asc" },
+      select: { id: true, name: true, code: true },
     }),
   ]);
 
   const branchRows = await Promise.all(
-    branches.map(async (branch) => {
+    topBranches.map(async (branch) => {
       const [activeSalesmen, revenue, debt] = await Promise.all([
-        prisma.user.count({
-          where: {
-            branchId: branch.id,
-            role: "SALESMAN",
-            isActive: true,
-          },
-        }),
+        prisma.user.count({ where: { branchId: branch.id, role: "SALESMAN", isActive: true } }),
         prisma.invoice.aggregate({
           _sum: { totalAmount: true },
-          where: {
-            branchId: branch.id,
-            status: "ISSUED",
-            createdAt: { gte: monthStart },
-          },
+          where: { branchId: branch.id, status: "ISSUED", createdAt: { gte: monthStart } },
         }),
         prisma.customerDebt.aggregate({
           _sum: { balanceAmount: true },
-          where: {
-            customer: { branchId: branch.id },
-            balanceAmount: { gt: new Prisma.Decimal(0) },
-            status: { in: ["OPEN", "PARTIALLY_PAID"] },
-          },
+          where: { customer: { branchId: branch.id }, balanceAmount: { gt: new Prisma.Decimal(0) }, status: { in: ["OPEN", "PARTIALLY_PAID"] } },
         }),
       ]);
-
       const branchDebt = debt._sum.balanceAmount ?? new Prisma.Decimal(0);
       const branchRevenue = revenue._sum.totalAmount ?? new Prisma.Decimal(0);
-      const highDebt = branchDebt.greaterThan(new Prisma.Decimal(500));
-
       return {
         id: branch.id,
         name: branch.name,
@@ -96,20 +86,29 @@ export default async function GeneralManagerPage() {
         activeSalesmen,
         revenue: branchRevenue,
         debt: branchDebt,
-        status: highDebt ? "High Debt" : "Healthy",
+        status: branchDebt.greaterThan(new Prisma.Decimal(500)) ? "High Debt" : "Healthy",
       };
     }),
   );
 
+  const totalRevenue = globalRevenue._sum.totalAmount ?? new Prisma.Decimal(0);
+  const totalDebt = globalDebt._sum.balanceAmount ?? new Prisma.Decimal(0);
+
   const kpis = [
-    { label: "Global Revenue", value: formatOmr(globalRevenue._sum.totalAmount), tone: "success" as const },
-    { label: "Global Outstanding Debt", value: formatOmr(globalDebt._sum.balanceAmount), tone: "danger" as const },
+    { label: "Global Revenue (MTD)", value: formatOmr(totalRevenue), tone: "success" as const },
+    { label: "Global Outstanding Debt", value: formatOmr(totalDebt), tone: "danger" as const },
     {
-      label: "Global Cylinder Volume",
+      label: "Global Cylinder Volume (MTD)",
       value: (globalCylinderVolume._sum.fullCylindersDelivered ?? 0).toLocaleString("en-OM"),
       tone: "default" as const,
     },
   ];
+
+  const trendPoints = monthlyRevenue.map((m) => Number(m._sum.totalAmount ?? 0));
+  const barItems = branchRows
+    .map((b) => ({ label: b.name, value: Number(b.revenue), sublabel: `${b.activeSalesmen} active salesmen` }))
+    .sort((a, b) => b.value - a.value)
+    .slice(0, 6);
 
   return (
     <main className="min-h-screen bg-app-bg p-4 md:p-8">
@@ -125,6 +124,35 @@ export default async function GeneralManagerPage() {
             <Stat key={kpi.label} label={kpi.label} value={kpi.value} tone={kpi.tone} />
           ))}
         </section>
+
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <Card>
+            <CardHeader title="Revenue vs Outstanding Debt" description="Composition of this month's invoiced revenue against unpaid debt." />
+            <Donut
+              segments={[
+                { label: "Revenue", value: Number(totalRevenue), color: "#10b981" },
+                { label: "Outstanding Debt", value: Number(totalDebt), color: "#f43f5e" },
+              ]}
+              centerValue={formatOmr(totalRevenue)}
+              centerLabel="MTD Revenue"
+            />
+          </Card>
+
+          <Card>
+            <CardHeader title="6-Month Revenue Trend" description="Issued invoice revenue per month (OMR)." />
+            <KpiCallout>
+              <Trend points={trendPoints} labels={months.map((m) => m.label)} height={72} />
+              <p className="mt-2 text-right text-sm font-bold text-emerald-600">
+                {formatOmr(trendPoints.reduce((a, b) => a + b, 0))} last 6 months
+              </p>
+            </KpiCallout>
+          </Card>
+        </div>
+
+        <Card>
+          <CardHeader title="Revenue by Branch" description="Top branches by invoiced revenue this month." />
+          <BarList items={barItems} formatValue={(v) => formatOmr(v)} tone="brand" />
+        </Card>
 
         <Card className="overflow-hidden p-0">
           <CardHeader title="Branch Performance" description="Monthly revenue, active salesmen and outstanding debt per branch." />

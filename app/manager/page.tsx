@@ -1,14 +1,16 @@
 import { DebtStatus, InvoiceStatus, Prisma } from "@/generated/prisma/client";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { getFinancialSummary } from "@//app/actions/finance";
+import { getFinancialSummary } from "@/app/actions/finance";
 import { OmanDateInput } from "@/components/OmanDateInput";
 import { ButtonLink } from "@/components/ui/Button";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Stat } from "@/components/ui/Stat";
 import { StatusBadge } from "@/components/ui/Badge";
+import { Donut, BarList, Trend, KpiCallout } from "@/components/ui/Chart";
 import { formatDateTimeDMY } from "@/lib/date-format";
+import { formatOmr } from "@/lib/money";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser, hasGlobalSalesAccess } from "@/lib/session";
 import { hasPermission, Permissions } from "@/lib/permissions";
@@ -37,12 +39,8 @@ function endOfMonth() {
 }
 
 function parseDate(value?: string) {
-  if (!value) {
-    return null;
-  }
-
+  if (!value) return null;
   const parsed = new Date(`${value}T00:00:00`);
-
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
@@ -50,14 +48,14 @@ function nextDay(date: Date) {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1);
 }
 
-function formatOmr(value: Prisma.Decimal | number | null | undefined) {
-  const amount = value instanceof Prisma.Decimal ? value.toNumber() : Number(value ?? 0);
-  return new Intl.NumberFormat("en-OM", {
-    style: "currency",
-    currency: "OMR",
-    minimumFractionDigits: 3,
-    maximumFractionDigits: 3,
-  }).format(amount);
+function lastSixMonths() {
+  const now = new Date();
+  const months: { start: Date; end: Date; label: string }[] = [];
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    months.push({ start: d, end: new Date(now.getFullYear(), now.getMonth() - i + 1, 1), label: d.toLocaleDateString("en-OM", { month: "short" }) });
+  }
+  return months;
 }
 
 export default async function ManagerDashboardPage({
@@ -81,12 +79,12 @@ export default async function ManagerDashboardPage({
   const customerFilter = params.customer?.trim() || "";
   const requestedStatus = params.status?.trim() || "";
   const statusFilter = requestedStatus === InvoiceStatus.CANCELLED ? InvoiceStatus.CANCELLED : InvoiceStatus.ISSUED;
+  const months = lastSixMonths();
+
   const branch =
     currentUser.branch ??
     (branchId
-      ? await prisma.branch.findUnique({
-          where: { id: branchId },
-        })
+      ? await prisma.branch.findUnique({ where: { id: branchId } })
       : null);
 
   if (!hasGlobalAccess && !branch) {
@@ -124,45 +122,21 @@ export default async function ManagerDashboardPage({
       : { branchId: branchId ?? "" }),
     ...(requestedUserId ? { salesmanId: requestedUserId } : {}),
     ...(customerFilter
-      ? {
-          customer: {
-            name: {
-              contains: customerFilter,
-              mode: "insensitive" as const,
-            },
-          },
-        }
+      ? { customer: { name: { contains: customerFilter, mode: "insensitive" as const } } }
       : {}),
     status: statusFilter,
-    createdAt: {
-      gte: startDate,
-      lt: endDateExclusive,
-    },
+    createdAt: { gte: startDate, lt: endDateExclusive },
   };
 
   const debtWhere: Prisma.CustomerDebtWhereInput = {
     customer: {
-      ...(hasGlobalAccess
-        ? requestedBranchId
-          ? { branchId: requestedBranchId }
-          : {}
-        : { branchId: branch?.id ?? "" }),
-      ...(customerFilter
-        ? {
-            name: {
-              contains: customerFilter,
-              mode: "insensitive" as const,
-            },
-          }
-        : {}),
+      ...(hasGlobalAccess ? (requestedBranchId ? { branchId: requestedBranchId } : {}) : { branchId: branch?.id ?? "" }),
+      ...(customerFilter ? { name: { contains: customerFilter, mode: "insensitive" as const } } : {}),
     },
     ...(requestedUserId ? { invoice: { salesmanId: requestedUserId } } : {}),
     balanceAmount: { gt: new Prisma.Decimal(0) },
     status: { in: activeDebtStatuses },
-    createdAt: {
-      gte: startDate,
-      lt: endDateExclusive,
-    },
+    createdAt: { gte: startDate, lt: endDateExclusive },
   };
 
   const movementWhere = hasGlobalAccess
@@ -171,17 +145,9 @@ export default async function ManagerDashboardPage({
       : { createdAt: { gte: startDate, lt: endDateExclusive } }
     : { branchId: branch?.id ?? "", createdAt: { gte: startDate, lt: endDateExclusive } };
 
-  const [summary, outstandingDebt, movementCount, globalViewUsers, userCount] = await Promise.all([
-    getFinancialSummary({
-      startDate,
-      endDateExclusive,
-      branchId: requestedBranchId,
-      salesmanId: requestedUserId,
-    }),
-    prisma.customerDebt.aggregate({
-      _sum: { balanceAmount: true },
-      where: debtWhere,
-    }),
+  const [summary, outstandingDebt, movementCount, globalViewUsers, userCount, monthlyRevenue, topSalesmen] = await Promise.all([
+    getFinancialSummary({ startDate, endDateExclusive, branchId: requestedBranchId, salesmanId: requestedUserId }),
+    prisma.customerDebt.aggregate({ _sum: { balanceAmount: true }, where: debtWhere }),
     prisma.cylinderMovement.count({ where: movementWhere }),
     prisma.user.count({
       where: {
@@ -189,22 +155,42 @@ export default async function ManagerDashboardPage({
         OR: [{ hasGlobalAccess: true }, { allowGlobalSalesView: true }],
       },
     }),
-    prisma.user.count({
-      where: !hasGlobalAccess ? { branchId: branchId ?? "__no_branch__" } : undefined,
+    prisma.user.count({ where: !hasGlobalAccess ? { branchId: branchId ?? "__no_branch__" } : undefined }),
+    Promise.all(
+      months.map((m) =>
+        prisma.invoice.aggregate({
+          _sum: { totalAmount: true },
+          where: { ...invoiceWhere, createdAt: { gte: m.start, lt: m.end } },
+        }),
+      ),
+    ),
+    prisma.invoice.groupBy({
+      by: ["salesmanId"],
+      where: invoiceWhere,
+      _sum: { totalAmount: true },
+      orderBy: { _sum: { totalAmount: "desc" } },
+      take: 5,
     }),
   ]);
 
   const latestInvoices = await prisma.invoice.findMany({
     where: invoiceWhere,
-    include: {
-      customer: true,
-      salesman: true,
-    },
+    include: { customer: true, salesman: true },
     orderBy: { createdAt: "desc" },
     take: 10,
   });
 
   const outstandingDebtValue = outstandingDebt._sum?.balanceAmount ?? new Prisma.Decimal(0);
+  const collected = new Prisma.Decimal(summary.totalSalesToday).sub(outstandingDebtValue);
+  const trendPoints = monthlyRevenue.map((m) => Number(m._sum.totalAmount ?? 0));
+
+  const salesmanMap = new Map(availableUsers.map((u) => [u.id, u.fullName]));
+  const topSalesmenItems = topSalesmen
+    .map((s) => ({
+      label: salesmanMap.get(s.salesmanId) ?? "Unknown",
+      value: Number(s._sum.totalAmount ?? 0),
+    }))
+    .filter((s) => s.value > 0);
 
   const stats = [
     { label: "Revenue in Scope", value: formatOmr(Number(summary.totalSalesToday)), tone: "success" as const },
@@ -297,7 +283,38 @@ export default async function ManagerDashboardPage({
           ))}
         </section>
 
-        <Card className="mt-6">
+        <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <Card>
+            <CardHeader title="Collected vs Outstanding" description="Revenue collected against outstanding debt in scope." />
+            <Donut
+              segments={[
+                { label: "Collected", value: Number(collected), color: "#10b981" },
+                { label: "Outstanding", value: Number(outstandingDebtValue), color: "#f43f5e" },
+              ]}
+              centerValue={formatOmr(Number(summary.totalSalesToday))}
+              centerLabel="Total Revenue"
+            />
+          </Card>
+
+          <Card>
+            <CardHeader title="6-Month Revenue Trend" description="Issued revenue per month (OMR)." />
+            <KpiCallout>
+              <Trend points={trendPoints} labels={months.map((m) => m.label)} height={72} />
+              <p className="mt-2 text-right text-sm font-bold text-emerald-600">
+                {formatOmr(trendPoints.reduce((a, b) => a + b, 0))} last 6 months
+              </p>
+            </KpiCallout>
+          </Card>
+        </div>
+
+        {topSalesmenItems.length > 0 ? (
+          <Card className="mt-4">
+            <CardHeader title="Top Salesmen" description="Highest revenue by salesman in the current scope." />
+            <BarList items={topSalesmenItems} formatValue={(v) => formatOmr(v)} tone="success" />
+          </Card>
+        ) : null}
+
+        <Card className="mt-4">
           <CardHeader title="Latest Invoices" />
           <div className="overflow-x-auto">
             <table className="ui-table">
@@ -327,16 +344,10 @@ export default async function ManagerDashboardPage({
                     </td>
                     <td>
                       <div className="flex justify-end gap-2">
-                        <Link
-                          href={`/print/${invoice.id}?size=mobile`}
-                          className="ui-btn ui-btn-ghost ui-btn-sm"
-                        >
+                        <Link href={`/print/${invoice.id}?size=mobile`} className="ui-btn ui-btn-ghost ui-btn-sm">
                           Mobile Receipt
                         </Link>
-                        <Link
-                          href={`/print/${invoice.id}?size=a4`}
-                          className="ui-btn ui-btn-primary ui-btn-sm"
-                        >
+                        <Link href={`/print/${invoice.id}?size=a4`} className="ui-btn ui-btn-primary ui-btn-sm">
                           A4 Invoice
                         </Link>
                       </div>
@@ -355,7 +366,7 @@ export default async function ManagerDashboardPage({
           </div>
         </Card>
 
-        <Card className="mt-6">
+        <Card className="mt-4">
           <CardHeader title="User Management" />
           <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
             <div className="ui-stat">
