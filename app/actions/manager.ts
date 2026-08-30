@@ -365,14 +365,23 @@ export async function approveReconciliationDiscrepancy(formData: FormData) {
     }
 
     for (const item of reconciliation.items) {
-      await tx.inventoryBalance.update({
+      // Upsert: the balance row may be missing (e.g. product was reactivated after the
+      // branch was created and no row was backfilled). Increment on the existing row, or
+      // create it seeded with this item's returned quantities.
+      await tx.inventoryBalance.upsert({
         where: {
           branchId_productId: {
             branchId: reconciliation.branchId,
             productId: item.productId,
           },
         },
-        data: {
+        create: {
+          branchId: reconciliation.branchId,
+          productId: item.productId,
+          fullCount: item.eveningReturnedFull,
+          emptyCount: item.eveningReturnedEmpty,
+        },
+        update: {
           fullCount: { increment: item.eveningReturnedFull },
           emptyCount: { increment: item.eveningReturnedEmpty },
         },

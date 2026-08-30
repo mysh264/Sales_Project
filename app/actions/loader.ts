@@ -170,9 +170,13 @@ export async function processMorningLoad(formData: FormData) {
 
     if (existing) {
       for (const item of existing.items) {
-        await tx.inventoryBalance.update({
+        // Best-effort undo of the prior load's inventory deduction. If the balance row
+        // is missing (e.g. product was reactivated after the branch was created and no
+        // row was backfilled) there is nothing to credit back, so skip silently.
+        await tx.inventoryBalance.upsert({
           where: { branchId_productId: { branchId, productId: item.productId } },
-          data: { fullCount: { increment: item.morningFull } },
+          create: { branchId, productId: item.productId, fullCount: item.morningFull, emptyCount: 0 },
+          update: { fullCount: { increment: item.morningFull } },
         });
       }
       await tx.cylinderMovement.deleteMany({ where: { reconciliationId: existing.id } });
@@ -215,6 +219,19 @@ export async function processMorningLoad(formData: FormData) {
         soldFull: 0,
       })),
     });
+
+    // Ensure every product has an InventoryBalance row at this branch before the conditional
+    // deduction. A product that was inactive when the branch was created has no balance row
+    // (saveBranch/createMany only seeds active products), and was reactivated afterwards —
+    // auto-creating the row here lets the gte check below distinguish "missing row" from
+    // "genuinely insufficient stock" and gives a correct error in both cases.
+    for (const row of rows) {
+      await tx.inventoryBalance.upsert({
+        where: { branchId_productId: { branchId, productId: row.productId } },
+        create: { branchId, productId: row.productId, fullCount: 0, emptyCount: 0 },
+        update: {},
+      });
+    }
 
     for (const row of rows) {
       const deducted = await tx.inventoryBalance.updateMany({

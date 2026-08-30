@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { login } from "@/app/actions/auth";
+import { roleHome } from "@/lib/auth";
 
 export function LoginForm() {
   const [error, setError] = useState("");
@@ -14,17 +15,7 @@ export function LoginForm() {
         startTransition(async () => {
           try {
             const role = await login(formData);
-            const destination =
-              role === "ADMIN"
-                ? "/admin"
-                : role === "GENERAL_MANAGER"
-                  ? "/general-manager"
-                  : role === "MANAGER"
-                    ? "/manager"
-                    : role === "LOADER"
-                      ? "/loader"
-                      : "/salesman";
-            window.location.assign(destination);
+            window.location.assign(roleHome[role]);
           } catch {
             setError("Invalid email or password.");
           }
@@ -45,6 +36,11 @@ export function LoginForm() {
       <label className="block">
         <span className="ui-label">Authenticator Code (if enabled)</span>
         <input name="mfaCode" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" className="ui-input h-14 text-base" />
+      </label>
+
+      <label className="block">
+        <span className="ui-label">Recovery Code (if you can't use your authenticator)</span>
+        <input name="recoveryCode" autoComplete="one-time-code" className="ui-input h-14 text-base" />
       </label>
 
       <label className="block">
