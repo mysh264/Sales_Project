@@ -68,6 +68,7 @@ export const config = {
     "/",
     "/api/:path*",
     "/admin/:path*",
+    "/admin-console",
     "/admin-console/:path*",
     "/salesman/:path*",
     "/loader/:path*",
