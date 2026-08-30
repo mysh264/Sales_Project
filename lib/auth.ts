@@ -18,7 +18,7 @@ export const roleHome: Record<UserRole, string> = {
   SALESMAN: "/salesman",
 };
 
-const routePermissionMap: Array<{ prefix: string; permissions: Permission[] }> = [
+export const routePermissionMap: Array<{ prefix: string; permissions: Permission[] }> = [
   { prefix: "/salesman/new-order", permissions: [Permissions.Sales_Create] },
   { prefix: "/salesman/history", permissions: [Permissions.Sales_Read] },
   { prefix: "/salesman/customer", permissions: [Permissions.Sales_Read] },
