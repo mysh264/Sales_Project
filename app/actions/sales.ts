@@ -142,35 +142,38 @@ export async function createOrder(formData: FormData) {
 
     const customerScope = { branchId: branchRow.id };
 
-    const existingCustomer = customerId
-      ? await tx.customer.findFirst({
+    let customer;
+    if (customerId) {
+      // The submitted customer must belong to the salesman's branch. Do NOT fall
+      // back to creating/guessing a customer here — that would let a salesman in one
+      // branch hijack a customer (or create a phantom) in another branch.
+      customer = await tx.customer.findFirst({
+        where: { id: customerId, ...customerScope },
+      });
+      if (!customer) {
+        throw new Error("Customer not found in your branch.");
+      }
+    } else {
+      customer =
+        (await tx.customer.findFirst({
           where: {
-            id: customerId,
             ...customerScope,
+            ...(customerPhone ? { phone: customerPhone } : { id: "__new_customer__" }),
           },
-        })
-      : null;
-
-    const customer =
-      existingCustomer ??
-      (await tx.customer.findFirst({
-        where: {
-          ...customerScope,
-          ...(customerPhone ? { phone: customerPhone } : { id: "__new_customer__" }),
-        },
-      })) ??
-      (await tx.customer.create({
-        data: {
-          branchId: branchRow.id,
-          customerNumber: `CUS-${randomUUID()}`,
-          name: customerName || customerPhone,
-          phone: customerPhone || null,
-          address: customerAddress || null,
-          vatNumber: customerVatNumber || null,
-          phoneCode: branchRow.defaultPhoneCode,
-          taxRate,
-        },
-      }));
+        })) ??
+        (await tx.customer.create({
+          data: {
+            branchId: branchRow.id,
+            customerNumber: `CUS-${randomUUID()}`,
+            name: customerName || customerPhone,
+            phone: customerPhone || null,
+            address: customerAddress || null,
+            vatNumber: customerVatNumber || null,
+            phoneCode: branchRow.defaultPhoneCode,
+            taxRate,
+          },
+        }));
+    }
 
     const lines = [];
 
