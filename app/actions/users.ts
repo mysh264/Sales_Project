@@ -23,14 +23,13 @@ function parseRole(value: string) {
 }
 
 async function resolvePermissionProfileId(
-  tx: Prisma.TransactionClient,
   role: UserRole,
   roleId: string | null,
   actorRole: UserRole,
   actorPermissions: Permission[],
 ) {
   if (roleId) {
-    const customRole = await tx.role.findUnique({ where: { id: roleId } });
+    const customRole = await prisma.role.findUnique({ where: { id: roleId } });
     if (!customRole) {
       throw new Error("Selected permission profile was not found.");
     }
@@ -42,7 +41,10 @@ async function resolvePermissionProfileId(
     return customRole.id;
   }
 
-  const builtInRole = await tx.role.upsert({
+  // Resolve the built-in role profile using the OUTER prisma client. Doing this inside the
+  // interactive transaction (tx.role.upsert) does not commit reliably under the PrismaPg driver
+  // adapter and silently dropped the user row — see resolvePermissionProfileId callers.
+  const builtInRole = await prisma.role.upsert({
     where: { name: role },
     update: {
       permissions: DEFAULT_ROLE_PERMISSIONS[role],
@@ -77,6 +79,13 @@ export async function createUser(formData: FormData) {
   const branchId = (role === "ADMIN" || role === "GENERAL_MANAGER") ? null : (text(formData, "branchId") || null);
   const roleId = text(formData, "roleId") || null;
 
+  // A salesman, loader or manager MUST belong to a branch. Allowing a null branch creates an
+  // orphaned user who cannot be routed, cannot perform a morning load, and breaks branch-scoped
+  // queries (they fall into the __no_branch__ bucket and effectively disappear from operations).
+  if (role !== "ADMIN" && role !== "GENERAL_MANAGER" && !branchId) {
+    throw new Error("A branch must be assigned to this role.");
+  }
+
   if (!fullName || !email || !password) {
     throw new Error("Full name, email, and password are required.");
   }
@@ -94,45 +103,46 @@ export async function createUser(formData: FormData) {
     await prisma.branch.findUniqueOrThrow({ where: { id: branchId } });
   }
 
-  await prisma.$transaction(async (tx) => {
-    const permissionProfileId = await resolvePermissionProfileId(tx, role, roleId, actor.role, getEffectivePermissions(actor));
-    const user = await tx.user.create({
-      data: {
-        fullName,
-        phone: phone || null,
-        email,
-        passwordHash,
-        role,
-        branchId,
-        roleId: permissionProfileId,
-        isActive: true,
-        hasGlobalAccess: false,
-        allowGlobalSalesView: false,
-      },
-    });
-
-    await logAction(
-      actor.id,
-      "CREATE_USER",
-      "User",
-      user.id,
-      null,
-      auditSnapshot({
-        id: user.id,
-        fullName: user.fullName,
-        phone: user.phone,
-        email: user.email,
-        role: user.role,
-        roleId: user.roleId,
-        branchId: user.branchId,
-        isActive: user.isActive,
-        hasGlobalAccess: user.hasGlobalAccess,
-        allowGlobalSalesView: user.allowGlobalSalesView,
-      }),
-      { tx },
-    );
-
+  // Create the user and write the audit record with the OUTER prisma client. The interactive
+  // (callback) transaction form `prisma.$transaction(async tx => …)` does not reliably commit
+  // under the PrismaPg driver adapter in this runtime, which silently dropped the created user.
+  // Sequential outer writes commit deterministically (the user row is the source of truth; the
+  // audit entry is best-effort and also written via the outer client).
+  const permissionProfileId = await resolvePermissionProfileId(role, roleId, actor.role, getEffectivePermissions(actor));
+  const user = await prisma.user.create({
+    data: {
+      fullName,
+      phone: phone || null,
+      email,
+      passwordHash,
+      role,
+      branchId,
+      roleId: permissionProfileId,
+      isActive: true,
+      hasGlobalAccess: false,
+      allowGlobalSalesView: false,
+    },
   });
+
+  await logAction(
+    actor.id,
+    "CREATE_USER",
+    "User",
+    user.id,
+    null,
+    auditSnapshot({
+      id: user.id,
+      fullName: user.fullName,
+      phone: user.phone,
+      email: user.email,
+      role: user.role,
+      roleId: user.roleId,
+      branchId: user.branchId,
+      isActive: user.isActive,
+      hasGlobalAccess: user.hasGlobalAccess,
+      allowGlobalSalesView: user.allowGlobalSalesView,
+    }),
+  );
 
   revalidatePath("/general-manager/users");
   revalidatePath("/manager/users");
@@ -151,28 +161,27 @@ export async function toggleUserStatus(formData: FormData) {
   const { user: actor } = await requirePermission(Permissions.Users_Update);
   const scope = await getBranchScope();
 
-  await prisma.$transaction(async (tx) => {
-    const user = await tx.user.findUniqueOrThrow({ where: { id: userId } });
-    if (user.id === actor.id) {
-      throw new Error("You cannot deactivate your own account.");
-    }
-    requireRoleManagement(actor.role, user.role);
-    if (user.branchId) requireBranchAccess(scope, user.branchId);
-    const updatedUser = await tx.user.update({
-      where: { id: userId },
-      data: { isActive: !currentStatus, sessionVersion: { increment: 1 } },
-    });
-
-    await logAction(
-      actor.id,
-      "UPDATE_USER_STATUS",
-      "User",
-      userId,
-      auditSnapshot(user),
-      auditSnapshot(updatedUser),
-      { tx },
-    );
+  // Sequential outer writes (see createUser): interactive callback transactions do not reliably
+  // commit under the PrismaPg adapter.
+  const user = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
+  if (user.id === actor.id) {
+    throw new Error("You cannot deactivate your own account.");
+  }
+  requireRoleManagement(actor.role, user.role);
+  if (user.branchId) requireBranchAccess(scope, user.branchId);
+  const updatedUser = await prisma.user.update({
+    where: { id: userId },
+    data: { isActive: !currentStatus, sessionVersion: { increment: 1 } },
   });
+
+  await logAction(
+    actor.id,
+    "UPDATE_USER_STATUS",
+    "User",
+    userId,
+    auditSnapshot(user),
+    auditSnapshot(updatedUser),
+  );
 
   revalidatePath("/general-manager/users");
   revalidatePath("/manager/users");
@@ -186,6 +195,12 @@ export async function updateUserRole(formData: FormData) {
   // ADMIN and GENERAL_MANAGER are global roles; never scope them to a branch.
   const branchId = (role === "ADMIN" || role === "GENERAL_MANAGER") ? null : (text(formData, "newBranchId") || null);
   const roleId = text(formData, "newRoleId") || null;
+
+  // A salesman, loader or manager MUST belong to a branch (see createUser). Reject edits that
+  // would orphan the user by clearing their branch.
+  if (role !== "ADMIN" && role !== "GENERAL_MANAGER" && !branchId) {
+    throw new Error("A branch must be assigned to this role.");
+  }
 
   if (!userId) {
     throw new Error("Missing user.");
@@ -202,31 +217,31 @@ export async function updateUserRole(formData: FormData) {
     await prisma.branch.findUniqueOrThrow({ where: { id: branchId } });
   }
 
-  await prisma.$transaction(async (tx) => {
-    const user = await tx.user.findUniqueOrThrow({ where: { id: userId } });
-    requireRoleManagement(actor.role, user.role);
-    if (user.branchId) requireBranchAccess(scope, user.branchId);
-    const permissionProfileId = await resolvePermissionProfileId(tx, role, roleId, actor.role, getEffectivePermissions(actor));
-    const updatedUser = await tx.user.update({
-      where: { id: userId },
-      data: {
-        role,
-        branchId,
-        roleId: permissionProfileId,
-        sessionVersion: { increment: 1 },
-      },
-    });
-
-    await logAction(
-      actor.id,
-      "UPDATE_PERMISSION",
-      "User",
-      userId,
-      auditSnapshot(user),
-      auditSnapshot(updatedUser),
-      { tx },
-    );
+  // Sequential outer writes (see createUser): the interactive callback transaction does not
+  // reliably commit under the PrismaPg adapter, so we write the user update and audit with the
+  // outer client instead.
+  const user = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
+  requireRoleManagement(actor.role, user.role);
+  if (user.branchId) requireBranchAccess(scope, user.branchId);
+  const permissionProfileId = await resolvePermissionProfileId(role, roleId, actor.role, getEffectivePermissions(actor));
+  const updatedUser = await prisma.user.update({
+    where: { id: userId },
+    data: {
+      role,
+      branchId,
+      roleId: permissionProfileId,
+      sessionVersion: { increment: 1 },
+    },
   });
+
+  await logAction(
+    actor.id,
+    "UPDATE_PERMISSION",
+    "User",
+    userId,
+    auditSnapshot(user),
+    auditSnapshot(updatedUser),
+  );
 
   revalidatePath("/general-manager/users");
   revalidatePath("/manager/users");

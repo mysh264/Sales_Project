@@ -40,11 +40,13 @@ async function main() {
 
   // Idempotent sync: keep the admin's password aligned with SEED_ADMIN_PASSWORD on every
   // boot so operators are never locked out after rotating the env secret. Only rewrite the
-  // hash when it actually differs (avoids needless password churn / audit noise).
+  // hash when it actually differs (avoids needless password churn / audit noise). We update
+  // by primary key and never write `email`, so a stray duplicate ADMIN row elsewhere can't
+  // trigger a unique-email constraint violation and crash startup.
   if (existing.passwordHash !== passwordHash) {
     await prisma.user.update({
       where: { id: existing.id },
-      data: { passwordHash, email: adminEmail, isActive: true },
+      data: { passwordHash, isActive: true },
     });
     console.info(JSON.stringify({ event: "bootstrap.admin.password_synced", id: existing.id, email: adminEmail }));
   } else {

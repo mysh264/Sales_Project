@@ -3,6 +3,16 @@ import { cookies } from "next/headers";
 import type { SessionPayload } from "@/lib/auth";
 import { getJwtSecret, sessionCookieName } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { Prisma } from "@/generated/prisma/client";
+
+// Test hook: when a harness sets globalThis.__TEST_USER__ (a full user row),
+// skip the cookie/JWT lookup entirely. Never set in production. The shape
+// matches prisma.user.findFirst({ include: { branch, roleProfile } }).
+type TestUser = Prisma.UserGetPayload<{ include: { branch: true; roleProfile: true } }>;
+declare global {
+  // eslint-disable-next-line no-var
+  var __TEST_USER__: TestUser | null | undefined;
+}
 
 export async function getSessionPayload() {
   const cookieStore = await cookies();
@@ -27,6 +37,11 @@ export async function getSessionPayload() {
 }
 
 export async function getCurrentUser() {
+  // Test hook: when a harness sets globalThis.__TEST_USER__ (a full user row),
+  // skip the cookie/JWT lookup entirely. Never set in production.
+  if (globalThis.__TEST_USER__) {
+    return globalThis.__TEST_USER__;
+  }
   const session = await getSessionPayload();
 
   if (!session) {
