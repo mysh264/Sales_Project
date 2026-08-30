@@ -39,7 +39,7 @@ export function LoginForm() {
       </label>
 
       <label className="block">
-        <span className="ui-label">Recovery Code (if you can't use your authenticator)</span>
+        <span className="ui-label">Recovery Code (if you cannot use your authenticator)</span>
         <input name="recoveryCode" autoComplete="one-time-code" className="ui-input h-14 text-base" />
       </label>
 
