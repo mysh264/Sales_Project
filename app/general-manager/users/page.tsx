@@ -12,6 +12,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { Badge, StatusBadge } from "@/components/ui/Badge";
 import { ButtonLink } from "@/components/ui/Button";
 import RoleBranchEditor from "@/components/BranchSelect";
+import EmployeeEditPanel from "@/components/EmployeeEditPanel";
 
 export const dynamic = "force-dynamic";
 
@@ -212,39 +213,14 @@ export default async function GeneralManagerUsersPage() {
                                   {user.isActive ? "Deactivate" : "Activate"}
                                 </button>
                               </form>
-                              <details className="ui-details">
-                                <summary className="ui-btn ui-btn-ghost ui-btn-sm">Edit</summary>
-                                <div className="mt-2 flex flex-col gap-2 rounded-xl border border-slate-200 bg-slate-50/70 p-3">
-                                  <form action={updateUserRole} className="flex flex-wrap gap-2">
-                                    <input type="hidden" name="userId" value={user.id} />
-                                    <RoleBranchEditor
-                                      nameRole="newRole"
-                                      nameBranch="newBranchId"
-                                      roles={roleOptions}
-                                      branches={branches}
-                                      defaultRole={user.role}
-                                      defaultBranchId={user.branchId}
-                                      compact
-                                    />
-                                    <select name="newRoleId" defaultValue={user.roleId ?? ""} className="ui-input h-9 w-36 px-2 text-xs">
-                                      <option value="">Built-in profile</option>
-                                      {roles.map((role) => (
-                                        <option key={role.id} value={role.id}>
-                                          {role.name}
-                                        </option>
-                                      ))}
-                                    </select>
-                                    <button type="submit" className="ui-btn ui-btn-primary ui-btn-sm">
-                                      Save
-                                    </button>
-                                  </form>
-                                  <form action={resetUserPassword} className="flex gap-2">
-                                    <input type="hidden" name="userId" value={user.id} />
-                                    <input name="newPassword" type="password" required minLength={12} placeholder="New password" className="ui-input h-9 w-36 px-2 text-xs" />
-                                    <button className="ui-btn ui-btn-ghost ui-btn-sm">Reset</button>
-                                  </form>
-                                </div>
-                              </details>
+                            <EmployeeEditPanel
+                              user={user}
+                              roleOptions={roleOptions}
+                              branches={branches}
+                              roles={roles}
+                              updateUserRole={updateUserRole}
+                              resetUserPassword={resetUserPassword}
+                            />
                             </>
                           )}
                         </div>
