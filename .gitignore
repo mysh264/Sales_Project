@@ -18,3 +18,6 @@ storage/
 generated/
 playwright-report/
 test-results/
+
+# local test helpers / minted session tokens (never commit)
+tests/_live/

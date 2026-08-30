@@ -202,6 +202,16 @@ export async function collectDebt(formData: FormData) {
       },
     });
 
+    // Keep the Payment ledger in sync so cash received via debt collection is
+    // reflected in sum(Payment.amount) == invoice.paidAmount invariants/reports.
+    await tx.payment.create({
+      data: {
+        invoiceId: debt.invoiceId,
+        amount,
+        method,
+      },
+    });
+
     const updatedDebt = await tx.customerDebt.update({
       where: { id: debt.id },
       data: {
