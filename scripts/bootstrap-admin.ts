@@ -11,12 +11,6 @@ if (!connectionString) throw new Error("DATABASE_URL is required.");
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString, connectionTimeoutMillis: 5_000 }) });
 
 async function main() {
-  const adminCount = await prisma.user.count({ where: { role: UserRole.ADMIN } });
-  if (adminCount > 0) {
-    console.info(JSON.stringify({ event: "bootstrap.admin.skip", reason: "admin_exists", adminCount }));
-    return;
-  }
-
   const adminEmail = process.env.SEED_ADMIN_EMAIL || "admin@mahmoudbox.com";
   const adminPassword = process.env.SEED_ADMIN_PASSWORD;
   if (!adminPassword || adminPassword.length < 12) {
@@ -25,20 +19,37 @@ async function main() {
     );
   }
 
+  const existing = await prisma.user.findFirst({ where: { role: UserRole.ADMIN } });
   const passwordHash = await bcrypt.hash(adminPassword, 12);
-  const admin = await prisma.user.create({
-    data: {
-      email: adminEmail,
-      fullName: process.env.SEED_ADMIN_NAME || "System Administrator",
-      passwordHash,
-      role: UserRole.ADMIN,
-      isActive: true,
-      hasGlobalAccess: true,
-      allowGlobalSalesView: true,
-    },
-  });
 
-  console.info(JSON.stringify({ event: "bootstrap.admin.created", id: admin.id, email: adminEmail }));
+  if (!existing) {
+    const admin = await prisma.user.create({
+      data: {
+        email: adminEmail,
+        fullName: process.env.SEED_ADMIN_NAME || "System Administrator",
+        passwordHash,
+        role: UserRole.ADMIN,
+        isActive: true,
+        hasGlobalAccess: true,
+        allowGlobalSalesView: true,
+      },
+    });
+    console.info(JSON.stringify({ event: "bootstrap.admin.created", id: admin.id, email: adminEmail }));
+    return;
+  }
+
+  // Idempotent sync: keep the admin's password aligned with SEED_ADMIN_PASSWORD on every
+  // boot so operators are never locked out after rotating the env secret. Only rewrite the
+  // hash when it actually differs (avoids needless password churn / audit noise).
+  if (existing.passwordHash !== passwordHash) {
+    await prisma.user.update({
+      where: { id: existing.id },
+      data: { passwordHash, email: adminEmail, isActive: true },
+    });
+    console.info(JSON.stringify({ event: "bootstrap.admin.password_synced", id: existing.id, email: adminEmail }));
+  } else {
+    console.info(JSON.stringify({ event: "bootstrap.admin.skip", reason: "admin_exists", adminCount: 1 }));
+  }
 }
 
 main()
