@@ -1,6 +1,6 @@
 "use server";
 
-import { Prisma, UserRole } from "@/generated/prisma/client";
+import { UserRole } from "@/generated/prisma/client";
 import bcrypt from "bcryptjs";
 import { revalidatePath } from "next/cache";
 import { logAction, auditSnapshot } from "@/lib/audit";

@@ -10,7 +10,6 @@ import { Prisma } from "@/generated/prisma/client";
 // matches prisma.user.findFirst({ include: { branch, roleProfile } }).
 type TestUser = Prisma.UserGetPayload<{ include: { branch: true; roleProfile: true } }>;
 declare global {
-  // eslint-disable-next-line no-var
   var __TEST_USER__: TestUser | null | undefined;
 }
 

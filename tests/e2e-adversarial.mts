@@ -2,7 +2,6 @@
 // actions against the live DB (auth stubbed via /tmp/stub-loader.mjs). Each scenario
 // asserts the EXPECTED outcome: legitimate actions succeed, forbidden ones are blocked
 // with the right error. Thinks like every user facing real-life edge cases.
-import { Prisma } from "@/generated/prisma/client";
 import { register } from "node:module";
 register("/tmp/stub-loader.mjs", import.meta.url);
 

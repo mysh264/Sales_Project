@@ -1,11 +1,10 @@
 // Deterministic UI route-permission test: exercises the EXACT function the
 // Next.js middleware uses to gate every page (allowedForPath in lib/auth.ts).
 // This is the authoritative UI route-access contract (no flaky browser cookies).
-import { Prisma } from "@/generated/prisma/client";
 import { register } from "node:module";
 register("/tmp/stub-loader.mjs", import.meta.url);
 const { allowedForPath, roleHome, protectedPrefixes } = await import("@/lib/auth");
-const { DEFAULT_ROLE_PERMISSIONS, Permissions } = await import("@/lib/permissions");
+const { DEFAULT_ROLE_PERMISSIONS } = await import("@/lib/permissions");
 
 const ROLES = ["ADMIN", "GENERAL_MANAGER", "MANAGER", "LOADER", "SALESMAN"];
 function perms(role) { return DEFAULT_ROLE_PERMISSIONS[role] ?? []; }
