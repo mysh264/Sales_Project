@@ -61,10 +61,14 @@ for v in sales_project_postgres_data sales_project_uploads_data sales_project_ba
   fi
 done
 
-# 4. Recreate the external docker_shared network under real Docker
+# 4. Recreate the external docker_shared network under real Docker.
+#    It is declared as `external: true` in docker-compose.yml, so just a plain
+#    bridge network with the same name is enough — no compose labels needed.
+#    Docker itself (docker.service + restart: unless-stopped) brings the stack
+#    back after a reboot, so no per-project systemd unit is required.
 log "step 4: recreating docker_shared network on real Docker..."
 docker network rm docker_shared 2>/dev/null || true
-docker network create --driver bridge docker_shared >/dev/null
+docker network create docker_shared >/dev/null
 log "  docker_shared network ready"
 
 # 5. Start ONLY the db service with a fresh empty volume (docker compose will
@@ -134,14 +138,14 @@ echo ""
 log "============================================================"
 log "MIGRATION COMPLETE"
 log "============================================================"
+log "  notes:"
+log "  - docker_shared is declared as 'external: true' in docker-compose.yml."
+log "  - No per-project systemd unit is needed: docker.service starts on boot and"
+log "    the containers use 'restart: unless-stopped', so the stack comes back"
+log "    automatically after a reboot. The named docker_shared network also"
+log "    persists across daemon restarts."
 log "  next steps:"
 log "  1.  verify: curl -fs -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/api/health"
-log "  2.  if web is up, install the systemd units so this survives reboot:"
-log "        sudo cp scripts/systemd/sales-stack.service /etc/systemd/system/"
-log "        sudo cp /home/mahmoud/cloudflared/scripts/systemd/sales-tunnel.service /etc/systemd/system/"
-log "        sudo systemctl daemon-reload"
-log "        sudo systemctl enable --now sales-stack.service"
-log "        sudo systemctl enable --now sales-tunnel.service"
-log "  3.  tear down the old podman containers (they're no longer in use):"
+log "  2.  tear down the old podman containers (they're no longer in use):"
 log "        podman rm sales_postgres sales_nextjs sales_project-backup-1 sales_project-maintenance-1 sales_tunnel sales_pg_tmp 2>/dev/null"
-log "  4.  keep /home/mahmoud/sales-migration/ for 30 days, then delete (it's the safety net)"
+log "  3.  keep /home/mahmoud/sales-migration/ for 30 days, then delete (it's the safety net)"
