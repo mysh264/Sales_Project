@@ -11,6 +11,7 @@ import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/session";
 import { hasPermission, Permissions } from "@/lib/permissions";
 import { isMasterTesterEnabled, listImpersonationTargets, startImpersonation } from "@/app/actions/impersonate";
+import { logout } from "@/app/actions/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -100,8 +101,18 @@ export default async function TesterPage() {
           </div>
         )}
 
-        <footer className="text-center text-xs text-slate-500">
-          <a href="/tester/audit" className="underline">View my impersonation audit log →</a>
+        <footer className="flex justify-center gap-4 text-center text-xs text-slate-500">
+          <a href="/tester/audit" className="underline">
+            View my impersonation audit log →
+          </a>
+          <form action={logout}>
+            <button
+              type="submit"
+              className="rounded bg-slate-950 px-3 py-1.5 text-xs font-black text-white hover:bg-slate-800"
+            >
+              Logout
+            </button>
+          </form>
         </footer>
       </div>
     </main>
