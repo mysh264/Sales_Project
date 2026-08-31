@@ -1,233 +1,95 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Sales & Cylinder Tracking — NIGP Oman</title>
+<meta charset="UTF-8">
+<title>Sales & Cylinder Tracking — Manager Presentation</title>
 <style>
-  /* ------------------------------------------------------------------
-     Global
-     ------------------------------------------------------------------ */
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  html, body { width: 100%; height: 100%; overflow: hidden; background: #0a0e1a; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial, sans-serif; color: #fff; }
-  ::selection { background: #ff7a59; color: #fff; }
-
-  /* ------------------------------------------------------------------
-     Stage + slide frame
-     ------------------------------------------------------------------ */
-  .stage { position: fixed; inset: 0; perspective: 1600px; }
-  .deck { position: absolute; inset: 0; transform-style: preserve-3d; transition: transform 0.85s cubic-bezier(.77,0,.18,1); }
-  .slide {
-    position: absolute; inset: 0;
-    display: flex; flex-direction: column; justify-content: center; align-items: center;
-    padding: 4vh 6vw; text-align: center;
-    backface-visibility: hidden;
-    transform: translate(0, 0) scale(1);
-    transition: opacity 0.45s ease, transform 0.85s cubic-bezier(.77,0,.18,1), filter 0.6s ease;
-    opacity: 0; filter: blur(12px); pointer-events: none;
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+  html,body{width:100%;height:100%;overflow:hidden;background:#0a0e1a;font-family:Arial,Helvetica,sans-serif;color:#fff;-webkit-font-smoothing:antialiased}
+  .stage{position:fixed;inset:0;overflow:hidden}
+  .deck{position:absolute;inset:0}
+  .slide{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:5vh 6vw;text-align:center;opacity:0;transform:translateY(100%);transition:transform .45s ease,opacity .35s ease;pointer-events:none;overflow-y:auto}
+  .slide.active{opacity:1;transform:translateY(0);pointer-events:auto;z-index:5}
+  .slide.up{transform:translateY(-100%)}
+  .slide.down{transform:translateY(100%)}
+  h1{font-size:clamp(2.2rem,5.4vw,4.6rem);font-weight:800;line-height:1.05;margin-bottom:1.2rem;max-width:22ch}
+  h2{font-size:clamp(1.5rem,3vw,2.4rem);font-weight:700;line-height:1.15;margin-bottom:1rem}
+  p{font-size:clamp(0.95rem,1.4vw,1.15rem);line-height:1.55;max-width:60ch;margin:0 auto 1rem}
+  .lead{font-size:clamp(1rem,1.6vw,1.3rem);opacity:.95}
+  .eyebrow{font-size:.75rem;font-weight:700;letter-spacing:.25em;text-transform:uppercase;opacity:.8;margin-bottom:.5rem}
+  .stack{display:flex;flex-direction:column;gap:1.2rem;align-items:center}
+  .row{display:flex;flex-wrap:wrap;gap:.8rem;justify-content:center}
+  .badge{display:inline-block;padding:.35rem .85rem;border-radius:999px;font-size:.75rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.18)}
+  .photo{background:rgba(0,0,0,.18);border-radius:.8rem;overflow:hidden;box-shadow:0 16px 50px -20px rgba(0,0,0,.6);border:1px solid rgba(255,255,255,.06);max-width:100%}
+  .photo img{display:block;width:100%;height:auto}
+  .laptop{width:clamp(420px,58vw,800px)}
+  .phone{width:clamp(180px,22vw,280px);border-radius:1.6rem;border:6px solid #1f2937;box-shadow:0 16px 50px -20px rgba(0,0,0,.6)}
+  .pair{display:flex;gap:1.4rem;align-items:center;flex-wrap:wrap;justify-content:center}
+  .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:.9rem;max-width:52rem;width:100%}
+  .grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:.8rem;max-width:56rem;width:100%}
+  .cell{background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.1);border-radius:.7rem;padding:.9rem 1rem;text-align:center}
+  .cell .k{font-size:.7rem;letter-spacing:.18em;text-transform:uppercase;opacity:.75;margin-bottom:.3rem}
+  .cell .v{font-size:1.5rem;font-weight:800}
+  .big{font-size:clamp(3rem,8vw,6rem);font-weight:900;line-height:.95;letter-spacing:-.03em}
+  .bullets{list-style:none;display:flex;flex-direction:column;gap:.5rem;text-align:left;max-width:42rem;margin:0 auto}
+  .bullets li{display:flex;gap:.55rem;align-items:flex-start;font-size:clamp(.9rem,1.2vw,1.05rem);line-height:1.5}
+  .bullets li::before{content:"→";opacity:.7;flex-shrink:0;margin-top:.1em}
+  .step{display:inline-flex;align-items:center;gap:.45rem;padding:.4rem .75rem;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.1);border-radius:999px;font-size:.85rem;font-weight:600}
+  .step .n{display:inline-grid;place-items:center;width:1.3rem;height:1.3rem;border-radius:50%;background:rgba(255,255,255,.18);font-size:.7rem;font-weight:800}
+  .role-card{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:.7rem;padding:.9rem 1rem;min-width:10rem;text-align:center}
+  .role-card .icon{font-size:1.4rem;margin-bottom:.25rem}
+  .role-card .name{font-weight:800;font-size:.8rem;letter-spacing:.08em;text-transform:uppercase;margin-bottom:.2rem}
+  .role-card .scope{font-size:.75rem;opacity:.75}
+  /* per-slide color themes (solid backgrounds, no fancy effects) */
+  .s1{background:#0b1d3a}
+  .s2{background:#b8441a}
+  .s3{background:#0f766e}
+  .s4{background:#1e1b4b}
+  .s5{background:linear-gradient(135deg,#312e81 0%,#0e7490 100%)}
+  .s6{background:#15803d}
+  .s7{background:#1e3a8a}
+  .s8{background:#9d174d}
+  .s9{background:#5b21b6}
+  .s10{background:#92400e}
+  .s11{background:#047857}
+  .s12{background:#1e293b}
+  .s13{background:#0f172a}
+  .s14{background:#9a3412}
+  .s1 h1,.s1 p,.s1 .eyebrow{color:#fff}
+  .s2 h1,.s2 p,.s2 .eyebrow{color:#fff5e6}
+  .s3 h1,.s3 p,.s3 .eyebrow{color:#ecfdf5}
+  .s4 h1,.s4 p,.s4 .eyebrow{color:#fff}
+  .s5 h1,.s5 p,.s5 .eyebrow{color:#fff}
+  .s6 h1,.s6 p,.s6 .eyebrow{color:#ecfccb}
+  .s7 h1,.s7 p,.s7 .eyebrow{color:#dbeafe}
+  .s8 h1,.s8 p,.s8 .eyebrow{color:#fce7f3}
+  .s9 h1,.s9 p,.s9 .eyebrow{color:#ede9fe}
+  .s10 h1,.s10 p,.s10 .eyebrow{color:#fef3c7}
+  .s11 h1,.s11 p,.s11 .eyebrow{color:#d1fae5}
+  .s12 h1,.s12 p,.s12 .eyebrow{color:#f1f5f9}
+  .s13 h1,.s13 p,.s13 .eyebrow{color:#e2e8f0}
+  .s14 h1,.s14 p,.s14 .eyebrow{color:#fff}
+  /* HUD */
+  .hud{position:fixed;inset:0;pointer-events:none;z-index:50;font-family:Arial,Helvetica,sans-serif}
+  .hud > *{pointer-events:auto}
+  .hud-top{position:absolute;top:0;left:0;right:0;display:flex;justify-content:space-between;align-items:center;padding:.9rem 1.4rem;font-size:.78rem;opacity:.85;color:#fff}
+  .hud-top .brand{font-weight:800;letter-spacing:.18em}
+  .hud-top .counter{font-weight:700;letter-spacing:.1em}
+  .progress{position:fixed;top:0;left:0;height:3px;background:linear-gradient(90deg,#f59e0b,#ec4899,#6366f1);width:0;transition:width .4s ease;z-index:60}
+  .nav{position:fixed;bottom:1.1rem;left:50%;transform:translateX(-50%);display:flex;gap:.35rem;z-index:55;background:rgba(15,23,42,.78);border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:.35rem;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+  .nav button{background:transparent;border:0;color:#cbd5e1;width:2.2rem;height:2.2rem;border-radius:999px;cursor:pointer;font-size:1rem;font-family:inherit}
+  .nav button:hover{background:rgba(255,255,255,.1);color:#fff}
+  .nav button:disabled{opacity:.35;cursor:not-allowed}
+  .dots{position:fixed;right:.8rem;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:.35rem;z-index:55}
+  .dots button{background:rgba(255,255,255,.22);border:0;width:.5rem;height:.5rem;border-radius:50%;cursor:pointer;padding:0}
+  .dots button.active{background:#fff;height:1.4rem;border-radius:.25rem}
+  @media (max-width:780px){
+    .grid3,.grid4{grid-template-columns:repeat(2,1fr)}
+    .pair{flex-direction:column}
+    .phone{width:60vw}
   }
-  .slide.active { opacity: 1; filter: blur(0); pointer-events: auto; transform: translate(0,0) scale(1); }
-  .slide.up { transform: translate(0,-100%) scale(0.92); opacity: 0; }
-  .slide.down { transform: translate(0,100%) scale(0.92); opacity: 0; }
-  .slide.left { transform: translate(-100%,0) scale(0.92); opacity: 0; }
-  .slide.right { transform: translate(100%,0) scale(0.92); opacity: 0; }
-
-  /* ------------------------------------------------------------------
-     Typography
-     ------------------------------------------------------------------ */
-  .eyebrow { font-size: clamp(0.7rem, 1.2vw, 1rem); font-weight: 800; letter-spacing: 0.3em; text-transform: uppercase; opacity: 0.85; }
-  h1 { font-size: clamp(2.4rem, 6vw, 5.2rem); font-weight: 900; line-height: 1.02; letter-spacing: -0.02em; }
-  h2 { font-size: clamp(1.6rem, 3.4vw, 3rem); font-weight: 800; line-height: 1.1; }
-  p, li { font-size: clamp(0.95rem, 1.5vw, 1.25rem); line-height: 1.55; max-width: 60ch; }
-  .lead { font-size: clamp(1rem, 1.7vw, 1.4rem); opacity: 0.92; }
-  .small { font-size: clamp(0.75rem, 1vw, 0.9rem); opacity: 0.7; }
-  .accent { background: linear-gradient(90deg, currentColor, currentColor); -webkit-background-clip: text; background-clip: text; color: transparent; }
-  .stack { display: flex; flex-direction: column; gap: 1.2rem; align-items: center; }
-  .row { display: flex; flex-wrap: wrap; gap: 1.2rem; justify-content: center; align-items: center; }
-  .badge { display: inline-block; padding: 0.4rem 0.9rem; border-radius: 999px; font-weight: 800; font-size: 0.8rem; letter-spacing: 0.08em; text-transform: uppercase; }
-  .chip { display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.45rem 0.85rem; border-radius: 0.6rem; font-weight: 700; font-size: 0.85rem; }
-  .num { font-variant-numeric: tabular-nums; font-feature-settings: "tnum"; }
-
-  /* ------------------------------------------------------------------
-     Photo frames
-     ------------------------------------------------------------------ */
-  .photo {
-    border-radius: 1.1rem; overflow: hidden;
-    box-shadow: 0 30px 80px -20px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.06) inset;
-    transform: rotate(-1.2deg);
-    transition: transform 0.4s ease;
-    background: rgba(0,0,0,0.2);
-  }
-  .photo.right { transform: rotate(1.4deg); }
-  .photo img { display: block; width: 100%; height: 100%; object-fit: cover; }
-  .photo:hover { transform: rotate(0) scale(1.02); }
-  .phone { width: clamp(180px, 22vw, 280px); aspect-ratio: 9 / 19.5; border-radius: 2rem; padding: 0.5rem; background: #111; box-shadow: 0 30px 80px -20px rgba(0,0,0,0.65), 0 0 0 2px #222; }
-  .phone .photo { width: 100%; height: 100%; border-radius: 1.5rem; transform: none; }
-  .phone .photo img { border-radius: 1.5rem; }
-  .laptop { width: clamp(420px, 56vw, 760px); aspect-ratio: 16 / 10; }
-  .laptop .photo { width: 100%; height: 100%; transform: rotate(0); }
-  .hero { width: clamp(360px, 50vw, 720px); aspect-ratio: 16/9; border-radius: 1.1rem; }
-  .hero .photo { width: 100%; height: 100%; transform: none; }
-  .pair { display: flex; gap: 1.4rem; align-items: center; }
-  .pair .laptop { flex: 1 1 auto; }
-  .pair .phone { flex: 0 0 auto; }
-
-  /* ------------------------------------------------------------------
-     Slide-specific color treatments
-     ------------------------------------------------------------------ */
-  /* 1. Title — deep navy with animated starfield */
-  .s1 { background: radial-gradient(120% 80% at 50% 0%, #0b1d3a 0%, #050a17 50%, #02040b 100%); }
-  .s1 h1 { background: linear-gradient(180deg, #ffffff 0%, #b8d4ff 100%); -webkit-background-clip: text; background-clip: text; color: transparent; }
-
-  /* 2. Problem — warm amber/coral */
-  .s2 { background: radial-gradient(120% 80% at 0% 50%, #ff7a59 0%, #c2410c 50%, #431407 100%); }
-  .s2 h1, .s2 h2 { color: #fff5e6; }
-  .s2 p { color: #fff1e3; }
-
-  /* 3. Product — clean teal */
-  .s3 { background: radial-gradient(120% 80% at 100% 50%, #14b8a6 0%, #0f766e 50%, #042f2e 100%); }
-  .s3 h1, .s3 h2 { color: #ecfdf5; }
-  .s3 p { color: #d1fae5; }
-
-  /* 4. Numbers — deep indigo */
-  .s4 { background: radial-gradient(120% 80% at 50% 50%, #4338ca 0%, #1e1b4b 50%, #0a0a1f 100%); }
-  .s4 .stat { background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.1); border-radius: 1rem; padding: 1.4rem 1.8rem; min-width: 9rem; }
-  .s4 .stat .label { font-size: 0.75rem; letter-spacing: 0.2em; text-transform: uppercase; opacity: 0.7; }
-  .s4 .stat .value { font-size: clamp(2.4rem, 5vw, 3.6rem); font-weight: 900; line-height: 1; margin-top: 0.4rem; color: #c7d2fe; }
-
-  /* 5. Roles — indigo→teal */
-  .s5 { background: linear-gradient(135deg, #312e81 0%, #0e7490 100%); }
-  .s5 .role-card { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); border-radius: 1rem; padding: 1.2rem 1.4rem; min-width: 11rem; backdrop-filter: blur(8px); }
-  .s5 .role-card .icon { font-size: 1.6rem; }
-  .s5 .role-card .name { font-weight: 800; font-size: 0.85rem; letter-spacing: 0.1em; text-transform: uppercase; margin-top: 0.5rem; }
-  .s5 .role-card .scope { font-size: 0.8rem; opacity: 0.7; margin-top: 0.3rem; }
-
-  /* 6. Salesman — vivid green */
-  .s6 { background: radial-gradient(110% 80% at 0% 50%, #16a34a 0%, #166534 50%, #052e16 100%); }
-  .s6 h1, .s6 h2 { color: #ecfccb; }
-  .s6 p, .s6 li { color: #dcfce7; }
-
-  /* 7. Loader — steel blue */
-  .s7 { background: radial-gradient(110% 80% at 100% 50%, #2563eb 0%, #1e3a8a 50%, #0c1838 100%); }
-  .s7 h1, .s7 h2 { color: #dbeafe; }
-  .s7 p, .s7 li { color: #bfdbfe; }
-
-  /* 8. Manager — deep magenta */
-  .s8 { background: radial-gradient(110% 80% at 50% 100%, #be185d 0%, #831843 50%, #3b0822 100%); }
-  .s8 h1, .s8 h2 { color: #fce7f3; }
-  .s8 p, .s8 li { color: #fbcfe8; }
-
-  /* 9. Admin — royal purple */
-  .s9 { background: radial-gradient(110% 80% at 0% 0%, #7c3aed 0%, #4c1d95 50%, #1e1147 100%); }
-  .s9 h1, .s9 h2 { color: #ede9fe; }
-  .s9 p, .s9 li { color: #ddd6fe; }
-
-  /* 10. GM — warm gold */
-  .s10 { background: linear-gradient(135deg, #b45309 0%, #78350f 60%, #1c1207 100%); }
-  .s10 h1, .s10 h2 { color: #fef3c7; }
-  .s10 p, .s10 li { color: #fde68a; }
-
-  /* 11. Money — emerald */
-  .s11 { background: radial-gradient(110% 80% at 100% 0%, #059669 0%, #064e3b 50%, #022c22 100%); }
-  .s11 h1, .s11 h2 { color: #d1fae5; }
-  .s11 p, .s11 li { color: #a7f3d0; }
-
-  /* 12. Mobile — slate */
-  .s12 { background: radial-gradient(110% 80% at 50% 50%, #475569 0%, #1e293b 50%, #0f172a 100%); }
-  .s12 h1, .s12 h2 { color: #f1f5f9; }
-  .s12 p, .s12 li { color: #cbd5e1; }
-
-  /* 13. Security — dark steel */
-  .s13 { background: radial-gradient(110% 80% at 0% 100%, #334155 0%, #0f172a 50%, #020617 100%); }
-  .s13 h1, .s13 h2 { color: #e2e8f0; }
-  .s13 p, .s13 li { color: #94a3b8; }
-
-  /* 14. Closing — coral gold */
-  .s14 { background: radial-gradient(120% 80% at 50% 0%, #f59e0b 0%, #c2410c 50%, #431407 100%); }
-  .s14 h1 { background: linear-gradient(180deg, #fff 0%, #fed7aa 100%); -webkit-background-clip: text; background-clip: text; color: transparent; }
-
-  /* ------------------------------------------------------------------
-     HUD (chrome around the deck)
-     ------------------------------------------------------------------ */
-  .hud { position: fixed; inset: 0; pointer-events: none; z-index: 100; }
-  .hud > * { pointer-events: auto; }
-  .hud-top { position: absolute; top: 0; left: 0; right: 0; display: flex; justify-content: space-between; align-items: center; padding: 1.2rem 1.6rem; font-size: 0.8rem; opacity: 0.85; }
-  .hud-top .brand { font-weight: 800; letter-spacing: 0.12em; }
-  .hud-top .counter { font-variant-numeric: tabular-nums; font-weight: 700; letter-spacing: 0.1em; }
-  .progress { position: fixed; top: 0; left: 0; height: 3px; background: linear-gradient(90deg, #f59e0b, #ec4899, #6366f1); width: 0%; transition: width 0.5s ease; z-index: 200; }
-
-  .nav { position: fixed; bottom: 1.2rem; left: 50%; transform: translateX(-50%); display: flex; gap: 0.4rem; z-index: 150; background: rgba(15,23,42,0.7); border: 1px solid rgba(255,255,255,0.1); border-radius: 999px; padding: 0.4rem; backdrop-filter: blur(10px); }
-  .nav button { background: transparent; border: 0; color: #cbd5e1; width: 2.4rem; height: 2.4rem; border-radius: 999px; cursor: pointer; font-size: 1rem; }
-  .nav button:hover { background: rgba(255,255,255,0.08); color: #fff; }
-  .nav button:disabled { opacity: 0.35; cursor: not-allowed; }
-
-  .dots { position: fixed; right: 1rem; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; gap: 0.4rem; z-index: 150; }
-  .dots button { background: rgba(255,255,255,0.18); border: 0; width: 0.55rem; height: 0.55rem; border-radius: 50%; cursor: pointer; transition: all 0.3s ease; }
-  .dots button.active { background: #fff; width: 0.55rem; height: 1.5rem; border-radius: 0.3rem; }
-
-  /* ------------------------------------------------------------------
-     Decorative starfield for s1
-     ------------------------------------------------------------------ */
-  .starfield { position: absolute; inset: 0; overflow: hidden; }
-  .starfield::before, .starfield::after {
-    content: ""; position: absolute; inset: 0;
-    background-image:
-      radial-gradient(2px 2px at 20% 30%, rgba(255,255,255,0.7), transparent),
-      radial-gradient(1px 1px at 60% 70%, rgba(255,255,255,0.6), transparent),
-      radial-gradient(2px 2px at 80% 20%, rgba(255,255,255,0.8), transparent),
-      radial-gradient(1px 1px at 30% 80%, rgba(255,255,255,0.5), transparent),
-      radial-gradient(2px 2px at 90% 60%, rgba(255,255,255,0.7), transparent),
-      radial-gradient(1px 1px at 10% 60%, rgba(255,255,255,0.5), transparent),
-      radial-gradient(1px 1px at 45% 10%, rgba(255,255,255,0.6), transparent),
-      radial-gradient(2px 2px at 70% 90%, rgba(255,255,255,0.5), transparent);
-    background-size: 100% 100%;
-    animation: twinkle 6s ease-in-out infinite alternate;
-  }
-  .starfield::after { animation-delay: -3s; opacity: 0.5; transform: scale(1.2); }
-  @keyframes twinkle { from { opacity: 0.4; } to { opacity: 1; } }
-
-  /* glow */
-  .glow { position: absolute; border-radius: 50%; filter: blur(80px); opacity: 0.5; pointer-events: none; }
-  .glow.a { width: 30vw; height: 30vw; background: #f59e0b; top: 10%; left: -10%; }
-  .glow.b { width: 30vw; height: 30vw; background: #ec4899; bottom: -10%; right: -10%; }
-
-  /* big stat */
-  .bigstat { font-size: clamp(5rem, 14vw, 13rem); font-weight: 900; line-height: 0.9; letter-spacing: -0.04em; }
-  .s1 .glow.a { background: #3b82f6; }
-  .s1 .glow.b { background: #06b6d4; }
-
-  /* number pulse */
-  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.6; } }
-  .pulse { animation: pulse 2s ease-in-out infinite; }
-
-  /* CTA button on closing slide */
-  .cta { display: inline-block; padding: 0.9rem 1.8rem; border-radius: 999px; background: #fff; color: #0f172a; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase; box-shadow: 0 20px 50px -15px rgba(0,0,0,0.5); }
-  .cta:hover { transform: translateY(-2px); }
-
-  /* Process steps */
-  .steps { display: flex; flex-wrap: wrap; gap: 0.8rem; justify-content: center; max-width: 56rem; }
-  .step { display: flex; align-items: center; gap: 0.6rem; padding: 0.6rem 0.9rem; background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.1); border-radius: 999px; font-weight: 700; font-size: 0.9rem; }
-  .step .n { display: inline-grid; place-items: center; width: 1.6rem; height: 1.6rem; border-radius: 50%; background: rgba(255,255,255,0.18); font-size: 0.75rem; font-weight: 900; }
-
-  /* small data table */
-  .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; max-width: 52rem; }
-  .grid4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.8rem; max-width: 56rem; }
-  .cell { background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.1); border-radius: 0.9rem; padding: 1rem; }
-  .cell .k { font-size: 0.7rem; letter-spacing: 0.2em; text-transform: uppercase; opacity: 0.7; }
-  .cell .v { font-size: 1.6rem; font-weight: 800; }
-
-  /* feature bullet list */
-  ul.bullets { list-style: none; display: flex; flex-direction: column; gap: 0.5rem; align-items: flex-start; text-align: left; }
-  ul.bullets li { display: flex; align-items: flex-start; gap: 0.6rem; }
-  ul.bullets li::before { content: "→"; color: currentColor; opacity: 0.7; margin-top: 0.05em; }
-
-  /* responsive */
-  @media (max-width: 800px) {
-    .pair { flex-direction: column; }
-    .grid3, .grid4 { grid-template-columns: repeat(2, 1fr); }
-  }
-  @media (max-width: 540px) {
-    .grid3, .grid4 { grid-template-columns: 1fr; }
+  @media (max-width:480px){
+    .grid3,.grid4{grid-template-columns:1fr}
   }
 </style>
 </head>
@@ -235,332 +97,253 @@
 <div class="progress" id="progress"></div>
 <div class="hud">
   <div class="hud-top">
-    <div class="brand">NIGP · OMAN</div>
+    <div class="brand">NIGP &middot; OMAN</div>
     <div class="counter"><span id="cur">1</span> / <span id="tot">14</span></div>
   </div>
   <div class="dots" id="dots"></div>
-  <div class="nav" id="nav">
-    <button id="prev" title="Previous">‹</button>
-    <button id="next" title="Next">›</button>
+  <div class="nav">
+    <button id="prev" title="Previous">&uarr;</button>
+    <button id="next" title="Next">&darr;</button>
   </div>
 </div>
-
 <div class="stage">
-  <div class="deck" id="deck">
+<div class="deck" id="deck">
 
-    <!-- 1. TITLE -->
-    <section class="slide s1 active" data-idx="0">
-      <div class="starfield"></div>
-      <div class="glow a"></div>
-      <div class="glow b"></div>
-      <div class="stack">
-        <div class="eyebrow">National Industrial Gas Plant · Oman</div>
-        <h1>Sales &amp; Cylinder<br/>Tracking</h1>
-        <p class="lead">Real-time cylinder movements, invoicing and reconciliation for every branch — from the showroom to the route.</p>
-        <div class="row" style="margin-top:1rem;">
-          <span class="badge" style="background:rgba(255,255,255,0.08); color:#b8d4ff;">ERP</span>
-          <span class="badge" style="background:rgba(255,255,255,0.08); color:#b8d4ff;">Mobile-First</span>
-          <span class="badge" style="background:rgba(255,255,255,0.08); color:#b8d4ff;">Multi-Branch</span>
-          <span class="badge" style="background:rgba(255,255,255,0.08); color:#b8d4ff;">Audit-Ready</span>
-        </div>
-        <div class="photo hero" style="margin-top:2rem;"><img src="hero/01_title.png" alt="Oman industrial gas cylinders at sunset"></div>
-      </div>
-    </section>
-
-    <!-- 2. PROBLEM -->
-    <section class="slide s2" data-idx="1">
-      <div class="stack">
-        <div class="eyebrow">The Problem</div>
-        <h1>Gas distribution<br/>is a 24/7 logistics puzzle.</h1>
-        <p class="lead">Hundreds of cylinders. Three branches. One salesman per route. Daily morning loads, evening returns, customer credits, debt collection, and price rules — all on paper, or in five disconnected spreadsheets.</p>
-        <ul class="bullets" style="margin-top:1rem; color:#fff1e3;">
-          <li>Lost cylinders, missed returns, unaccounted empties.</li>
-          <li>Invoice-vs-reconciliation drift at the end of every day.</li>
-          <li>No single audit trail across branches and roles.</li>
-        </ul>
-        <div class="photo hero" style="margin-top:1.6rem;"><img src="hero/04_loader.png" alt="Loader hands off the route at dawn"></div>
-      </div>
-    </section>
-
-    <!-- 3. PRODUCT -->
-    <section class="slide s3" data-idx="2">
-      <div class="stack">
-        <div class="eyebrow">The Product</div>
-        <h1>One system. Every cylinder.<br/>Every branch. Every role.</h1>
-        <p class="lead">A role-aware ERP that follows the cylinder from the warehouse, to the loader, to the salesman, to the customer — and back. Built for Oman. Built for the field.</p>
-        <div class="steps" style="margin-top:1.4rem;">
-          <div class="step"><span class="n">1</span>Morning load</div>
-          <div class="step"><span class="n">2</span>Route sales</div>
-          <div class="step"><span class="n">3</span>Evening return</div>
-          <div class="step"><span class="n">4</span>Reconcile</div>
-          <div class="step"><span class="n">5</span>Collect debt</div>
-        </div>
-        <div class="photo hero" style="margin-top:1.6rem;"><img src="hero/03_salesman.png" alt="Salesman on the route with a tablet"></div>
-      </div>
-    </section>
-
-    <!-- 4. NUMBERS -->
-    <section class="slide s4" data-idx="3">
-      <div class="stack">
-        <div class="eyebrow">Today, live</div>
-        <h1>Three branches. Nine people.<br/>One source of truth.</h1>
-        <div class="grid4" style="margin-top:1.6rem;">
-          <div class="stat"><div class="label">Total Users</div><div class="value num">9</div></div>
-          <div class="stat"><div class="label">Active</div><div class="value num" style="color:#86efac;">9</div></div>
-          <div class="stat"><div class="label">Branches</div><div class="value num">3</div></div>
-          <div class="stat"><div class="label">Invoices</div><div class="value num">1+</div></div>
-        </div>
-        <div class="grid3" style="margin-top:1rem;">
-          <div class="cell"><div class="k">Currency</div><div class="v">OMR · 3 decimals</div></div>
-          <div class="cell"><div class="k">Tax</div><div class="v">Per-branch rate</div></div>
-          <div class="cell"><div class="k">Stack</div><div class="v">Next.js · Prisma · Postgres</div></div>
-        </div>
-      </div>
-    </section>
-
-    <!-- 5. ROLES -->
-    <section class="slide s5" data-idx="4">
-      <div class="stack">
-        <div class="eyebrow">The Team</div>
-        <h1>Five roles, one system.</h1>
-        <p class="lead">Each role gets exactly the right view, with branch-scope that can never be bypassed.</p>
-        <div class="grid4" style="margin-top:1.4rem;">
-          <div class="role-card"><div class="icon">👑</div><div class="name">Admin</div><div class="scope">Global · everything</div></div>
-          <div class="role-card"><div class="icon">🧭</div><div class="name">General Manager</div><div class="scope">Global · governance</div></div>
-          <div class="role-card"><div class="icon">📊</div><div class="name">Manager</div><div class="scope">Branch · close the day</div></div>
-          <div class="role-card"><div class="icon">🚚</div><div class="name">Loader</div><div class="scope">Branch · morning &amp; evening</div></div>
-          <div class="role-card"><div class="icon">🤝</div><div class="name">Salesman</div><div class="scope">Route · sell &amp; collect</div></div>
-        </div>
-        <div class="photo hero" style="margin-top:1.4rem;"><img src="hero/02_roles.png" alt="Five role badges"></div>
-      </div>
-    </section>
-
-    <!-- 6. SALESMAN -->
-    <section class="slide s6" data-idx="5">
-      <div class="stack">
-        <div class="eyebrow">The Salesman</div>
-        <h1>From warehouse to customer<br/>in a single workflow.</h1>
-        <div class="pair" style="margin-top:1.4rem; align-items:center;">
-          <div class="laptop photo"><img src="desktop/31-sales-neworder.png" alt="New order form"></div>
-          <div class="phone"><div class="photo"><img src="mobile/31-sales-neworder.png" alt="New order on mobile"></div></div>
-        </div>
-        <div class="steps" style="margin-top:1.2rem;">
-          <div class="step"><span class="n">1</span>Pick customer</div>
-          <div class="step"><span class="n">2</span>Add lines (full / empty / price)</div>
-          <div class="step"><span class="n">3</span>Take cash, cheque, or transfer</div>
-          <div class="step"><span class="n">4</span>Receipt + history</div>
-        </div>
-      </div>
-    </section>
-
-    <!-- 7. LOADER -->
-    <section class="slide s7" data-idx="6">
-      <div class="stack">
-        <div class="eyebrow">The Loader</div>
-        <h1>One morning hand-off.<br/>One evening reconciliation.</h1>
-        <div class="pair" style="margin-top:1.4rem; align-items:center;">
-          <div class="laptop photo"><img src="desktop/28-loader-home.png" alt="Loader home"></div>
-          <div class="photo" style="width:24rem; aspect-ratio:1.4; transform:rotate(1deg);"><img src="hero/04_loader.png" alt="Loader with forklift"></div>
-        </div>
-        <ul class="bullets" style="margin-top:1.2rem; color:#bfdbfe;">
-          <li>Morning: deduct from branch inventory, lock the route for the day.</li>
-          <li>Evening: enter returns, flag discrepancy, manager approves &amp; restocks.</li>
-          <li>Every movement is a <code>CylinderMovement</code> row — counted, not guessed.</li>
-        </ul>
-      </div>
-    </section>
-
-    <!-- 8. MANAGER -->
-    <section class="slide s8" data-idx="7">
-      <div class="stack">
-        <div class="eyebrow">The Manager</div>
-        <h1>Close the day, not the books.</h1>
-        <div class="pair" style="margin-top:1.4rem; align-items:center;">
-          <div class="laptop photo"><img src="desktop/22-mgr-dashboard.png" alt="Manager dashboard"></div>
-          <div class="phone"><div class="photo"><img src="mobile/22-mgr-dashboard.png" alt="Manager dashboard on mobile"></div></div>
-        </div>
-        <ul class="bullets" style="margin-top:1.2rem; color:#fbcfe8;">
-          <li>Branch-scoped KPIs at a glance.</li>
-          <li>Collect debt, write off, approve discrepancies — all with audit trails.</li>
-          <li>Price rules with closed/open windows, branch by branch.</li>
-        </ul>
-      </div>
-    </section>
-
-    <!-- 9. ADMIN -->
-    <section class="slide s9" data-idx="8">
-      <div class="stack">
-        <div class="eyebrow">The Admin</div>
-        <h1>Full system control.</h1>
-        <div class="laptop photo" style="margin-top:1.4rem;"><img src="desktop/01-admin-home.png" alt="Admin console home"></div>
-        <ul class="bullets" style="margin-top:1.2rem; color:#ddd6fe;">
-          <li>Users, branches, products, roles, cylinders, finance, reconciliation.</li>
-          <li>Create employee requires a branch — no more branchless orphans.</li>
-          <li>Audit logs with diff snapshots, exportable for compliance.</li>
-        </ul>
-      </div>
-    </section>
-
-    <!-- 10. GM -->
-    <section class="slide s10" data-idx="9">
-      <div class="stack">
-        <div class="eyebrow">The General Manager</div>
-        <h1>Govern every branch<br/>without losing the local picture.</h1>
-        <div class="laptop photo" style="margin-top:1.4rem;"><img src="desktop/13-gm-home.png" alt="GM home"></div>
-        <ul class="bullets" style="margin-top:1.2rem; color:#fde68a;">
-          <li>GM users directory mirrors the admin console — same RBAC, same audit.</li>
-          <li>Branches, products, roles, finance, reconciliation across all sites.</li>
-          <li>Tokenized customer statement sharing for finance reviews.</li>
-        </ul>
-      </div>
-    </section>
-
-    <!-- 11. MONEY -->
-    <section class="slide s11" data-idx="10">
-      <div class="stack">
-        <div class="eyebrow">The Money</div>
-        <h1>Counted three ways.<br/>Always reconciled.</h1>
-        <div class="pair" style="margin-top:1.4rem; align-items:center;">
-          <div class="laptop photo"><img src="desktop/10-admin-finance.png" alt="Admin finance"></div>
-          <div class="photo" style="width:24rem; aspect-ratio:1.4; transform:rotate(1deg);"><img src="hero/08_money.png" alt="Money and security"></div>
-        </div>
-        <ul class="bullets" style="margin-top:1.2rem; color:#a7f3d0;">
-          <li>All amounts in <code>Prisma.Decimal(12,3)</code> — 3-decimal OMR (bz).</li>
-          <li>paid + debt == total, enforced at audit boundary.</li>
-          <li>Write-offs are real ledger rows — they reconcile debt without faking cash.</li>
-        </ul>
-      </div>
-    </section>
-
-    <!-- 12. MOBILE -->
-    <section class="slide s12" data-idx="11">
-      <div class="stack">
-        <div class="eyebrow">The Device</div>
-        <h1>Mobile-first.<br/>Desktop-equal.</h1>
-        <div class="row" style="margin-top:1.4rem; gap:2rem; align-items:flex-start;">
-          <div class="phone"><div class="photo"><img src="mobile/00-login.png" alt="Login on mobile"></div></div>
-          <div class="phone"><div class="photo"><img src="mobile/29-sales-home.png" alt="Salesman home on mobile"></div></div>
-          <div class="phone"><div class="photo"><img src="mobile/31-sales-neworder.png" alt="New order on mobile"></div></div>
-        </div>
-        <p class="lead" style="margin-top:1.4rem;">Every screen collapses cleanly to a phone. The 2-panel login folds to one. Tables stack. The 1st &amp; 2nd priority is the field — not the office.</p>
-      </div>
-    </section>
-
-    <!-- 13. SECURITY -->
-    <section class="slide s13" data-idx="12">
-      <div class="stack">
-        <div class="eyebrow">The Trust</div>
-        <h1>Security is not a feature.<br/>It's the foundation.</h1>
-        <div class="pair" style="margin-top:1.4rem; align-items:center;">
-          <div class="photo" style="width:24rem; aspect-ratio:1.4; transform:rotate(-1deg);"><img src="hero/08_money.png" alt="Money &amp; security"></div>
-          <ul class="bullets" style="color:#94a3b8;">
-            <li>JWT in httpOnly cookies, 12-hour expiry, sessionVersion invalidation on every privilege change.</li>
-            <li>MFA (TOTP) with one-time bcrypt-hashed recovery codes &mdash; recoverable from the login form.</li>
-            <li>Route-permission gate tested <strong>385 / 385</strong> across every role and path.</li>
-            <li>Account lockout after 5 failed logins, FAILED_LOGIN audited.</li>
-            <li>Branch-scope: branchless users see nothing. Cross-branch orders are blocked.</li>
-          </ul>
-        </div>
-      </div>
-    </section>
-
-    <!-- 14. CLOSING -->
-    <section class="slide s14" data-idx="13">
-      <div class="glow a" style="background:#fbbf24; left:auto; right:5%; top:5%;"></div>
-      <div class="glow b" style="background:#fb923c; left:5%; bottom:5%;"></div>
-      <div class="stack">
-        <div class="eyebrow">Ready for your managers</div>
-        <h1>Built for the people who run<br/>the cylinders.</h1>
-        <p class="lead" style="max-width:48rem;">Every role, every branch, every movement — captured, reconciled, audited. From the morning load to the last receipt, the system holds the line.</p>
-        <a class="cta" href="https://sales.mahmoudbox.com/login" target="_blank" rel="noreferrer">Open the live app →</a>
-        <div class="photo hero" style="margin-top:1.6rem;"><img src="hero/09_closing.png" alt="Closing image: a single cylinder at sunset"></div>
-        <div class="small" style="margin-top:1.4rem; opacity:0.7;">NIGP · Oman — Sales &amp; Cylinder Tracking — v1.0</div>
-      </div>
-    </section>
-
+<section class="slide s1 active" data-i="0">
+  <div class="eyebrow">National Industrial Gas Plant &middot; Oman</div>
+  <h1>Sales &amp; Cylinder Tracking</h1>
+  <p class="lead">A live, role-aware ERP for the people who run the cylinders every day.</p>
+  <div class="row">
+    <span class="badge">ERP</span><span class="badge">Mobile-First</span><span class="badge">Multi-Branch</span><span class="badge">Audit-Ready</span>
   </div>
+  <div class="photo" style="margin-top:1.6rem;width:min(720px,80vw)"><img src="hero/01_title.png" alt="Oman industrial gas cylinders"></div>
+</section>
+
+<section class="slide s2" data-i="1">
+  <div class="eyebrow">The Problem</div>
+  <h1>Gas distribution is a 24/7 logistics puzzle.</h1>
+  <p class="lead">Hundreds of cylinders. Three branches. One salesman per route. Daily morning loads, evening returns, customer credits, and debt collection &mdash; usually on paper, or in five disconnected spreadsheets.</p>
+  <ul class="bullets">
+    <li>Lost cylinders, missed returns, unaccounted empties.</li>
+    <li>Invoice-vs-reconciliation drift at the end of every day.</li>
+    <li>No single audit trail across branches and roles.</li>
+  </ul>
+  <div class="photo" style="margin-top:1.4rem;width:min(720px,80vw)"><img src="hero/04_loader.png" alt="Loader hands off the route at dawn"></div>
+</section>
+
+<section class="slide s3" data-i="2">
+  <div class="eyebrow">The Product</div>
+  <h1>One system. Every cylinder. Every branch. Every role.</h1>
+  <p class="lead">A role-aware ERP that follows the cylinder from the warehouse, to the loader, to the salesman, to the customer &mdash; and back.</p>
+  <div class="row" style="margin-top:1rem">
+    <div class="step"><span class="n">1</span>Morning load</div>
+    <div class="step"><span class="n">2</span>Route sales</div>
+    <div class="step"><span class="n">3</span>Evening return</div>
+    <div class="step"><span class="n">4</span>Reconcile</div>
+    <div class="step"><span class="n">5</span>Collect debt</div>
+  </div>
+  <div class="photo" style="margin-top:1.4rem;width:min(720px,80vw)"><img src="hero/03_salesman.png" alt="Salesman on the route"></div>
+</section>
+
+<section class="slide s4" data-i="3">
+  <div class="eyebrow">Today, live</div>
+  <h1>Three branches. Nine people. One source of truth.</h1>
+  <div class="grid4" style="margin-top:1.4rem">
+    <div class="cell"><div class="k">Total Users</div><div class="v">9</div></div>
+    <div class="cell"><div class="k">Active</div><div class="v">9</div></div>
+    <div class="cell"><div class="k">Branches</div><div class="v">3</div></div>
+    <div class="cell"><div class="k">Invoices</div><div class="v">1+</div></div>
+  </div>
+  <div class="grid3" style="margin-top:.8rem">
+    <div class="cell"><div class="k">Currency</div><div class="v">OMR</div></div>
+    <div class="cell"><div class="k">Tax</div><div class="v">Per-branch rate</div></div>
+    <div class="cell"><div class="k">Stack</div><div class="v">Next.js &middot; Prisma &middot; Postgres</div></div>
+  </div>
+</section>
+
+<section class="slide s5" data-i="4">
+  <div class="eyebrow">The Team</div>
+  <h1>Five roles, one system.</h1>
+  <p class="lead">Each role gets exactly the right view, with branch-scope that can never be bypassed.</p>
+  <div class="grid4" style="margin-top:1.2rem">
+    <div class="role-card"><div class="icon">&#x1F451;</div><div class="name">Admin</div><div class="scope">Global &middot; everything</div></div>
+    <div class="role-card"><div class="icon">&#x1F9ED;</div><div class="name">General Manager</div><div class="scope">Global &middot; governance</div></div>
+    <div class="role-card"><div class="icon">&#x1F4CA;</div><div class="name">Manager</div><div class="scope">Branch &middot; close the day</div></div>
+    <div class="role-card"><div class="icon">&#x1F69A;</div><div class="name">Loader</div><div class="scope">Branch &middot; morning/evening</div></div>
+    <div class="role-card"><div class="icon">&#x1F91D;</div><div class="name">Salesman</div><div class="scope">Route &middot; sell &amp; collect</div></div>
+  </div>
+  <div class="photo" style="margin-top:1.2rem;width:min(720px,80vw)"><img src="hero/02_roles.png" alt="Five role badges"></div>
+</section>
+
+<section class="slide s6" data-i="5">
+  <div class="eyebrow">The Salesman</div>
+  <h1>From warehouse to customer in a single workflow.</h1>
+  <div class="pair" style="margin-top:1.2rem">
+    <div class="photo laptop"><img src="desktop/31-sales-neworder.png" alt="New order form on desktop"></div>
+    <div class="photo phone"><img src="mobile/31-sales-neworder.png" alt="New order on mobile"></div>
+  </div>
+  <div class="row" style="margin-top:1rem">
+    <div class="step"><span class="n">1</span>Pick customer</div>
+    <div class="step"><span class="n">2</span>Add lines (full / empty / price)</div>
+    <div class="step"><span class="n">3</span>Take cash, cheque, or transfer</div>
+    <div class="step"><span class="n">4</span>Receipt + history</div>
+  </div>
+</section>
+
+<section class="slide s7" data-i="6">
+  <div class="eyebrow">The Loader</div>
+  <h1>One morning hand-off. One evening reconciliation.</h1>
+  <div class="pair" style="margin-top:1.2rem">
+    <div class="photo laptop"><img src="desktop/28-loader-home.png" alt="Loader home on desktop"></div>
+  </div>
+  <ul class="bullets" style="margin-top:1rem">
+    <li>Morning: deduct from branch inventory, lock the route for the day.</li>
+    <li>Evening: enter returns, flag discrepancy, manager approves and restocks.</li>
+    <li>Every movement is a CylinderMovement row &mdash; counted, not guessed.</li>
+  </ul>
+</section>
+
+<section class="slide s8" data-i="7">
+  <div class="eyebrow">The Manager</div>
+  <h1>Close the day, not the books.</h1>
+  <div class="pair" style="margin-top:1.2rem">
+    <div class="photo laptop"><img src="desktop/22-mgr-dashboard.png" alt="Manager dashboard on desktop"></div>
+    <div class="photo phone"><img src="mobile/22-mgr-dashboard.png" alt="Manager dashboard on mobile"></div>
+  </div>
+  <ul class="bullets" style="margin-top:1rem">
+    <li>Branch-scoped KPIs at a glance.</li>
+    <li>Collect debt, write off, approve discrepancies &mdash; all with audit trails.</li>
+    <li>Price rules with closed/open windows, branch by branch.</li>
+  </ul>
+</section>
+
+<section class="slide s9" data-i="8">
+  <div class="eyebrow">The Admin</div>
+  <h1>Full system control.</h1>
+  <div class="photo laptop" style="margin-top:1.2rem"><img src="desktop/01-admin-home.png" alt="Admin console home"></div>
+  <ul class="bullets" style="margin-top:1rem">
+    <li>Users, branches, products, roles, cylinders, finance, reconciliation.</li>
+    <li>Create Employee requires a branch &mdash; no more branchless orphans.</li>
+    <li>Audit logs with diff snapshots, exportable for compliance.</li>
+  </ul>
+</section>
+
+<section class="slide s10" data-i="9">
+  <div class="eyebrow">The General Manager</div>
+  <h1>Govern every branch without losing the local picture.</h1>
+  <div class="photo laptop" style="margin-top:1.2rem"><img src="desktop/13-gm-home.png" alt="GM home"></div>
+  <ul class="bullets" style="margin-top:1rem">
+    <li>GM users directory mirrors the admin console &mdash; same RBAC, same audit.</li>
+    <li>Branches, products, roles, finance, reconciliation across all sites.</li>
+    <li>Tokenized customer statement sharing for finance reviews.</li>
+  </ul>
+</section>
+
+<section class="slide s11" data-i="10">
+  <div class="eyebrow">The Money</div>
+  <h1>Counted three ways. Always reconciled.</h1>
+  <div class="pair" style="margin-top:1.2rem">
+    <div class="photo laptop"><img src="desktop/10-admin-finance.png" alt="Admin finance on desktop"></div>
+  </div>
+  <ul class="bullets" style="margin-top:1rem">
+    <li>All amounts in Prisma.Decimal(12,3) &mdash; 3-decimal OMR (bz).</li>
+    <li>paid + debt == total, enforced at the audit boundary.</li>
+    <li>Write-offs are real ledger rows &mdash; they reconcile debt without faking cash.</li>
+  </ul>
+</section>
+
+<section class="slide s12" data-i="11">
+  <div class="eyebrow">The Device</div>
+  <h1>Mobile-first. Desktop-equal.</h1>
+  <div class="row" style="margin-top:1.2rem;gap:1rem;align-items:flex-start">
+    <div class="photo phone"><img src="mobile/00-login.png" alt="Login on mobile"></div>
+    <div class="photo phone"><img src="mobile/29-sales-home.png" alt="Salesman home on mobile"></div>
+    <div class="photo phone"><img src="mobile/31-sales-neworder.png" alt="New order on mobile"></div>
+  </div>
+  <p class="lead" style="margin-top:1.1rem">Every screen collapses cleanly to a phone. The 2-panel login folds to one. Tables stack. The first priority is the field &mdash; not the office.</p>
+</section>
+
+<section class="slide s13" data-i="12">
+  <div class="eyebrow">The Trust</div>
+  <h1>Security is not a feature. It's the foundation.</h1>
+  <div class="grid3" style="margin-top:1.2rem">
+    <div class="cell"><div class="k">JWT</div><div class="v">httpOnly &middot; 12h</div></div>
+    <div class="cell"><div class="k">MFA</div><div class="v">TOTP + recovery codes</div></div>
+    <div class="cell"><div class="k">Route gate</div><div class="v">385 / 385</div></div>
+    <div class="cell"><div class="k">Lockout</div><div class="v">5 failed logins</div></div>
+    <div class="cell"><div class="k">Branch scope</div><div class="v">cannot be bypassed</div></div>
+    <div class="cell"><div class="k">Adversarial E2E</div><div class="v">20 / 20</div></div>
+  </div>
+</section>
+
+<section class="slide s14" data-i="13">
+  <div class="eyebrow">Summary</div>
+  <h1>Built for the people who run the cylinders.</h1>
+  <p class="lead">Every role, every branch, every movement &mdash; captured, reconciled, audited. From the morning load to the last receipt, the system holds the line.</p>
+  <div class="row" style="margin-top:1rem">
+    <span class="badge">9 users</span>
+    <span class="badge">3 branches</span>
+    <span class="badge">5 roles</span>
+    <span class="badge">385-route gate</span>
+    <span class="badge">44 E2E tests</span>
+  </div>
+  <div class="photo" style="margin-top:1.4rem;width:min(720px,80vw)"><img src="hero/09_closing.png" alt="A single cylinder at sunset"></div>
+  <p class="lead" style="margin-top:1.2rem;opacity:.85">NIGP &middot; Oman &mdash; Sales &amp; Cylinder Tracking &mdash; v1.0</p>
+</section>
+
 </div>
-
+</div>
 <script>
-(function () {
-  const slides = Array.from(document.querySelectorAll('.slide'));
-  const total = slides.length;
-  document.getElementById('tot').textContent = total;
-  let i = 0;
-  const dotsEl = document.getElementById('dots');
-  const progress = document.getElementById('progress');
-  const curEl = document.getElementById('cur');
-  const prevBtn = document.getElementById('prev');
-  const nextBtn = document.getElementById('next');
-
-  // Build dots
-  for (let k = 0; k < total; k++) {
-    const b = document.createElement('button');
-    b.setAttribute('aria-label', 'Go to slide ' + (k + 1));
-    b.addEventListener('click', () => go(k));
-    dotsEl.appendChild(b);
-  }
-  const dots = Array.from(dotsEl.children);
-
-  function setActive(target) {
-    slides.forEach((s, idx) => {
-      s.classList.remove('active', 'up', 'down', 'left', 'right');
-      if (idx === target) {
-        s.classList.add('active');
-      } else {
-        // direction
-        if (idx < target) s.classList.add('up');
-        else s.classList.add('down');
-      }
+(function(){
+  var slides=Array.prototype.slice.call(document.querySelectorAll('.slide'));
+  var total=slides.length;
+  document.getElementById('tot').textContent=total;
+  var i=0;
+  var dotsEl=document.getElementById('dots');
+  var progress=document.getElementById('progress');
+  var curEl=document.getElementById('cur');
+  var prevBtn=document.getElementById('prev');
+  var nextBtn=document.getElementById('next');
+  for(var k=0;k<total;k++){var b=document.createElement('button');b.setAttribute('aria-label','Slide '+(k+1));b.addEventListener('click',(function(x){return function(){go(x)};})(k));dotsEl.appendChild(b)}
+  var dots=Array.prototype.slice.call(dotsEl.children);
+  function setActive(target){
+    slides.forEach(function(s,idx){
+      s.classList.remove('active','up','down');
+      if(idx===target){s.classList.add('active')}
+      else if(idx<target){s.classList.add('up')}
+      else{s.classList.add('down')}
     });
-    dots.forEach((d, idx) => d.classList.toggle('active', idx === target));
-    curEl.textContent = target + 1;
-    progress.style.width = (((target + 1) / total) * 100).toFixed(1) + '%';
-    prevBtn.disabled = target === 0;
-    nextBtn.disabled = target === total - 1;
-    i = target;
+    dots.forEach(function(d,idx){d.classList.toggle('active',idx===target)});
+    curEl.textContent=target+1;
+    progress.style.width=((target+1)/total*100).toFixed(1)+'%';
+    prevBtn.disabled=target===0;
+    nextBtn.disabled=target===total-1;
+    i=target;
   }
-
-  function go(target) {
-    if (target < 0) target = 0;
-    if (target >= total) target = total - 1;
-    if (target === i) return;
-    setActive(target);
-  }
-
-  function next() { go(i + 1); }
-  function prev() { go(i - 1); }
-
-  prevBtn.addEventListener('click', prev);
-  nextBtn.addEventListener('click', next);
-
-  // Keyboard
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === ' ') { e.preventDefault(); next(); }
-    else if (e.key === 'ArrowLeft' || e.key === 'PageUp') { e.preventDefault(); prev(); }
-    else if (e.key === 'Home') { e.preventDefault(); go(0); }
-    else if (e.key === 'End') { e.preventDefault(); go(total - 1); }
+  function go(target){if(target<0)target=0;if(target>=total)target=total-1;if(target===i)return;setActive(target)}
+  function next(){go(i+1)}
+  function prev(){go(i-1)}
+  prevBtn.addEventListener('click',prev);
+  nextBtn.addEventListener('click',next);
+  document.addEventListener('keydown',function(e){
+    if(e.key==='ArrowDown'||e.key==='PageDown'||e.key===' '){e.preventDefault();next()}
+    else if(e.key==='ArrowUp'||e.key==='PageUp'){e.preventDefault();prev()}
+    else if(e.key==='Home'){e.preventDefault();go(0)}
+    else if(e.key==='End'){e.preventDefault();go(total-1)}
   });
-
-  // Click on right half = next, left half = prev
-  document.addEventListener('click', (e) => {
-    if (e.target.closest('button, a, .nav, .dots, .photo img, input, select, textarea')) return;
-    const x = e.clientX, w = window.innerWidth;
-    if (x > w * 0.7) next();
-    else if (x < w * 0.3) prev();
+  document.addEventListener('click',function(e){
+    if(e.target.closest('button,a,.nav,.dots,img,input,select,textarea'))return;
+    var x=e.clientX,w=window.innerWidth;
+    if(x>w*0.7)next();else if(x<w*0.3)prev();
   });
-
-  // Touch swipe
-  let sx = null;
-  document.addEventListener('touchstart', e => { sx = e.touches[0].clientX; }, {passive:true});
-  document.addEventListener('touchend', e => {
-    if (sx == null) return;
-    const dx = e.changedTouches[0].clientX - sx;
-    if (dx < -50) next();
-    else if (dx > 50) prev();
-    sx = null;
+  var sx=null;
+  document.addEventListener('touchstart',function(e){sx=e.touches[0].clientX},{passive:true});
+  document.addEventListener('touchend',function(e){
+    if(sx==null)return;
+    var dx=e.changedTouches[0].clientX-sx;
+    if(dx<-50)next();else if(dx>50)prev();
+    sx=null;
   });
-
   setActive(0);
 })();
 </script>
