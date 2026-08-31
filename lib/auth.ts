@@ -8,6 +8,11 @@ export type SessionPayload = {
   role: UserRole;
   permissions: Permission[];
   sessionVersion: number;
+  // Set when this session was issued by the master tester via impersonation.
+  // The id is the tester account that started the impersonation. The banner
+  // uses it to show "Original session: tester@…", and the audit log uses it
+  // to attribute every action taken while impersonating back to the tester.
+  impersonatorId?: string;
 };
 
 export const roleHome: Record<UserRole, string> = {
@@ -16,6 +21,7 @@ export const roleHome: Record<UserRole, string> = {
   MANAGER: "/manager",
   LOADER: "/loader",
   SALESMAN: "/salesman",
+  TESTER: "/tester",
 };
 
 export const routePermissionMap: Array<{ prefix: string; permissions: Permission[] }> = [
@@ -52,6 +58,11 @@ export const routePermissionMap: Array<{ prefix: string; permissions: Permission
   { prefix: "/admin/audit-logs", permissions: [Permissions.Audit_Read] },
   { prefix: "/admin", permissions: [Permissions.Users_Read] },
   { prefix: "/print", permissions: [Permissions.Sales_Read] },
+  // Master tester launchpad. Only holders of Testers_Impersonate can enter
+  // (i.e. the seeded master-tester account). Impersonation targets are
+  // listed inside the page; the impersonation server action reissues the
+  // session cookie as the target user.
+  { prefix: "/tester", permissions: [Permissions.Testers_Impersonate] },
 ];
 
 export function getJwtSecret() {

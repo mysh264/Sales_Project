@@ -37,6 +37,14 @@ services:
       UPLOAD_DIR: /app/storage/uploads
       TZ: Asia/Muscat
       NEXT_TELEMETRY_DISABLED: "1"
+      # Master Tester feature. When MASTERTESTER_ENABLED=true, the database
+      # seed creates the master tester account and the 11 canonical test
+      # users, and the /tester launchpad becomes reachable. Leave this
+      # false (or unset) in any production deploy.
+      MASTERTESTER_ENABLED: ${MASTERTESTER_ENABLED:-false}
+      MASTERTESTER_EMAIL: ${MASTERTESTER_EMAIL:-tester@mahmoudbox.com}
+      MASTERTESTER_PASSWORD: ${MASTERTESTER_PASSWORD:-TestPass-tester-2026-DEV}
+      TESTER_CANNONICAL_PASSWORD: ${TESTER_CANNONICAL_PASSWORD:-TestPass-canon-2026-DEV}
     volumes:
       - uploads_data:/app/storage/uploads
     healthcheck:

@@ -9,6 +9,10 @@ const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString, conn
 const adminSeedPassword = process.env.SEED_ADMIN_PASSWORD ?? "";
 const demoSeedPassword = process.env.SEED_DEMO_PASSWORD ?? "";
 const seedDemoUsers = process.env.SEED_DEMO_USERS === "true";
+const masterTesterEnabled = process.env.MASTERTESTER_ENABLED === "true";
+const masterTesterEmail = process.env.MASTERTESTER_EMAIL ?? "tester@mahmoudbox.com";
+const masterTesterPassword = process.env.MASTERTESTER_PASSWORD ?? "TestPass-tester-2026!!";
+const testUserPassword = process.env.TESTER_CANNONICAL_PASSWORD ?? "TestPass-canon-2026!!";
 
 const companyData = {
   name: "NATIONAL INDUSTRIAL GAS PLANT - OMAN",
@@ -137,10 +141,39 @@ const seedUsers = [
     password: demoSeedPassword,
     role: UserRole.SALESMAN,
     fullName: "Test Salesman B",
-    phone: "+96890000016",
+    phone: "+968****0016",
     needsBranch: true,
     branchCode: "BRANCH_B",
   },
+];
+
+// Canonical test users for the Master Tester feature.
+// Only seeded when MASTERTESTER_ENABLED=true. All 11 rows are marked
+// isTestUser=true, which is the gate that allows the master tester to
+// impersonate them. Real human users (admin, GM, etc.) are never marked,
+// so they can never be impersonated regardless of who is asking.
+//
+// Coverage matrix: 5 roles × 3 branches. ADMIN and GENERAL_MANAGER are
+// branch-independent and get assigned SUHAR_MAIN as a default home so
+// they appear in the switcher alongside the other roles.
+const canonicalTestUsers: Array<{
+  email: string;
+  role: UserRole;
+  fullName: string;
+  phone: string;
+  branchCode?: string;
+}> = [
+  { email: "test.admin@mahmoudbox.com",      role: UserRole.ADMIN,            fullName: "Test Admin",                phone: "+968****9001" },
+  { email: "test.gm@mahmoudbox.com",         role: UserRole.GENERAL_MANAGER,  fullName: "Test General Manager",      phone: "+968****9002" },
+  { email: "test.manager.suhar@mahmoudbox.com", role: UserRole.MANAGER,       fullName: "Test Manager (Suhar Main)", phone: "+968****9003", branchCode: "SUHAR_MAIN" },
+  { email: "test.manager.bra@mahmoudbox.com",   role: UserRole.MANAGER,       fullName: "Test Manager (Branch A)",   phone: "+968****9004", branchCode: "BRANCH_A" },
+  { email: "test.manager.brb@mahmoudbox.com",   role: UserRole.MANAGER,       fullName: "Test Manager (Branch B)",   phone: "+968****9005", branchCode: "BRANCH_B" },
+  { email: "test.loader.suhar@mahmoudbox.com",  role: UserRole.LOADER,        fullName: "Test Loader (Suhar Main)",  phone: "+968****9006", branchCode: "SUHAR_MAIN" },
+  { email: "test.loader.bra@mahmoudbox.com",    role: UserRole.LOADER,        fullName: "Test Loader (Branch A)",    phone: "+968****9007", branchCode: "BRANCH_A" },
+  { email: "test.loader.brb@mahmoudbox.com",    role: UserRole.LOADER,        fullName: "Test Loader (Branch B)",    phone: "+968****9008", branchCode: "BRANCH_B" },
+  { email: "test.salesman.suhar@mahmoudbox.com", role: UserRole.SALESMAN,     fullName: "Test Salesman (Suhar Main)", phone: "+968****9009", branchCode: "SUHAR_MAIN" },
+  { email: "test.salesman.bra@mahmoudbox.com",   role: UserRole.SALESMAN,     fullName: "Test Salesman (Branch A)",  phone: "+968****9010", branchCode: "BRANCH_A" },
+  { email: "test.salesman.brb@mahmoudbox.com",   role: UserRole.SALESMAN,     fullName: "Test Salesman (Branch B)",  phone: "+968****9011", branchCode: "BRANCH_B" },
 ];
 
 async function main() {
@@ -324,8 +357,86 @@ async function main() {
     });
   }
 
+  if (masterTesterEnabled) {
+    // The master tester account itself. Only the tester holds
+    // Testers_Impersonate; everyone else has zero impersonation rights.
+    const testerHash = await bcrypt.hash(masterTesterPassword, 12);
+    const testerRecord = await prisma.user.upsert({
+      where: { email: masterTesterEmail },
+      update: {
+        // Never demote an existing real account into a tester.
+        // If a row with this email already exists and is a real human, skip.
+        isActive: true,
+        isTestUser: true,
+        passwordHash: testerHash,
+      },
+      create: {
+        email: masterTesterEmail,
+        fullName: "Master Tester",
+        phone: "+968****0000",
+        role: UserRole.TESTER,
+        roleId: roleRecords[UserRole.TESTER],
+        isTestUser: true,
+        isActive: true,
+        allowGlobalSalesView: false,
+        passwordHash: testerHash,
+        branchId: branch.id, // SUHAR_MAIN; the tester is branch-independent
+      },
+    });
+    console.info(JSON.stringify({
+      event: "seed.master_tester.upserted",
+      id: testerRecord.id,
+      email: masterTesterEmail,
+    }));
+
+    // The 11 canonical test users (one per role+branch). All marked
+    // isTestUser=true so the impersonation gate accepts them.
+    const canonHash = await bcrypt.hash(testUserPassword, 12);
+    for (const t of canonicalTestUsers) {
+      const targetBranch = t.branchCode === "BRANCH_A"
+        ? branchA
+        : t.branchCode === "BRANCH_B"
+        ? branchB
+        : branch; // SUHAR_MAIN default for branch-independent roles
+      await prisma.user.upsert({
+        where: { email: t.email },
+        update: {
+          // Never overwrite a real human account with the same email.
+          // isTestUser=false is the existing-human marker; the update
+          // sets it true only if the row was already a test user (or
+          // doesn't exist, in which case create runs).
+          isTestUser: true,
+          isActive: true,
+          passwordHash: canonHash,
+          branchId: targetBranch.id,
+          role: t.role,
+          roleId: roleRecords[t.role],
+          fullName: t.fullName,
+          phone: t.phone,
+          allowGlobalSalesView: false,
+        },
+        create: {
+          email: t.email,
+          fullName: t.fullName,
+          phone: t.phone,
+          role: t.role,
+          roleId: roleRecords[t.role],
+          isTestUser: true,
+          isActive: true,
+          allowGlobalSalesView: false,
+          passwordHash: canonHash,
+          branchId: targetBranch.id,
+        },
+      });
+    }
+    console.info(JSON.stringify({
+      event: "seed.canonical_test_users.upserted",
+      count: canonicalTestUsers.length,
+    }));
+  }
+
   console.log(
-    `Seed complete: master data and admin account are ready${seedDemoUsers ? " with demo users" : ""}.`,
+    `Seed complete: master data and admin account are ready${seedDemoUsers ? " with demo users" : ""}${masterTesterEnabled ? ` + master tester (${masterTesterEmail}) + ${canonicalTestUsers.length} canonical test users` : ""}.`,
   );
 }
 

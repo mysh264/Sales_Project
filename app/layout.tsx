@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import "./globals-print.css";
+import { ImpersonationBanner } from "@/components/ImpersonationBanner";
 
 export const metadata: Metadata = {
   title: "Sales & Cylinder Tracking",
@@ -17,7 +18,10 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en-OM">
-      <body>{children}</body>
+      <body>
+        <ImpersonationBanner />
+        {children}
+      </body>
     </html>
   );
 }

@@ -102,7 +102,7 @@ test("unmapped role-prefixed routes are denied by default", () => {
 
 test("every page.tsx under a protected area is covered by the route/permission map", () => {
   const appDir = path.resolve(process.cwd(), "app");
-  const protectedAreaRoots = ["admin", "admin-console", "salesman", "loader", "logistics", "manager", "finance", "general-manager", "print", "profile"];
+  const protectedAreaRoots = ["admin", "admin-console", "salesman", "loader", "logistics", "manager", "finance", "general-manager", "print", "profile", "tester"];
 
   const routePaths: string[] = [];
   for (const entry of readdirSync(appDir, { withFileTypes: true })) {

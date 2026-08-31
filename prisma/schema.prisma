@@ -13,6 +13,7 @@ enum UserRole {
   MANAGER
   LOADER
   SALESMAN
+  TESTER
 }
 
 enum BranchType {
@@ -115,6 +116,11 @@ model User {
   mfaSecret             String?
   mfaEnabled            Boolean            @default(false)
   mfaRecoveryCodes      String?            // JSON array of bcrypt hashes of one-time recovery codes
+  // Marked true only for the master tester account and the canonical test users
+  // it can impersonate. The impersonation server action refuses any target
+  // where isTestUser=false. The column is additive (defaults to false), so
+  // existing human users are unaffected and never impersonable.
+  isTestUser            Boolean            @default(false)
   branch                Branch?            @relation(fields: [branchId], references: [id])
   roleProfile           Role?              @relation(fields: [roleId], references: [id])
   salesInvoices         Invoice[]          @relation("SalesmanInvoices")
@@ -130,6 +136,7 @@ model User {
   @@index([branchId])
   @@index([roleId])
   @@index([role])
+  @@index([isTestUser])
 }
 
 model Role {

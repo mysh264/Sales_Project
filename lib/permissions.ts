@@ -10,9 +10,20 @@ export const SYSTEM_RESOURCES = [
   "Roles",
   "Branches",
   "Audit",
+  "Testers",
 ] as const;
 
-export const SYSTEM_ACTIONS = ["Create", "Read", "Update", "Delete"] as const;
+export const SYSTEM_ACTIONS = [
+  "Create",
+  "Read",
+  "Update",
+  "Delete",
+  // Impersonate is a real action verb distinct from CRUD: it lets a holder
+  // become another user in the system. Only Testers_Impersonate is granted
+  // (to the master tester role); the per-resource Impersonate strings exist
+  // for type-system honesty but are never granted to any role.
+  "Impersonate",
+] as const;
 
 export type SystemResource = (typeof SYSTEM_RESOURCES)[number];
 export type SystemAction = (typeof SYSTEM_ACTIONS)[number];
@@ -87,7 +98,14 @@ export const permissionLabels: Record<Permission, string> = Object.fromEntries(
 ) as Record<Permission, string>;
 
 export const DEFAULT_ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
-  ADMIN: assignablePermissions.slice(),
+  // ADMIN gets every assignable permission EXCEPT Testers_Impersonate. The
+  // master-tester impersonation capability is a separate trust boundary:
+  // even an admin who is fully compromised must not be able to become
+  // another user without an explicit, separately-accounted-for TESTER
+  // account. Keeping the TESTER role as the only holder of the permission
+  // means the audit log always shows a distinct human owning the
+  // impersonation actions, instead of blurring them with routine admin work.
+  ADMIN: assignablePermissions.filter((p) => p !== Permissions.Testers_Impersonate),
   GENERAL_MANAGER: normalizePermissions([
     "Sales_Create",
     "Sales_Read",
@@ -130,6 +148,13 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     "Logistics_Update",
   ]),
   SALESMAN: normalizePermissions(["Sales_Create", "Sales_Read", "Products_Read"]),
+  // The master tester is NOT a normal role: it only holds the
+  // Testers_Impersonate permission. Everything else is denied, so the tester
+  // cannot accidentally perform real actions — the only thing the tester
+  // account can do is open /tester and switch into a canonical test user.
+  // The session payload's `impersonatorId` then carries the tester's id
+  // forward so the impersonation banner + audit log always know the origin.
+  TESTER: normalizePermissions(["Testers_Impersonate"]),
 };
 
 type PermissionSource = {

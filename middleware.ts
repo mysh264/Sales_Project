@@ -78,5 +78,8 @@ export const config = {
     "/general-manager/:path*",
     "/print/:path*",
     "/profile/:path*",
+    // Master tester launchpad. Gated by Testers_Impersonate in routePermissionMap.
+    "/tester",
+    "/tester/:path*",
   ],
 };
