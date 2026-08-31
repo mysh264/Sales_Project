@@ -1,0 +1,44 @@
+[Unit]
+Description=Sales & Cylinder Tracking (NIGP Oman) — Docker Compose stack
+Documentation=https://sales.mahmoudbox.com
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/home/mahmoud/Sales_Project
+Environment=COMPOSE_PROJECT_NAME=sales_project
+# Load secrets from .env so prisma, JWT, etc. work. Docker Compose auto-reads .env
+# in the project directory, but we export it explicitly for the wrapper scripts.
+EnvironmentFile=-/home/mahmoud/Sales_Project/.env
+User=mahmoud
+Group=mahmoud
+# Bring the stack up. --remove-orphans cleans any stale service from prior runs.
+# --wait waits for healthy state, so this unit only reports "started" when the
+# web service is actually accepting traffic.
+ExecStart=/usr/bin/docker compose --project-name sales_project up -d --remove-orphans --wait
+# Graceful shutdown (inactive timeout: SIGTERM, then SIGKILL after 60s).
+ExecStop=/usr/bin/docker compose --project-name sales_project down --remove-orphans --timeout 60
+ExecReload=/usr/bin/docker compose --project-name sales_project up -d --remove-orphans
+# If docker compose itself fails, the unit should fail (so we see it in journalctl).
+SuccessExitCode=0
+Restart=no
+# Hardening
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=true
+# We still need to write to specific paths: the named volumes are managed by
+# docker, but we need to read .env and the compose file. Read-only home is fine
+# because docker compose reads the files itself, not us.
+# Writable: /var/lib/docker/volumes (managed by dockerd, not by us)
+ReadWritePaths=/var/lib/docker/volumes /var/run/docker.sock
+# Give it time to start up (migrations, bootstrap, etc.)
+TimeoutStartSec=300
+# If a container crashes, docker compose will restart it (restart: unless-stopped
+# in compose.yml). We don't need systemd to restart the unit.
+
+[Install]
+WantedBy=multi-user.target
