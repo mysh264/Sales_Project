@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "prebuild": "sh scripts/sync-presentation.sh",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",

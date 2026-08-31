@@ -5,6 +5,12 @@ dist
 out
 .DS_Store
 
+# Build artifact: presentation deck mirrored from present/ by
+# scripts/sync-presentation.sh (npm run prebuild). The canonical source
+# is present/ at the repo root; this directory is regenerated on every
+# build and should not be committed.
+public/presentation/
+
 .env*.local
 
 *.log
