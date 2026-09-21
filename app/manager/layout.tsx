@@ -1,20 +1,26 @@
 import { TopNav } from "@/components/ui/TopNav";
+import { LocaleToggle, readLocale, t } from "@/components/LocaleToggle";
 
-export default function ManagerLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+export default async function ManagerLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+  const locale = await readLocale();
   return (
     <>
       <TopNav
-        brand="Manager"
+        brand={t(locale, "brandManager")}
         homeHref="/manager"
+        menuLabel={t(locale, "menu")}
+        closeLabel={t(locale, "close")}
+        logoutLabel={t(locale, "logout")}
         items={[
-          { href: "/manager/dashboard", label: "Finance & Debts" },
-          { href: "/manager/all-sales", label: "Sales" },
-          { href: "/manager/reconciliation", label: "Reconciliation" },
-          { href: "/manager/inventory", label: "Inventory" },
-          { href: "/manager/settings", label: "Pricing" },
-          { href: "/manager/users", label: "Team" },
-          { href: "/profile/security", label: "Security" },
+          { href: "/manager/dashboard", label: t(locale, "financeDebts") },
+          { href: "/manager/all-sales", label: t(locale, "sales") },
+          { href: "/manager/reconciliation", label: t(locale, "reconciliation") },
+          { href: "/manager/inventory", label: t(locale, "inventory") },
+          { href: "/manager/settings", label: t(locale, "pricing") },
+          { href: "/manager/users", label: t(locale, "team") },
+          { href: "/profile/security", label: t(locale, "security") },
         ]}
+        extra={<LocaleToggle nextPath="/manager" />}
       />
       {children}
     </>

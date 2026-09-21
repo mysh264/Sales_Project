@@ -124,7 +124,7 @@ export default async function AuditLogsPage({ searchParams }: AuditLogsPageProps
   const safePage = Math.min(page, totalPages);
   const logs = await prisma.auditLog.findMany({
     where,
-    include: { user: true },
+    include: { user: true, effectiveUser: true },
     orderBy: [{ timestamp: "desc" }],
     skip: (safePage - 1) * pageSize,
     take: pageSize,
@@ -132,7 +132,15 @@ export default async function AuditLogsPage({ searchParams }: AuditLogsPageProps
   const pageStart = totalCount === 0 ? 0 : (safePage - 1) * pageSize + 1;
   const pageEnd = Math.min((safePage - 1) * pageSize + logs.length, totalCount);
 
-  const exportQuery = buildQueryString({ startDate: resolvedSearchParams.startDate, endDate: resolvedSearchParams.endDate, userId, action: selectedGroup.actions[0], targetId });
+  const exportQuery = buildQueryString({
+    startDate: resolvedSearchParams.startDate,
+    endDate: resolvedSearchParams.endDate,
+    userId,
+    actionGroup,
+    targetId,
+  });
+  const auditBase = isGM ? "/general-manager/audit-logs" : "/admin/audit-logs";
+  const homeHref = isGM ? "/general-manager" : "/admin-console";
 
   return (
     <main className="min-h-screen bg-app-bg p-4 md:p-8">
@@ -140,14 +148,14 @@ export default async function AuditLogsPage({ searchParams }: AuditLogsPageProps
         <PageHeader
           eyebrow="Security / Audit"
           title="Audit Log Inspection"
-          description={scopeNote}
+          description={`${scopeNote} CSV export is capped at 5,000 rows; narrow filters if the export truncates.`}
           actions={
             <>
-              <ButtonLink href={`/admin/audit-logs/export${exportQuery}`} variant="primary">
+              <ButtonLink href={`${auditBase}/export${exportQuery}`} variant="primary">
                 Export CSV
               </ButtonLink>
-              <ButtonLink href="/admin-console" variant="ghost">
-                Back to Admin
+              <ButtonLink href={homeHref} variant="ghost">
+                Back
               </ButtonLink>
             </>
           }
@@ -213,7 +221,7 @@ export default async function AuditLogsPage({ searchParams }: AuditLogsPageProps
                 <button type="submit" className="ui-btn ui-btn-primary flex-1">
                   Apply
                 </button>
-                <Link href="/admin/audit-logs" className="ui-btn ui-btn-ghost">
+                <Link href={auditBase} className="ui-btn ui-btn-ghost">
                   Reset
                 </Link>
               </div>
@@ -232,7 +240,7 @@ export default async function AuditLogsPage({ searchParams }: AuditLogsPageProps
                 <div className="flex items-center gap-2 text-sm font-black">
                   <span className="rounded bg-slate-100 px-3 py-2 text-slate-700">Page {safePage} of {totalPages}</span>
                   <Link
-                    href={`/admin/audit-logs${buildQueryString({
+                    href={`${auditBase}${buildQueryString({
                       page: Math.max(safePage - 1, 1),
                       pageSize,
                       startDate: resolvedSearchParams.startDate,
@@ -246,7 +254,7 @@ export default async function AuditLogsPage({ searchParams }: AuditLogsPageProps
                     Prev
                   </Link>
                   <Link
-                    href={`/admin/audit-logs${buildQueryString({
+                    href={`${auditBase}${buildQueryString({
                       page: Math.min(safePage + 1, totalPages),
                       pageSize,
                       startDate: resolvedSearchParams.startDate,
@@ -273,6 +281,9 @@ export default async function AuditLogsPage({ searchParams }: AuditLogsPageProps
                 oldValue: log.oldValue,
                 newValue: log.newValue,
                 user: { fullName: log.user.fullName, role: log.user.role },
+                effectiveUser: log.effectiveUser
+                  ? { fullName: log.effectiveUser.fullName, role: log.effectiveUser.role }
+                  : null,
               }))}
             />
           </section>

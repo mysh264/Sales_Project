@@ -52,23 +52,14 @@ export default async function ReceiptPage({ params }: ReceiptPageProps) {
     <main className="min-h-screen bg-white text-black print:min-h-0">
       <ClearNewInvoiceStorage />
       <div className="mx-auto w-full max-w-md bg-white p-4 print:hidden">
-        <Link
-          href="/salesman"
-          className="flex min-h-20 items-center justify-center rounded-lg bg-green-700 px-5 text-center text-2xl font-black text-white shadow-lg"
-        >
+        <Link href="/salesman" className="ui-btn ui-btn-success ui-btn-lg min-h-16 w-full text-lg">
           Done / Back to Dashboard
         </Link>
         <div className="mt-3 grid grid-cols-1 gap-3">
-          <Link
-            href={`/print/${invoice.id}?size=mobile`}
-            className="flex min-h-16 items-center justify-center rounded-lg bg-slate-950 px-5 text-center text-xl font-black text-white shadow-lg"
-          >
+          <Link href={`/print/${invoice.id}?size=mobile`} className="ui-btn ui-btn-primary ui-btn-lg min-h-14 w-full">
             Print Small Receipt
           </Link>
-          <Link
-            href={`/print/${invoice.id}?size=a4`}
-            className="flex min-h-16 items-center justify-center rounded-lg bg-blue-700 px-5 text-center text-xl font-black text-white shadow-lg"
-          >
+          <Link href={`/print/${invoice.id}?size=a4`} className="ui-btn ui-btn-secondary ui-btn-lg min-h-14 w-full">
             Print Full Invoice
           </Link>
         </div>

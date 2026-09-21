@@ -1,6 +1,7 @@
 import type { Config } from "tailwindcss";
 
 const config: Config = {
+  darkMode: ["class"],
   content: [
     "./app/**/*.{js,ts,jsx,tsx,mdx}",
     "./components/**/*.{js,ts,jsx,tsx,mdx}",
@@ -8,38 +9,83 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        ink: "#0f172a",
-        // Primary brand — modern indigo/violet
-        brand: {
-          50: "#eef2ff",
-          100: "#e0e7ff",
-          200: "#c7d2fe",
-          300: "#a5b4fc",
-          400: "#818cf8",
-          500: "#6366f1",
-          600: "#4f46e5",
-          700: "#4338ca",
-          800: "#3730a3",
-          900: "#312e81",
-          950: "#1e1b4b",
+        border: "hsl(var(--border))",
+        input: "hsl(var(--input))",
+        ring: "hsl(var(--ring))",
+        background: "hsl(var(--background))",
+        foreground: "hsl(var(--foreground))",
+        primary: {
+          DEFAULT: "hsl(var(--primary))",
+          foreground: "hsl(var(--primary-foreground))",
         },
-        safety: "#f97316",
+        secondary: {
+          DEFAULT: "hsl(var(--secondary))",
+          foreground: "hsl(var(--secondary-foreground))",
+        },
+        destructive: {
+          DEFAULT: "hsl(var(--destructive))",
+          foreground: "hsl(var(--destructive-foreground))",
+        },
+        muted: {
+          DEFAULT: "hsl(var(--muted))",
+          foreground: "hsl(var(--muted-foreground))",
+        },
+        accent: {
+          DEFAULT: "hsl(var(--accent))",
+          foreground: "hsl(var(--accent-foreground))",
+        },
+        popover: {
+          DEFAULT: "hsl(var(--popover))",
+          foreground: "hsl(var(--popover-foreground))",
+        },
+        card: {
+          DEFAULT: "hsl(var(--card))",
+          foreground: "hsl(var(--card-foreground))",
+        },
+        ink: "#0f172a",
+        // Primary brand — industrial teal / steel (Omani gas field)
+        brand: {
+          50: "#f0fdfa",
+          100: "#ccfbf1",
+          200: "#99f6e4",
+          300: "#5eead4",
+          400: "#2dd4bf",
+          500: "#14b8a6",
+          600: "#0d9488",
+          700: "#0f766e",
+          800: "#115e59",
+          900: "#134e4a",
+          950: "#042f2e",
+        },
+        safety: {
+          DEFAULT: "#ea580c",
+          50: "#fff7ed",
+          100: "#ffedd5",
+          500: "#f97316",
+          600: "#ea580c",
+          700: "#c2410c",
+        },
         success: "#15803d",
       },
       fontFamily: {
         sans: [
+          "var(--font-body)",
+          "Noto Sans Arabic",
           "ui-sans-serif",
           "system-ui",
-          "-apple-system",
-          "Segoe UI",
-          "Roboto",
-          "Helvetica Neue",
-          "Arial",
-          "Noto Sans",
+          "sans-serif",
+        ],
+        display: [
+          "var(--font-display)",
+          "var(--font-body)",
+          "Noto Sans Arabic",
           "sans-serif",
         ],
       },
       borderRadius: {
+        lg: "var(--radius)",
+        md: "calc(var(--radius) - 2px)",
+        sm: "calc(var(--radius) - 4px)",
         xl: "0.875rem",
         "2xl": "1.125rem",
         "3xl": "1.5rem",
@@ -47,12 +93,13 @@ const config: Config = {
       boxShadow: {
         soft: "0 1px 2px 0 rgb(15 23 42 / 0.04), 0 1px 3px 0 rgb(15 23 42 / 0.06)",
         card: "0 1px 3px 0 rgb(15 23 42 / 0.05), 0 8px 24px -12px rgb(15 23 42 / 0.12)",
-        pop: "0 10px 30px -10px rgb(79 70 229 / 0.35)",
+        pop: "0 10px 28px -12px rgb(13 148 136 / 0.35)",
         nav: "0 1px 0 0 rgb(15 23 42 / 0.06), 0 4px 16px -8px rgb(15 23 42 / 0.12)",
       },
       backgroundImage: {
-        "brand-gradient": "linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)",
-        "app-bg": "radial-gradient(1200px 600px at 100% -10%, #eef2ff 0%, rgba(238,242,255,0) 60%), radial-gradient(900px 500px at -10% 0%, #faf5ff 0%, rgba(250,245,255,0) 55%), #f8fafc",
+        "brand-gradient": "linear-gradient(135deg, #0f766e 0%, #0d9488 55%, #115e59 100%)",
+        "app-bg":
+          "radial-gradient(1100px 520px at 100% -8%, #ccfbf1 0%, rgba(204,251,241,0) 58%), radial-gradient(900px 480px at -8% 0%, #ffedd5 0%, rgba(255,237,213,0) 52%), #f8fafc",
       },
       keyframes: {
         "fade-in": {

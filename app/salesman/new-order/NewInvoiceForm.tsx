@@ -3,116 +3,22 @@
 import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { OmanDateInput } from "@/components/OmanDateInput";
+import { priceBandForCurrency } from "@/lib/product-pricing";
 
-type CustomerOption = {
-  id: string;
-  name: string;
-  phone: string;
-  address: string;
-  vatNumber: string;
-};
-
-type ProductOption = {
-  id: string;
-  name: string;
-  cylinderSize: string;
-  pressure: string | null;
-  minPrice: string;
-  maxPrice: string;
-  defaultPrice: string;
-};
-
-type NewInvoiceFormProps = {
-  salesmanName: string;
-  branchName: string;
-  defaultCurrency: string;
-  defaultTaxRate: string;
-  invoiceSerial: string;
-  action: (formData: FormData) => Promise<void>;
-  customers: CustomerOption[];
-  products: ProductOption[];
-  customerDebtBalances: Record<string, string>;
-  customerCreditBalances: Record<string, string>;
-  searchCustomersAction?: (query: string) => Promise<Array<{
-    id: string;
-    name: string;
-    phone: string;
-    address: string;
-    vatNumber: string;
-  }>>;
-  errorMessage?: string;
-};
-
-type ProductRow = {
-  id: string;
-  productId: string;
-  full: string;
-  empty: string;
-  price: string;
-};
-
-type CustomerDraft = {
-  name: string;
-  phone: string;
-  address: string;
-  vatNumber: string;
-};
-
-type SavedInvoiceData = {
-  submissionToken: string;
-  customerQuery: string;
-  selectedCustomerId: string | null;
-  customerDraft: CustomerDraft;
-  showAdvanced: boolean;
-  manualSerialValue: string;
-  currency: string;
-  taxRate: string;
-  cashAmount: string;
-  checkAmount: string;
-  checkNumber: string;
-  checkDate: string;
-  transferAmount: string;
-  transferReference: string;
-  debtCollectionAmount: string;
-  applyDebtCollection: boolean;
-  useCheck: boolean;
-  useTransfer: boolean;
-  productRows: ProductRow[];
-};
-
-const STORAGE_KEY = "newInvoiceData";
-
-function makeId() {
-  return globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2);
-}
-
-function toNumber(value: string) {
-  const parsed = Number.parseFloat(value);
-  return Number.isFinite(parsed) ? parsed : 0;
-}
-
-function formatOmr(value: number, currencyCode = "OMR") {
-  return new Intl.NumberFormat("en-OM", {
-    style: "currency",
-    currency: currencyCode,
-    minimumFractionDigits: 3,
-    maximumFractionDigits: 3,
-  }).format(value);
-}
-
-function percentRate(value: string) {
-  return toNumber(value) / 100;
-}
-
-function fieldClass(value: string, extra = "") {
-  return [
-    "ui-input",
-    value.trim() ? "border-emerald-300 bg-emerald-50/60" : "",
-    extra,
-  ]
-    .filter(Boolean)
-    .join(" ");
-}
+import {
+  type CustomerDraft,
+  type CustomerOption,
+  type NewInvoiceFormProps,
+  type ProductOption,
+  type ProductRow,
+  type SavedInvoiceData,
+  STORAGE_KEY,
+  fieldClass,
+  formatOmr,
+  makeId,
+  percentRate,
+  toNumber,
+} from "./invoice-form-shared";
 
 export function NewInvoiceForm({
   salesmanName,
@@ -127,6 +33,7 @@ export function NewInvoiceForm({
   customerCreditBalances,
   searchCustomersAction,
   errorMessage,
+  initialCustomerId,
 }: NewInvoiceFormProps) {
   const [customerQuery, setCustomerQuery] = useState("");
   const [selectedCustomer, setSelectedCustomer] = useState<CustomerOption | null>(null);
@@ -166,7 +73,7 @@ export function NewInvoiceForm({
             productId: products[0].id,
             full: "",
             empty: "",
-            price: products[0].defaultPrice,
+            price: priceBandForCurrency(products[0], defaultCurrency, defaultCurrency).defaultPrice,
           },
         ]
       : [
@@ -250,6 +157,10 @@ export function NewInvoiceForm({
     setShowCustomerPicker(false);
   }
 
+  function selectedPriceBand(product: ProductOption | undefined, currencyCode = currency) {
+    return priceBandForCurrency(product ?? { prices: {} }, currencyCode, defaultCurrency);
+  }
+
   function updateRow(id: string, patch: Partial<ProductRow>) {
     setProductRows((current) =>
       current.map((row) => {
@@ -263,7 +174,7 @@ export function NewInvoiceForm({
         return {
           ...row,
           ...patch,
-          price: patch.productId && product ? product.defaultPrice : patch.price ?? row.price,
+          price: patch.productId && product ? selectedPriceBand(product).defaultPrice : patch.price ?? row.price,
         };
       }),
     );
@@ -279,9 +190,19 @@ export function NewInvoiceForm({
         productId: product?.id ?? "",
         full: "",
         empty: "",
-        price: product?.defaultPrice ?? "",
+        price: selectedPriceBand(product).defaultPrice,
       },
     ]);
+  }
+
+  function changeCurrency(nextCurrency: string) {
+    setCurrency(nextCurrency);
+    setProductRows((current) =>
+      current.map((row) => ({
+        ...row,
+        price: selectedPriceBand(products.find((product) => product.id === row.productId), nextCurrency).defaultPrice,
+      })),
+    );
   }
 
   function removeRow(id: string) {
@@ -341,7 +262,10 @@ export function NewInvoiceForm({
             productId: products.some((product) => product.id === row.productId) ? row.productId : products[0]?.id ?? "",
             full: row.full ?? "",
             empty: row.empty ?? "",
-            price: row.price ?? products[0]?.defaultPrice ?? "",
+            price:
+              row.price ??
+              priceBandForCurrency(products[0] ?? { prices: {} }, data.currency ?? defaultCurrency, defaultCurrency)
+                .defaultPrice,
           })),
         );
       }
@@ -351,6 +275,23 @@ export function NewInvoiceForm({
       setHasHydrated(true);
     }
   }, [customers, defaultCurrency, defaultTaxRate, invoiceSerial, products]);
+
+  useEffect(() => {
+    if (!hasHydrated || !initialCustomerId || selectedCustomer) {
+      return;
+    }
+    const match = customers.find((customer) => customer.id === initialCustomerId);
+    if (match) {
+      setSelectedCustomer(match);
+      setCustomerQuery(match.name);
+      setCustomerDraft({
+        name: match.name,
+        phone: match.phone,
+        address: match.address,
+        vatNumber: match.vatNumber,
+      });
+    }
+  }, [customers, hasHydrated, initialCustomerId, selectedCustomer]);
 
   useEffect(() => {
     if (!hasHydrated) {
@@ -453,8 +394,8 @@ export function NewInvoiceForm({
       return 0;
     }
 
-    return toNumber(customerDebtBalances[selectedCustomer.id] ?? "0");
-  }, [customerDebtBalances, selectedCustomer?.id]);
+    return toNumber(customerDebtBalances[selectedCustomer.id]?.[currency] ?? "0");
+  }, [currency, customerDebtBalances, selectedCustomer?.id]);
   const selectedCustomerCredit = selectedCustomer
     ? toNumber(customerCreditBalances[selectedCustomer.id] ?? "0")
     : 0;
@@ -514,21 +455,8 @@ export function NewInvoiceForm({
       <input type="hidden" name="debtCollectionAmount" value={debtCollectionValue.toFixed(3)} />
       <input type="hidden" name="applyDebtCollection" value={applyDebtCollection ? "true" : "false"} />
 
-      <header className="rounded-lg bg-ink p-5 text-white shadow-lg">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <p className="text-sm font-bold uppercase tracking-wide text-slate-300">{branchName}</p>
-            <h1 className="mt-1 text-3xl font-black leading-tight">New Invoice</h1>
-            <p className="mt-2 text-base font-semibold text-slate-200">Salesman: {salesmanName}</p>
-          </div>
-          <span
-            className={`rounded-full px-3 py-1 text-xs font-black uppercase tracking-wide transition-opacity ${
-              draftSaved ? "bg-green-100 text-green-800 opacity-100" : "bg-white/10 text-slate-300 opacity-60"
-            }`}
-          >
-            {draftSaved ? "Draft saved" : "Draft ready"}
-          </span>
-        </div>
+      <header className="sr-only">
+        <h1>New Invoice — {branchName} — {salesmanName}</h1>
       </header>
 
       {errorMessage ? (
@@ -543,6 +471,12 @@ export function NewInvoiceForm({
           <p className="text-sm font-black uppercase tracking-wide">Missing Required Field</p>
           <p className="mt-1 text-sm font-bold leading-6">{clientError}</p>
         </div>
+      ) : null}
+
+      {draftSaved ? (
+        <p className="text-xs font-bold text-brand-700" aria-live="polite">
+          Draft saved locally
+        </p>
       ) : null}
 
       {selectedCustomerDebt > 0 ? (
@@ -607,8 +541,16 @@ export function NewInvoiceForm({
             </div>
 
             <div className="mt-4 relative">
+                <label className="sr-only" htmlFor="customer-search-input">
+                  Search customer by name or phone
+                </label>
                 <input
+                  id="customer-search-input"
                   type="text"
+                  role="combobox"
+                  aria-expanded={showCustomerPicker}
+                  aria-controls="customer-search-results"
+                  aria-autocomplete="list"
                   value={customerQuery}
                 onChange={(event) => {
                   setCustomerQuery(event.target.value);
@@ -619,13 +561,24 @@ export function NewInvoiceForm({
                 placeholder="Search by name or phone"
                   className="h-14 w-full rounded-xl border-2 border-slate-300 bg-white px-4 text-lg font-bold outline-none transition-colors focus:border-slate-950"
                 />
+              <p className="sr-only" aria-live="polite">
+                {showCustomerPicker
+                  ? `${filteredCustomers.length} customer${filteredCustomers.length === 1 ? "" : "s"} available`
+                  : ""}
+              </p>
 
               {showCustomerPicker ? (
-                <div className="absolute z-20 mt-2 max-h-72 w-full overflow-auto rounded-xl border border-slate-200 bg-white shadow-xl">
+                <div
+                  id="customer-search-results"
+                  role="listbox"
+                  className="absolute z-20 mt-2 max-h-72 w-full overflow-auto rounded-xl border border-slate-200 bg-white shadow-xl"
+                >
                   {filteredCustomers.map((customer) => (
                     <button
                       key={customer.id}
                       type="button"
+                      role="option"
+                      aria-selected={selectedCustomer?.id === customer.id}
                       onClick={() => selectCustomer(customer)}
                       className="block w-full border-b border-slate-100 px-4 py-3 text-left hover:bg-slate-50"
                     >
@@ -694,13 +647,19 @@ export function NewInvoiceForm({
                     <span className="text-sm font-black text-slate-700">Currency</span>
                     <select
                       value={currency}
-                      onChange={(event) => setCurrency(event.target.value)}
-                      className={`mt-2 h-12 ${fieldClass(currency)}`}
+                      onChange={(event) => changeCurrency(event.target.value)}
+                      disabled={selectedCustomerDebt > 0 || selectedCustomerCredit > 0}
+                      className={`mt-2 h-12 ${fieldClass(currency)} disabled:cursor-not-allowed disabled:bg-slate-100`}
                     >
                       <option value="OMR">OMR</option>
                       <option value="USD">USD</option>
                       <option value="AED">AED</option>
                     </select>
+                    {selectedCustomerDebt > 0 || selectedCustomerCredit > 0 ? (
+                      <p className="mt-2 text-xs font-bold text-amber-800">
+                        Currency is locked while this customer has credit or open debt.
+                      </p>
+                    ) : null}
                   </label>
                   <label className="block">
                     <span className="text-sm font-black text-slate-700">VAT Rate</span>
@@ -785,7 +744,7 @@ export function NewInvoiceForm({
                     <div>
                       <p className="text-[11px] font-black uppercase tracking-wide text-slate-500">Price Range</p>
                       <p className="text-sm font-black text-slate-950">
-                        {product.minPrice} - {product.maxPrice}
+                        {selectedPriceBand(product).minPrice} - {selectedPriceBand(product).maxPrice} {currency}
                       </p>
                     </div>
                     <span className="rounded-full bg-green-700 px-3 py-1 text-xs font-black uppercase tracking-wide text-white">
@@ -797,14 +756,14 @@ export function NewInvoiceForm({
             </div>
           </div>
 
-          <div className="product-selection-table mt-3 max-w-full overflow-x-auto">
-            <div className="product-selection-inner min-w-[760px] max-w-full">
-              <div className="product-selection-header grid grid-cols-[minmax(240px,2fr)_minmax(116px,1fr)_minmax(116px,1fr)_minmax(120px,1fr)_minmax(104px,auto)] gap-2 rounded-xl bg-slate-50 px-4 py-3 text-sm font-black uppercase tracking-wide text-slate-500">
+          <div className="product-selection-table mt-3 max-w-full">
+            <div className="product-selection-inner max-w-full">
+              <div className="product-selection-header mb-2 hidden gap-2 rounded-xl bg-slate-50 px-4 py-3 text-sm font-black uppercase tracking-wide text-slate-500 md:grid md:grid-cols-[minmax(0,2fr)_repeat(3,minmax(0,1fr))_auto]">
                 <div>Product</div>
-                <div className="flex-1 whitespace-nowrap text-center text-sm">Delivered</div>
-                <div className="flex-1 whitespace-nowrap text-center text-sm">Collected</div>
-                <div className="whitespace-nowrap text-center">Unit Price</div>
-                <div className="whitespace-nowrap text-right">Total</div>
+                <div className="text-center">Delivered</div>
+                <div className="text-center">Collected</div>
+                <div className="text-center">Unit Price</div>
+                <div className="text-right">Total</div>
               </div>
 
               <div className="mt-3 flex flex-col gap-3">
@@ -886,8 +845,8 @@ export function NewInvoiceForm({
 
                     <div className="mt-4 flex items-center justify-between gap-3">
                       <p className="text-xs font-bold text-slate-500">
-                        Default range: {products.find((product) => product.id === row.productId)?.minPrice ?? "0.000"} -{" "}
-                        {products.find((product) => product.id === row.productId)?.maxPrice ?? "0.000"} OMR
+                        Default range: {selectedPriceBand(products.find((product) => product.id === row.productId)).minPrice} -{" "}
+                        {selectedPriceBand(products.find((product) => product.id === row.productId)).maxPrice} {currency}
                       </p>
                       <button
                         type="button"
@@ -907,7 +866,7 @@ export function NewInvoiceForm({
             <button
               type="button"
               onClick={() => addRow()}
-              className="w-full rounded-xl bg-green-700 px-4 py-4 text-base font-black text-white shadow-sm md:w-auto md:min-w-56"
+              className="ui-btn ui-btn-success ui-btn-lg w-full md:w-auto md:min-w-56"
             >
               Add Item
             </button>
@@ -1024,8 +983,9 @@ export function NewInvoiceForm({
             <div className="rounded-xl border border-green-200 bg-green-50 px-4 py-4 text-green-800">
               <p className="text-sm font-black uppercase tracking-wide">Overpayment</p>
               <p className="mt-2 text-lg font-black leading-tight md:text-xl">
-                Change to be returned: {formatOmr(overpaymentAmount, currency)}
+                Added to customer credit: {formatOmr(overpaymentAmount, currency)}
               </p>
+              <p className="mt-1 text-sm font-semibold">This credit will be applied automatically to a future invoice.</p>
             </div>
           ) : null}
 
@@ -1083,6 +1043,15 @@ export function NewInvoiceForm({
                     value={checkDate}
                     onValueChange={setCheckDate}
                     className={`mt-2 h-12 ${fieldClass(checkDate)}`}
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-sm font-black text-slate-700">Check Receipt Image</span>
+                  <input
+                    name="checkReceipt"
+                    type="file"
+                    accept="image/*"
+                    className="mt-2 block w-full rounded-xl border border-slate-300 bg-white px-3 py-3 text-sm font-bold text-slate-700"
                   />
                 </label>
               </div>

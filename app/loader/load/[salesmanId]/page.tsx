@@ -1,7 +1,8 @@
 import { notFound, redirect } from "next/navigation";
 import { processMorningLoad } from "@/app/actions/loader";
+import { hasGlobalWriteScope } from "@/lib/global-access";
 import { prisma } from "@/lib/prisma";
-import { getCurrentUser, hasGlobalSalesAccess } from "@/lib/session";
+import { getCurrentUser } from "@/lib/session";
 import { businessDate } from "@/lib/business-date";
 import { ButtonLink } from "@/components/ui/Button";
 
@@ -20,7 +21,7 @@ export default async function MorningLoadPage({ params, searchParams }: { params
     redirect("/login");
   }
 
-  const hasGlobalAccess = hasGlobalSalesAccess(currentUser);
+  const hasGlobalAccess = hasGlobalWriteScope(currentUser);
   const branchScope = hasGlobalAccess ? {} : currentUser.branchId ? { branchId: currentUser.branchId } : { branchId: "__no_branch__" };
 
   const salesman = await prisma.user.findFirst({
@@ -84,7 +85,7 @@ export default async function MorningLoadPage({ params, searchParams }: { params
                     type="number"
                     min="0"
                     inputMode="numeric"
-                    className="mt-2 h-14 w-full rounded-xl border border-slate-300 px-3 text-center text-2xl font-black outline-none focus:border-brand"
+                    className="ui-input mt-2 h-14 text-center text-2xl"
                   />
                 </label>
               </div>
@@ -94,7 +95,7 @@ export default async function MorningLoadPage({ params, searchParams }: { params
 
         <button
           type="submit"
-          className="sticky bottom-4 h-16 rounded-2xl bg-brand-gradient px-5 text-xl font-black text-white shadow-pop active:scale-[0.99]"
+          className="sticky bottom-4 pb-safe h-16 rounded-2xl bg-brand-gradient px-5 text-xl font-black text-white shadow-pop active:scale-[0.99]"
         >
           Save Morning Load
         </button>

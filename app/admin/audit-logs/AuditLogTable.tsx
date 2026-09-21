@@ -17,6 +17,7 @@ type AuditLogRow = {
   oldValue: unknown;
   newValue: unknown;
   user: AuditUser;
+  effectiveUser: AuditUser | null;
 };
 
 type AuditLogTableProps = {
@@ -89,6 +90,11 @@ export function AuditLogTable({ logs }: AuditLogTableProps) {
                     <td className="px-4 py-3">
                       <div className="font-black text-slate-950">{log.user.fullName}</div>
                       <div className="text-xs font-bold text-slate-500">{log.user.role.replaceAll("_", " ")}</div>
+                      {log.effectiveUser ? (
+                        <div className="mt-1 text-xs font-bold text-amber-700">
+                          Acting as {log.effectiveUser.fullName} · {log.effectiveUser.role.replaceAll("_", " ")}
+                        </div>
+                      ) : null}
                     </td>
                     <td className="px-4 py-3 font-bold text-slate-900">{humanizeAction(log.action)}</td>
                     <td className="px-4 py-3">

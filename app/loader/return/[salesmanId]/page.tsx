@@ -1,8 +1,9 @@
 import { notFound, redirect } from "next/navigation";
 import { processEveningReturn } from "@/app/actions/loader";
 import { formatDateDMY } from "@/lib/date-format";
+import { hasGlobalWriteScope } from "@/lib/global-access";
 import { prisma } from "@/lib/prisma";
-import { getCurrentUser, hasGlobalSalesAccess } from "@/lib/session";
+import { getCurrentUser } from "@/lib/session";
 import { businessDate } from "@/lib/business-date";
 import { ButtonLink } from "@/components/ui/Button";
 
@@ -21,7 +22,7 @@ export default async function EveningReturnPage({ params, searchParams }: { para
     redirect("/login");
   }
 
-  const hasGlobalAccess = hasGlobalSalesAccess(currentUser);
+  const hasGlobalAccess = hasGlobalWriteScope(currentUser);
   const branchScope = hasGlobalAccess ? {} : currentUser.branchId ? { branchId: currentUser.branchId } : { branchId: "__no_branch__" };
 
   const salesman = await prisma.user.findFirst({
@@ -110,7 +111,7 @@ export default async function EveningReturnPage({ params, searchParams }: { para
                       type="number"
                       min="0"
                       defaultValue={item.eveningReturnedFull}
-                      className="mt-2 h-16 w-full rounded-xl border-2 border-slate-300 px-3 text-center text-3xl font-black text-slate-900 outline-none focus:border-brand"
+                      className="ui-input mt-2 h-16 text-center text-3xl"
                     />
                   </label>
                   <label className="block">
@@ -120,7 +121,7 @@ export default async function EveningReturnPage({ params, searchParams }: { para
                       type="number"
                       min="0"
                       defaultValue={item.eveningReturnedEmpty}
-                      className="mt-2 h-16 w-full rounded-xl border-2 border-slate-300 px-3 text-center text-3xl font-black text-slate-900 outline-none focus:border-brand"
+                      className="ui-input mt-2 h-16 text-center text-3xl"
                     />
                   </label>
                   <div className="rounded-xl bg-amber-50 px-4 py-3 text-sm font-black text-amber-900">
@@ -134,7 +135,7 @@ export default async function EveningReturnPage({ params, searchParams }: { para
 
         <button
           type="submit"
-          className="sticky bottom-4 h-20 rounded-2xl bg-brand-gradient px-5 text-2xl font-black text-white shadow-pop active:scale-[0.99]"
+          className="sticky bottom-4 pb-safe h-20 rounded-2xl bg-brand-gradient px-5 text-2xl font-black text-white shadow-pop active:scale-[0.99]"
         >
           Save Evening Return
         </button>

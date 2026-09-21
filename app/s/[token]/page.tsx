@@ -5,16 +5,19 @@ import { StatusBadge } from "@/components/ui/Badge";
 import { formatOmr } from "@/lib/money";
 import { formatDateTimeDMY } from "@/lib/date-format";
 import { Prisma } from "@/generated/prisma/client";
+import { hashStatementToken } from "@/lib/statement-token";
 
 export const dynamic = "force-dynamic";
 
 export default async function PublicStatementPage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
+  const now = new Date();
+  const tokenHash = hashStatementToken(token);
 
   const customer = await prisma.customer.findFirst({
     where: {
-      shareToken: token,
-      shareTokenExpires: { gt: new Date() },
+      shareTokenExpires: { gt: now },
+      OR: [{ shareToken: tokenHash }, { shareToken: token }],
     },
     include: {
       branch: true,

@@ -21,6 +21,7 @@ type AllSalesSearchParams = {
   end?: string;
   branchId?: string;
   userId?: string;
+  page?: string;
 };
 
 function startOfMonth() {
@@ -47,11 +48,11 @@ function nextDay(date: Date) {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1);
 }
 
-function formatOmr(value: Prisma.Decimal | number | null | undefined) {
+function formatCurrency(value: Prisma.Decimal | number | null | undefined, currency: string) {
   const amount = value instanceof Prisma.Decimal ? value.toNumber() : Number(value ?? 0);
   return new Intl.NumberFormat("en-OM", {
     style: "currency",
-    currency: "OMR",
+    currency,
     minimumFractionDigits: 3,
     maximumFractionDigits: 3,
   }).format(amount);
@@ -79,6 +80,9 @@ export default async function ManagerAllSalesPage({
   const branchId = currentUser.branchId;
   const requestedBranchId = hasGlobalAccess ? params.branchId?.trim() || null : branchId;
   const requestedUserId = params.userId?.trim() || null;
+  const pageSize = 50;
+  const page = Math.max(1, Number.parseInt(params.page ?? "1", 10) || 1);
+  const skip = (page - 1) * pageSize;
 
   const branchWhere = hasGlobalAccess
     ? requestedBranchId
@@ -94,19 +98,45 @@ export default async function ManagerAllSalesPage({
     createdAt: { gte: monthStart, lt: monthEndExclusive },
   };
 
-  const invoices = await prisma.invoice.findMany({
-    where: invoiceWhere,
-    include: {
-      customer: true,
-      salesman: true,
-      branch: true,
-    },
-    orderBy: { createdAt: "desc" },
-    take: 50,
-  });
+  const [invoices, totalsByCurrency, totalCount] = await Promise.all([
+    prisma.invoice.findMany({
+      where: invoiceWhere,
+      include: {
+        customer: true,
+        salesman: true,
+        branch: true,
+      },
+      orderBy: { createdAt: "desc" },
+      skip,
+      take: pageSize,
+    }),
+    prisma.invoice.groupBy({
+      by: ["currency"],
+      where: invoiceWhere,
+      _sum: { totalAmount: true, debtAmount: true },
+    }),
+    prisma.invoice.count({ where: invoiceWhere }),
+  ]);
 
-  const monthlyRevenue = invoices.reduce((sum, invoice) => sum.add(invoice.totalAmount), new Prisma.Decimal(0));
-  const totalDebt = invoices.reduce((sum, invoice) => sum.add(invoice.debtAmount), new Prisma.Decimal(0));
+  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+  const queryBase = new URLSearchParams();
+  if (params.start) queryBase.set("start", params.start);
+  if (params.end) queryBase.set("end", params.end);
+  if (requestedBranchId) queryBase.set("branchId", requestedBranchId);
+  if (requestedUserId) queryBase.set("userId", requestedUserId);
+  const pageHref = (targetPage: number) => {
+    const q = new URLSearchParams(queryBase);
+    q.set("page", String(targetPage));
+    return `${resetPath}?${q.toString()}`;
+  };
+
+  const fallbackCurrency = currentUser.branch?.defaultCurrency ?? "OMR";
+  const formatTotals = (field: "totalAmount" | "debtAmount") =>
+    totalsByCurrency.length > 0
+      ? totalsByCurrency
+          .map((total) => formatCurrency(total._sum[field], total.currency))
+          .join(" · ")
+      : formatCurrency(0, fallbackCurrency);
 
   const [branches, users] = await Promise.all([
     prisma.branch.findMany({
@@ -145,8 +175,8 @@ export default async function ManagerAllSalesPage({
         />
 
         <section className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <Stat label="Revenue This Month" value={formatOmr(monthlyRevenue)} tone="success" />
-          <Stat label="Outstanding Debt" value={formatOmr(totalDebt)} tone="danger" />
+          <Stat label="Revenue in Period" value={formatTotals("totalAmount")} tone="success" />
+          <Stat label="Outstanding Debt" value={formatTotals("debtAmount")} tone="danger" />
         </section>
 
         <Card className="overflow-hidden p-0">
@@ -190,7 +220,10 @@ export default async function ManagerAllSalesPage({
         </Card>
 
         <Card className="overflow-hidden p-0">
-          <CardHeader title="Sales Ledger" description={`${invoices.length} invoices in view.`} />
+          <CardHeader
+            title="Sales Ledger"
+            description={`Showing ${invoices.length} of ${totalCount} invoices (page ${page} of ${totalPages}).`}
+          />
           <div className="overflow-x-auto">
             <table className="ui-table">
               <thead>
@@ -212,8 +245,8 @@ export default async function ManagerAllSalesPage({
                     <td className="font-semibold text-slate-600">{invoice.branch.name}</td>
                     <td className="font-bold text-slate-900">{invoice.customer.name}</td>
                     <td className="font-semibold text-slate-700">{invoice.salesman.fullName}</td>
-                    <td className="num">{formatOmr(invoice.totalAmount)}</td>
-                    <td className="num text-rose-600">{formatOmr(invoice.debtAmount)}</td>
+                    <td className="num">{formatCurrency(invoice.totalAmount, invoice.currency)}</td>
+                    <td className="num text-rose-600">{formatCurrency(invoice.debtAmount, invoice.currency)}</td>
                     <td><StatusBadge status={invoice.status} /></td>
                     <td>
                       <div className="flex justify-end">
@@ -234,6 +267,27 @@ export default async function ManagerAllSalesPage({
               </tbody>
             </table>
           </div>
+          {totalPages > 1 ? (
+            <div className="flex items-center justify-between gap-3 border-t border-slate-100 px-4 py-3">
+              <Link
+                href={pageHref(Math.max(1, page - 1))}
+                className={`ui-btn ui-btn-ghost ui-btn-sm ${page <= 1 ? "pointer-events-none opacity-40" : ""}`}
+                aria-disabled={page <= 1}
+              >
+                Previous
+              </Link>
+              <p className="text-sm font-bold text-slate-600">
+                Page {page} / {totalPages}
+              </p>
+              <Link
+                href={pageHref(Math.min(totalPages, page + 1))}
+                className={`ui-btn ui-btn-ghost ui-btn-sm ${page >= totalPages ? "pointer-events-none opacity-40" : ""}`}
+                aria-disabled={page >= totalPages}
+              >
+                Next
+              </Link>
+            </div>
+          ) : null}
         </Card>
       </div>
     </main>

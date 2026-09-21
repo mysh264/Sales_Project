@@ -6,6 +6,7 @@ import { getCurrentUser } from "@/lib/session";
 import { normalizePermissions, Permissions } from "@/lib/permissions";
 import { requirePermission } from "@/lib/permission-guard";
 import { prisma } from "@/lib/prisma";
+import { PageHeader } from "@/components/ui/PageHeader";
 
 export const dynamic = "force-dynamic";
 
@@ -48,25 +49,23 @@ export default async function RolesPage({ searchParams }: RolesPageProps) {
   const defaultRoleName = selectedRole ? (isEditMode ? selectedRole.name : `${selectedRole.name} Copy`) : "";
 
   return (
-    <main className="min-h-screen bg-slate-50 p-4 md:p-8">
+    <main className="min-h-screen bg-app-bg p-4 md:p-8">
       <div className="mx-auto flex max-w-7xl flex-col gap-6">
-        <header className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-          <div>
-            <p className="text-sm font-black uppercase tracking-wide text-slate-500">Admin / Roles</p>
-            <h1 className="text-3xl font-black text-slate-950">Role Management</h1>
-            <p className="mt-2 text-sm font-bold text-slate-600">
-              Define permission bundles, clone existing roles, and keep access rules readable for operations.
-            </p>
-          </div>
-          <div className="flex gap-3">
-            <Link href="/admin" className="rounded border border-slate-300 px-4 py-2 text-sm font-black text-slate-900">
-              Back to Admin
-            </Link>
-            <Link href="/admin/roles" className="rounded bg-slate-950 px-4 py-2 text-sm font-black text-white">
-              Refresh
-            </Link>
-          </div>
-        </header>
+        <PageHeader
+          eyebrow="Admin / Roles"
+          title="Role Management"
+          description="Define permission bundles, clone existing roles, and keep access rules readable for operations."
+          actions={
+            <>
+              <Link href="/admin" className="rounded border border-slate-300 px-4 py-2 text-sm font-black text-slate-900">
+                Back to Admin
+              </Link>
+              <Link href="/admin/roles" className="ui-btn ui-btn-primary">
+                Refresh
+              </Link>
+            </>
+          }
+        />
 
         <section className="grid grid-cols-1 gap-6 xl:grid-cols-[1.1fr_1.4fr]">
           <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
@@ -102,7 +101,7 @@ export default async function RolesPage({ searchParams }: RolesPageProps) {
                           </Link>
                           <Link
                             href={`/admin/roles?cloneFrom=${role.id}`}
-                            className="rounded bg-slate-900 px-3 py-2 text-xs font-black text-white"
+                            className="ui-btn ui-btn-primary"
                           >
                             Clone
                           </Link>
@@ -160,11 +159,11 @@ export default async function RolesPage({ searchParams }: RolesPageProps) {
                   <span className="text-sm font-black text-slate-700">Permissions</span>
                   <p className="text-xs font-bold text-slate-500">Select the capabilities this role should grant.</p>
                 </div>
-                <PermissionChecklist selected={normalizePermissions(selectedRole?.permissions ?? [])} autoSubmit={isEditMode} />
+                <PermissionChecklist selected={normalizePermissions(selectedRole?.permissions ?? [])} />
               </div>
 
               <div className="flex flex-wrap gap-3">
-                <button type="submit" className="rounded bg-slate-950 px-5 py-3 text-sm font-black text-white">
+                <button type="submit" className="ui-btn ui-btn-primary">
                   {isEditMode ? "Save Changes" : "Create Role"}
                 </button>
                 {selectedRole ? (

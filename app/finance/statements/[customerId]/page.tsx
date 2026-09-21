@@ -9,6 +9,7 @@ import { formatOmr } from "@/lib/money";
 import { getBranchScope, branchWhere } from "@/lib/branch-scope";
 import { Prisma } from "@/generated/prisma/client";
 import { formatDateTimeDMY } from "@/lib/date-format";
+import { PrintButton } from "@/app/print/[invoiceId]/PrintButton";
 
 export const dynamic = "force-dynamic";
 
@@ -98,13 +99,7 @@ export default async function CustomerStatementPage({ params }: { params: Promis
         </Card>
 
         <div className="flex gap-3">
-          <button
-            type="button"
-            className="ui-btn ui-btn-ghost"
-            onClick={() => window.print()}
-          >
-            Print / Save PDF
-          </button>
+          <PrintButton />
         </div>
       </div>
     </main>

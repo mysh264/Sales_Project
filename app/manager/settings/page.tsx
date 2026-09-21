@@ -1,8 +1,10 @@
 import { updatePriceRule } from "@/app/actions/manager";
+import { hasGlobalWriteScope } from "@/lib/global-access";
 import { prisma } from "@/lib/prisma";
-import { getCurrentUser, hasGlobalSalesAccess } from "@/lib/session";
-import Link from "next/link";
+import { getCurrentUser } from "@/lib/session";
 import { redirect } from "next/navigation";
+import { PageHeader } from "@/components/ui/PageHeader";
+import { ButtonLink } from "@/components/ui/Button";
 
 export const dynamic = "force-dynamic";
 
@@ -22,7 +24,7 @@ export default async function ManagerSettingsPage({
   }
 
   const params = (await searchParams) ?? {};
-  const hasGlobalAccess = hasGlobalSalesAccess(currentUser);
+  const hasGlobalAccess = hasGlobalWriteScope(currentUser);
 
   const availableBranches = await prisma.branch.findMany({
     where: hasGlobalAccess ? undefined : { id: currentUser.branchId ?? "" },
@@ -53,53 +55,51 @@ export default async function ManagerSettingsPage({
     : [];
 
   return (
-    <main className="min-h-screen bg-slate-50 p-4 md:p-8">
+    <main className="min-h-screen bg-app-bg p-4 md:p-8">
       <div className="mx-auto max-w-7xl">
-        <header className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div>
-            <p className="text-sm font-black uppercase tracking-wide text-slate-500">Manager Settings</p>
-            <h1 className="text-3xl font-black text-slate-950">Price Management</h1>
-            <p className="mt-1 text-sm font-bold text-slate-600">
-              Edit current price rules or create a new one for the selected branch.
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-3">
-            {hasGlobalAccess ? (
-              <form method="get" className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-sm">
-                <label className="text-xs font-black uppercase tracking-wide text-slate-500">Branch</label>
-                <select
-                  name="branchId"
-                  defaultValue={selectedBranch?.id ?? ""}
-                  className="h-11 rounded border border-slate-300 px-3 text-sm font-bold"
-                >
-                  {availableBranches.map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.code} · {item.name}
-                    </option>
-                  ))}
-                </select>
-                <button type="submit" className="h-11 rounded bg-slate-950 px-4 text-sm font-black text-white">
-                  Switch
-                </button>
-              </form>
-            ) : null}
-            <Link href="/manager" className="rounded bg-slate-950 px-4 py-2 text-sm font-black text-white">
-              Back to Branch Dashboard
-            </Link>
-          </div>
-        </header>
+        <PageHeader
+          eyebrow="Manager Settings"
+          title="Price Management"
+          description="Edit current price rules or create a new one for the selected branch."
+          actions={
+            <>
+              {hasGlobalAccess ? (
+                <form method="get" className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-soft">
+                  <label className="ui-label mb-0">Branch</label>
+                  <select
+                    name="branchId"
+                    defaultValue={selectedBranch?.id ?? ""}
+                    className="ui-input h-11 w-auto"
+                  >
+                    {availableBranches.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.code} · {item.name}
+                      </option>
+                    ))}
+                  </select>
+                  <button type="submit" className="ui-btn ui-btn-primary">
+                    Switch
+                  </button>
+                </form>
+              ) : null}
+              <ButtonLink href="/manager" variant="primary">
+                Back to Branch Dashboard
+              </ButtonLink>
+            </>
+          }
+        />
 
-        <section className="grid grid-cols-1 gap-4 md:grid-cols-3">
-          <article className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-            <p className="text-xs font-black uppercase tracking-wide text-slate-500">Selected Branch</p>
+        <section className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-3">
+          <article className="ui-card ui-card-pad">
+            <p className="ui-stat-label">Selected Branch</p>
             <p className="mt-2 text-2xl font-black text-slate-950">{selectedBranch?.name ?? "No branch selected"}</p>
           </article>
-          <article className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-            <p className="text-xs font-black uppercase tracking-wide text-slate-500">Active Products</p>
-            <p className="mt-2 text-2xl font-black text-green-700">{products.length}</p>
+          <article className="ui-card ui-card-pad">
+            <p className="ui-stat-label">Active Products</p>
+            <p className="mt-2 text-2xl font-black text-brand-700">{products.length}</p>
           </article>
-          <article className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-            <p className="text-xs font-black uppercase tracking-wide text-slate-500">Global Access</p>
+          <article className="ui-card ui-card-pad">
+            <p className="ui-stat-label">Global Access</p>
             <p className="mt-2 text-2xl font-black text-slate-950">{hasGlobalAccess ? "Enabled" : "Branch Only"}</p>
           </article>
         </section>
@@ -196,7 +196,7 @@ export default async function ManagerSettingsPage({
                         <button
                           form={formId}
                           type="submit"
-                          className={`rounded px-4 py-2 text-sm font-black text-white ${rule ? "bg-slate-950" : "bg-green-700"}`}
+                          className={`ui-btn ${rule ? "ui-btn-primary" : "ui-btn-success"}`}
                         >
                           {rule ? "Save Rule" : "Create Rule"}
                         </button>

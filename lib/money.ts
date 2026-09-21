@@ -41,20 +41,28 @@ export function toDecimal(amount: MoneyInput): Prisma.Decimal {
   return amount instanceof Prisma.Decimal ? amount : new Prisma.Decimal(amount ?? 0);
 }
 
+export function roundMoney(amount: MoneyInput): Prisma.Decimal {
+  return new Prisma.Decimal(toDecimal(amount).toFixed(3));
+}
+
+export function roundRate(amount: MoneyInput): Prisma.Decimal {
+  return new Prisma.Decimal(toDecimal(amount).toFixed(4));
+}
+
 /**
- * Financial invariant: for any invoice, paidAmount + debtAmount must equal totalAmount.
- * Returns true when the three values reconcile (within 3-decimal rounding tolerance).
+ * Financial invariant: paid + debt + written-off debt must equal the invoice total.
+ * Returns true when the stored-scale values reconcile exactly.
  * Used both in tests/audits and as a defensive check after mutations.
  */
 export function isInvoiceBalanced(args: {
   totalAmount: MoneyInput;
   paidAmount: MoneyInput;
   debtAmount: MoneyInput;
+  writtenOffAmount?: MoneyInput;
 }): boolean {
-  const total = toDecimal(args.totalAmount);
-  const paid = toDecimal(args.paidAmount);
-  const debt = toDecimal(args.debtAmount);
-  const diff = total.sub(paid.add(debt)).abs();
-  // Tolerance: 1 unit at the 3rd decimal (0.001).
-  return diff.lessThanOrEqualTo(new Prisma.Decimal("0.001"));
+  const total = roundMoney(args.totalAmount);
+  const paid = roundMoney(args.paidAmount);
+  const debt = roundMoney(args.debtAmount);
+  const writtenOff = roundMoney(args.writtenOffAmount ?? 0);
+  return total.equals(paid.add(debt).add(writtenOff));
 }

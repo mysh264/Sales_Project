@@ -5,6 +5,7 @@ import { getCurrentUser } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/lib/permission-guard";
 import { Permissions } from "@/lib/permissions";
+import { PageHeader } from "@/components/ui/PageHeader";
 
 export const dynamic = "force-dynamic";
 
@@ -40,23 +41,23 @@ export default async function AdminBranchesPage({ searchParams }: BranchPageProp
   ]);
 
   return (
-    <main className="min-h-screen bg-slate-50 p-4 md:p-8">
+    <main className="min-h-screen bg-app-bg p-4 md:p-8">
       <div className="mx-auto flex max-w-7xl flex-col gap-8">
-        <header className="flex items-start justify-between gap-4">
-          <div>
-            <p className="text-sm font-black uppercase tracking-wide text-slate-500">Admin / Branches</p>
-            <h1 className="text-3xl font-black text-slate-950">Branch Configuration</h1>
-            <p className="mt-2 text-sm font-bold text-slate-600">Create or update branches and warehouses.</p>
-          </div>
-          <div className="flex gap-3">
-            <Link href="/admin" className="rounded border border-slate-300 bg-white px-4 py-2 text-sm font-black text-slate-900">
-              Back to Admin
-            </Link>
-            <Link href="/admin/branches" className="rounded bg-slate-950 px-4 py-2 text-sm font-black text-white">
-              Refresh
-            </Link>
-          </div>
-        </header>
+        <PageHeader
+          eyebrow="Admin / Branches"
+          title="Branch Configuration"
+          description="Create or update branches and warehouses."
+          actions={
+            <>
+              <Link href="/admin" className="rounded border border-slate-300 bg-white px-4 py-2 text-sm font-black text-slate-900">
+                Back to Admin
+              </Link>
+              <Link href="/admin/branches" className="ui-btn ui-btn-primary">
+                Refresh
+              </Link>
+            </>
+          }
+        />
 
         <section className="rounded-lg border border-slate-200 bg-white shadow-sm">
           <div className="border-b border-slate-200 px-4 py-3">
@@ -91,7 +92,7 @@ export default async function AdminBranchesPage({ searchParams }: BranchPageProp
               />
             </label>
             <div className="md:col-span-3">
-              <button type="submit" className="h-11 rounded bg-slate-950 px-5 text-sm font-black text-white">
+              <button type="submit" className="ui-btn ui-btn-primary">
                 {branchToEdit ? "Save Branch" : "Create Branch"}
               </button>
               {branchToEdit ? (

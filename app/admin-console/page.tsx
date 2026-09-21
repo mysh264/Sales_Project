@@ -157,12 +157,12 @@ export default async function AdminConsolePage() {
                       ) : (
                         <form action={toggleGlobalSalesView}>
                           <input type="hidden" name="userId" value={user.id} />
-                          <input type="hidden" name="currentStatus" value={String(user.hasGlobalAccess ?? user.allowGlobalSalesView)} />
+                          <input type="hidden" name="currentStatus" value={String(user.allowGlobalSalesView)} />
                           <button
                             type="submit"
-                            className={`ui-badge ${user.hasGlobalAccess ?? user.allowGlobalSalesView ? "ui-badge-brand" : "ui-badge-slate"} cursor-pointer hover:opacity-80`}
+                            className={`ui-badge ${user.allowGlobalSalesView ? "ui-badge-brand" : "ui-badge-slate"} cursor-pointer hover:opacity-80`}
                           >
-                            {(user.hasGlobalAccess ?? user.allowGlobalSalesView) ? "Enabled" : "Disabled"}
+                            {user.allowGlobalSalesView ? "Enabled" : "Disabled"}
                           </button>
                         </form>
                       )}

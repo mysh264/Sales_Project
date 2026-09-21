@@ -41,15 +41,35 @@ export default async function TesterPage() {
   return (
     <main className="min-h-screen bg-slate-50 p-4 md:p-8">
       <div className="mx-auto max-w-4xl space-y-6">
-        <header className="rounded-lg bg-slate-950 p-6 text-white shadow">
-          <h1 className="text-3xl font-black">Master Tester</h1>
-          <p className="mt-2 text-sm text-slate-300">
-            Signed in as <code className="rounded bg-slate-800 px-1">{user.email}</code> · {user.fullName} · {user.role}
-          </p>
-          <p className="mt-2 text-xs text-slate-400">
-            Click any user below to become them. Every switch is written to the audit log
-            with your id, the target&apos;s id, the IP, and the user agent.
-          </p>
+        <header className="sticky top-3 z-20 rounded-2xl bg-slate-950 p-5 text-white shadow-xl md:p-6">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0">
+              <h1 className="text-3xl font-black">Master Tester</h1>
+              <p className="mt-2 break-words text-sm text-slate-300">
+                Signed in as <code className="rounded bg-slate-800 px-1">{user.email}</code> · {user.fullName} · {user.role}
+              </p>
+              <p className="mt-2 max-w-2xl text-xs leading-5 text-slate-400">
+                Click any user below to become them. Every switch is written to the audit log
+                with your id, the target&apos;s id, the IP, and the user agent.
+              </p>
+            </div>
+            <div className="flex shrink-0 flex-wrap gap-2">
+              <a
+                href="/tester/audit"
+                className="rounded-lg border border-slate-600 px-3 py-2 text-xs font-black text-slate-100 hover:bg-slate-800"
+              >
+                Audit log
+              </a>
+              <form action={logout}>
+                <button
+                  type="submit"
+                  className="rounded-lg bg-white px-4 py-2 text-xs font-black text-slate-950 hover:bg-slate-200"
+                >
+                  Logout
+                </button>
+              </form>
+            </div>
+          </div>
         </header>
 
         {targets.length === 0 ? (
@@ -101,19 +121,6 @@ export default async function TesterPage() {
           </div>
         )}
 
-        <footer className="flex justify-center gap-4 text-center text-xs text-slate-500">
-          <a href="/tester/audit" className="underline">
-            View my impersonation audit log →
-          </a>
-          <form action={logout}>
-            <button
-              type="submit"
-              className="rounded bg-slate-950 px-3 py-1.5 text-xs font-black text-white hover:bg-slate-800"
-            >
-              Logout
-            </button>
-          </form>
-        </footer>
       </div>
     </main>
   );

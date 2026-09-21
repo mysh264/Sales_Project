@@ -169,7 +169,7 @@ export default async function GeneralManagerUsersPage() {
               </thead>
               <tbody>
                 {users.map((user) => {
-                  const globalOn = Boolean(user.hasGlobalAccess ?? user.allowGlobalSalesView);
+                  const globalOn = user.allowGlobalSalesView;
                   return (
                     <tr key={user.id}>
                       <td className="is-strong">{user.fullName}</td>

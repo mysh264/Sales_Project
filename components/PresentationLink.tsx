@@ -22,14 +22,14 @@ export function PresentationLink({ href = "/presentation", label = "View Present
       href={`${href.replace(/\/index\.html$/, "")}/index.html`}
       className="
         group inline-flex items-center gap-2
-        rounded-full bg-gradient-to-r from-indigo-600 via-violet-600 to-fuchsia-600
+        rounded-full bg-brand-gradient
         px-4 py-2
         text-sm font-bold text-white
-        shadow-lg shadow-violet-500/25
+        shadow-lg shadow-brand-700/25
         ring-1 ring-white/20
         backdrop-blur-sm
         transition-all duration-200 ease-out
-        hover:-translate-y-0.5 hover:shadow-xl hover:shadow-violet-500/40 hover:ring-white/40
+        hover:-translate-y-0.5 hover:shadow-xl hover:shadow-brand-700/40 hover:ring-white/40
         focus:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900
         active:translate-y-0 active:shadow-md
       "

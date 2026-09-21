@@ -1,23 +1,27 @@
 import Link from "next/link";
 import type { ComponentProps, ReactNode } from "react";
+import { cn } from "@/lib/utils";
+import { ShadcnButton, shadcnButtonVariants } from "@/components/ui/shadcn-button";
 
-type Variant = "primary" | "ghost" | "subtle" | "danger" | "success";
+type Variant = "primary" | "secondary" | "ghost" | "subtle" | "danger" | "success";
 type Size = "sm" | "md" | "lg";
 
-const variantClass: Record<Variant, string> = {
-  primary: "ui-btn-primary",
-  ghost: "ui-btn-ghost",
-  subtle: "ui-btn-subtle",
-  danger: "ui-btn-danger",
-  success: "ui-btn-success",
-};
+const variantMap = {
+  primary: "default",
+  secondary: "secondary",
+  ghost: "ghost",
+  subtle: "subtle",
+  danger: "destructive",
+  success: "success",
+} as const;
 
-const sizeClass: Record<Size, string> = {
-  sm: "ui-btn-sm",
-  md: "",
-  lg: "ui-btn-lg",
-};
+const sizeMap = {
+  sm: "sm",
+  md: "default",
+  lg: "lg",
+} as const;
 
+/** Product Button — thin wrapper over shadcn button variants (Oman teal). */
 export function Button({
   variant = "primary",
   size = "md",
@@ -26,9 +30,14 @@ export function Button({
   ...props
 }: { variant?: Variant; size?: Size; children: ReactNode } & ComponentProps<"button">) {
   return (
-    <button className={`${variantClass[variant]} ${sizeClass[size]} ${className}`} {...props}>
+    <ShadcnButton
+      variant={variantMap[variant]}
+      size={sizeMap[size]}
+      className={cn(className)}
+      {...props}
+    >
       {children}
-    </button>
+    </ShadcnButton>
   );
 }
 
@@ -41,7 +50,11 @@ export function ButtonLink({
   ...props
 }: { variant?: Variant; size?: Size; href: string; children: ReactNode } & Omit<ComponentProps<typeof Link>, "href">) {
   return (
-    <Link href={href} className={`${variantClass[variant]} ${sizeClass[size]} ${className}`} {...props}>
+    <Link
+      href={href}
+      className={cn(shadcnButtonVariants({ variant: variantMap[variant], size: sizeMap[size] }), className)}
+      {...props}
+    >
       {children}
     </Link>
   );

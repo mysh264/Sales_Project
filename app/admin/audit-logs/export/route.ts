@@ -3,6 +3,7 @@ import { getCurrentUser } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { buildCsv, csvResponse } from "@/lib/csv";
 import { businessDayRange } from "@/lib/business-date";
+import { auditActionsForGroup } from "@/lib/audit-action-groups";
 
 export const dynamic = "force-dynamic";
 
@@ -26,7 +27,7 @@ export async function GET(request: NextRequest) {
 
   const sp = request.nextUrl.searchParams;
   const userId = sp.get("userId")?.trim() === "all" ? undefined : sp.get("userId")?.trim() || undefined;
-  const action = sp.get("action")?.trim() || undefined;
+  const actions = auditActionsForGroup(sp.get("actionGroup")?.trim());
   const targetId = sp.get("targetId")?.trim() || undefined;
   const startDate = startOfDay(sp.get("startDate") || undefined);
   const endDate = endOfDay(sp.get("endDate") || undefined);
@@ -34,7 +35,7 @@ export async function GET(request: NextRequest) {
   const where = {
     ...(isGM && currentUser.branchId ? { user: { branchId: currentUser.branchId } } : {}),
     ...(userId ? { userId } : {}),
-    ...(action ? { action } : {}),
+    ...(actions.length > 0 ? { action: { in: actions } } : {}),
     ...(targetId ? { targetId: { contains: targetId, mode: "insensitive" as const } } : {}),
     ...(startDate || endDate
       ? { timestamp: { ...(startDate ? { gte: startDate } : {}), ...(endDate ? { lte: endDate } : {}) } }
@@ -43,15 +44,19 @@ export async function GET(request: NextRequest) {
 
   const logs = await prisma.auditLog.findMany({
     where,
-    include: { user: true },
+    include: { user: true, effectiveUser: true },
     orderBy: { timestamp: "desc" },
     take: 5000,
   });
+
+  const truncated = logs.length >= 5000;
 
   const rows = logs.map((log) => [
     log.timestamp.toISOString(),
     log.user.fullName,
     log.user.role,
+    log.effectiveUser?.fullName ?? "",
+    log.effectiveUser?.role ?? "",
     log.action,
     log.targetModel,
     log.targetId,
@@ -62,10 +67,31 @@ export async function GET(request: NextRequest) {
   ]);
 
   const csv = buildCsv(
-    ["timestamp", "user", "role", "action", "targetModel", "targetId", "oldValue", "newValue", "ipAddress", "userAgent"],
+    [
+      "timestamp",
+      "user",
+      "role",
+      "effectiveUser",
+      "effectiveUserRole",
+      "action",
+      "targetModel",
+      "targetId",
+      "oldValue",
+      "newValue",
+      "ipAddress",
+      "userAgent",
+    ],
     rows,
   );
 
   const stamp = new Date().toISOString().slice(0, 10);
-  return csvResponse(`audit-log-${stamp}.csv`, csv);
+  const response = csvResponse(`audit-log-${stamp}.csv`, csv);
+  if (truncated) {
+    response.headers.set("X-Export-Truncated", "true");
+    response.headers.set(
+      "X-Export-Truncation-Note",
+      "Export capped at 5000 rows. Narrow filters to retrieve older records.",
+    );
+  }
+  return response;
 }

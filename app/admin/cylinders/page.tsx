@@ -1,33 +1,13 @@
 import { redirect } from "next/navigation";
-import { revalidatePath } from "next/cache";
 import { getCurrentUser } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Badge } from "@/components/ui/Badge";
 import { CylinderForm } from "./CylinderForm";
+import { logCylinderEvent } from "./actions";
 
 export const dynamic = "force-dynamic";
-
-async function logEvent(formData: FormData) {
-  "use server";
-  const currentUser = await getCurrentUser();
-  if (!currentUser || currentUser.role !== "ADMIN") redirect("/login");
-
-
-  const cylinderId = String(formData.get("cylinderId") ?? "");
-  const type = String(formData.get("type") ?? "STOCK_ADJUSTMENT");
-  const note = String(formData.get("note") ?? "").trim();
-  const status = String(formData.get("status") ?? "AVAILABLE");
-  if (!cylinderId) return;
-
-  await prisma.$transaction([
-    prisma.cylinderEvent.create({ data: { cylinderId, branchId: currentUser.branchId ?? "", type: type as never, note } }),
-    prisma.cylinder.update({ where: { id: cylinderId }, data: { status: status as never } }),
-  ]);
-
-  revalidatePath("/admin/cylinders");
-}
 
 export default async function CylindersPage() {
   const currentUser = await getCurrentUser();
@@ -100,7 +80,7 @@ export default async function CylindersPage() {
 
         <Card>
           <CardHeader title="Log a Cylinder Event" description="Record a movement (load / sale / return / adjustment) for a tracked cylinder." />
-          <form action={logEvent} className="grid grid-cols-1 gap-3 md:grid-cols-4">
+          <form action={logCylinderEvent} className="grid grid-cols-1 gap-3 md:grid-cols-4">
             <select name="cylinderId" className="ui-input" defaultValue="">
               <option value="">Select cylinder…</option>
               {cylinders.map((c) => (

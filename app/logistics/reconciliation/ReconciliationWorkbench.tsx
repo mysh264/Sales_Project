@@ -72,7 +72,7 @@ export function ReconciliationWorkbench({
 
   return (
     <div className="space-y-6">
-      <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+      <section className="ui-card p-5">
         <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
           <div>
             <p className="text-xs font-black uppercase tracking-wide text-slate-500">Salesman Selection</p>
@@ -99,7 +99,7 @@ export function ReconciliationWorkbench({
         <p className="mt-3 text-sm font-bold text-slate-600">Current salesman: {selectedSalesmanName}</p>
       </section>
 
-      <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+      <section className="ui-card p-5">
         <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
           <div>
             <p className="text-xs font-black uppercase tracking-wide text-slate-500">Morning Load-Out</p>
@@ -108,7 +108,7 @@ export function ReconciliationWorkbench({
           <button
             type="button"
             onClick={addRow}
-            className="rounded bg-slate-950 px-4 py-2 text-sm font-black text-white"
+            className="ui-btn ui-btn-primary ui-btn-sm"
           >
             Add Row
           </button>
@@ -181,7 +181,7 @@ export function ReconciliationWorkbench({
             ))}
 
             <div className="flex flex-wrap gap-3">
-              <button type="submit" className="rounded bg-emerald-700 px-5 py-3 text-sm font-black text-white">
+              <button type="submit" className="ui-btn ui-btn-success">
                 Save Morning Load
               </button>
               <button

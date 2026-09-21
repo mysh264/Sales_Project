@@ -1,13 +1,15 @@
 import Link from "next/link";
 import { SalesmanHandoffPicker } from "./SalesmanHandoffPicker";
+import { hasGlobalWriteScope } from "@/lib/global-access";
 import { prisma } from "@/lib/prisma";
-import { getCurrentUser, hasGlobalSalesAccess } from "@/lib/session";
+import { getCurrentUser } from "@/lib/session";
 import { businessDate } from "@/lib/business-date";
 import { ButtonLink } from "@/components/ui/Button";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Stat } from "@/components/ui/Stat";
 import { StatusBadge } from "@/components/ui/Badge";
+import { readLocale, t } from "@/components/LocaleToggle";
 
 export const dynamic = "force-dynamic";
 
@@ -17,8 +19,9 @@ function startOfDay() {
 
 export default async function LoaderDashboardPage() {
   const currentUser = await getCurrentUser();
+  const locale = await readLocale();
   const dayStart = startOfDay();
-  const hasGlobalAccess = hasGlobalSalesAccess(currentUser);
+  const hasGlobalAccess = hasGlobalWriteScope(currentUser);
   const branchFilter = hasGlobalAccess ? {} : currentUser?.branchId ? { branchId: currentUser.branchId } : { branchId: "__no_branch__" };
 
   const [salesmen, reconciliations] = await Promise.all([
@@ -52,13 +55,13 @@ export default async function LoaderDashboardPage() {
     <main className="min-h-screen bg-app-bg p-4 md:p-8">
       <div className="mx-auto flex max-w-7xl flex-col gap-6 animate-fade-in">
         <PageHeader
-          eyebrow="Loader / Unloader"
-          title="Daily Route Dashboard"
-          description="Select a salesman, record the hand-off, and close the route at the end of the day."
+          eyebrow={t(locale, "brandLoader")}
+          title={t(locale, "loaderHomeTitle")}
+          description={t(locale, "loaderHomeDesc")}
           actions={
             <>
-              <ButtonLink href="/loader" variant="ghost">Home</ButtonLink>
-              <ButtonLink href="/logistics/reconciliation" variant="ghost">Reconciliation</ButtonLink>
+              <ButtonLink href="/loader" variant="ghost">{t(locale, "home")}</ButtonLink>
+              <ButtonLink href="/logistics/reconciliation" variant="ghost">{t(locale, "reconciliation")}</ButtonLink>
             </>
           }
         />
@@ -110,13 +113,13 @@ export default async function LoaderDashboardPage() {
                               href={`/loader/load/${salesman.id}`}
                               className="ui-btn ui-btn-success ui-btn-sm"
                             >
-                              Morning Load
+                              {t(locale, "morningLoad")}
                             </Link>
                             <Link
                               href={`/loader/return/${salesman.id}`}
                               className="ui-btn ui-btn-ghost ui-btn-sm"
                             >
-                              Evening Return
+                              {t(locale, "eveningReturn")}
                             </Link>
                           </div>
                         </td>
