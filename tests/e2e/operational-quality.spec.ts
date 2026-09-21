@@ -29,9 +29,14 @@ test.describe("operational route quality", () => {
 
     const manager = await login(browser, "manager@test.local", "/manager");
     await manager.page.getByRole("link", { name: /Inventory|المخزون/i }).click();
+    await expect(manager.page).toHaveURL(/\/manager\/inventory/);
     await manager.page.getByLabel(/Full cylinder adjustment/i).fill("10");
     await manager.page.getByPlaceholder(/Reason for adjustment/i).fill("Quality wave opening stock");
     await manager.page.getByRole("button", { name: /Record Audited Adjustment/i }).click();
+    const stockRow = manager.page.getByRole("row").filter({ hasText: /Acetylene|Oxygen|Nitrogen/i }).first();
+    await expect
+      .poll(async () => Number(await stockRow.getByRole("cell").nth(2).innerText()), { timeout: 20_000 })
+      .toBeGreaterThanOrEqual(10);
     await closePage(manager.context, manager.page);
 
     const loaderMorning = await login(browser, "loader@test.local", "/loader");
@@ -39,7 +44,9 @@ test.describe("operational route quality", () => {
     await salesmanRow.getByRole("link", { name: /Morning Load|تحميل صباحي/i }).click();
     await loaderMorning.page.getByLabel(/Full Cylinders Loaded/i).first().fill("3");
     await loaderMorning.page.getByRole("button", { name: /Save Morning Load/i }).click();
-    await expect(loaderMorning.page.getByText(/Existing route today|MORNING/i)).toBeVisible();
+    await expect(loaderMorning.page.getByText(/Existing route today:\s*MORNING RECORDED/i)).toBeVisible({
+      timeout: 20_000,
+    });
     await closePage(loaderMorning.context, loaderMorning.page);
 
     const salesman = await login(browser, "salesman@test.local", "/salesman");

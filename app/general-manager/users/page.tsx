@@ -47,14 +47,15 @@ export default async function GeneralManagerUsersPage() {
       : currentUser?.role === "GENERAL_MANAGER"
         ? Object.values(UserRole).filter((role) => role !== "ADMIN")
         : [UserRole.LOADER, UserRole.SALESMAN];
-  const [users, branches, allRoles, auditEntries] = await Promise.all([
+  const [users, branchRows, allRoles, auditEntries] = await Promise.all([
     prisma.user.findMany({
       where: scope?.canSeeAllBranches ? undefined : { branchId: scope?.branchId ?? "__no_branch__" },
-      include: { branch: true, roleProfile: true },
+      include: { branch: { select: { id: true, code: true, name: true } }, roleProfile: true },
       orderBy: [{ role: "asc" }, { fullName: "asc" }],
     }),
     prisma.branch.findMany({
       where: scope?.canSeeAllBranches ? undefined : { id: scope?.branchId ?? "__no_branch__" },
+      select: { id: true, code: true, name: true },
       orderBy: { name: "asc" },
     }),
     prisma.role.findMany({
@@ -69,6 +70,7 @@ export default async function GeneralManagerUsersPage() {
       select: { targetId: true, userId: true, action: true, timestamp: true, user: { select: { fullName: true } } },
     }),
   ]);
+  const branches = branchRows.map((branch) => ({ id: branch.id, code: branch.code, name: branch.name }));
   const roles = allRoles.filter((role) =>
     normalizePermissions(role.permissions).every((permission) => actorPermissionSet.has(permission)),
   );
@@ -214,10 +216,15 @@ export default async function GeneralManagerUsersPage() {
                                 </button>
                               </form>
                             <EmployeeEditPanel
-                              user={user}
+                              user={{
+                                id: user.id,
+                                role: user.role,
+                                branchId: user.branchId,
+                                roleId: user.roleId,
+                              }}
                               roleOptions={roleOptions}
                               branches={branches}
-                              roles={roles}
+                              roles={roles.map((role) => ({ id: role.id, name: role.name }))}
                               updateUserRole={updateUserRole}
                               resetUserPassword={resetUserPassword}
                             />

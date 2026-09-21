@@ -14,16 +14,17 @@ export default async function CylindersPage() {
   if (!currentUser) redirect("/login");
   if (currentUser.role !== "ADMIN") redirect("/admin-console");
 
-  const [cylinders, branches, products] = await Promise.all([
+  const [cylinders, branchRows, productRows] = await Promise.all([
     prisma.cylinder.findMany({
       include: { product: true, branch: true, customer: true, events: { orderBy: { createdAt: "desc" }, take: 1 } },
       orderBy: { createdAt: "desc" },
       take: 100,
     }),
-    prisma.branch.findMany({ orderBy: { name: "asc" } }),
-    prisma.product.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }),
+    prisma.branch.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } }),
+    prisma.product.findMany({ where: { isActive: true }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
   ]);
-
+  const branches = branchRows.map((branch) => ({ id: branch.id, name: branch.name }));
+  const products = productRows.map((product) => ({ id: product.id, name: product.name }));
   return (
     <main className="min-h-screen bg-app-bg p-4 md:p-8">
       <div className="mx-auto max-w-screen-xl flex flex-col gap-6">

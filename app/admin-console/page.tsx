@@ -31,12 +31,13 @@ export default async function AdminConsolePage() {
     redirect("/admin");
   }
 
-  const [users, branches, roles, userCount, branchCount, invoiceCount, activeUsers] = await Promise.all([
+  const [users, branchRows, roles, userCount, branchCount, invoiceCount, activeUsers] = await Promise.all([
     prisma.user.findMany({
-      include: { branch: true, roleProfile: true },
+      include: { branch: { select: { id: true, code: true, name: true } }, roleProfile: true },
       orderBy: [{ role: "asc" }, { fullName: "asc" }],
     }),
     prisma.branch.findMany({
+      select: { id: true, code: true, name: true },
       orderBy: { name: "asc" },
     }),
     prisma.role.findMany({
@@ -47,6 +48,7 @@ export default async function AdminConsolePage() {
     prisma.invoice.count(),
     prisma.user.count({ where: { isActive: true } }),
   ]);
+  const branches = branchRows.map((branch) => ({ id: branch.id, code: branch.code, name: branch.name }));
 
   return (
     <main className="min-h-screen bg-app-bg p-4 md:p-8">
@@ -184,10 +186,15 @@ export default async function AdminConsolePage() {
                               </button>
                             </form>
                             <EmployeeEditPanel
-                              user={user}
+                              user={{
+                                id: user.id,
+                                role: user.role,
+                                branchId: user.branchId,
+                                roleId: user.roleId,
+                              }}
                               roleOptions={roleOptions}
                               branches={branches}
-                              roles={roles}
+                              roles={roles.map((role) => ({ id: role.id, name: role.name }))}
                               updateUserRole={updateUserRole}
                               resetUserPassword={resetUserPassword}
                             />

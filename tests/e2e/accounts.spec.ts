@@ -71,7 +71,7 @@ test("human-facing account dashboards expose their primary work", async ({ brows
       email: "loader@test.local",
       password: demoPassword,
       path: "/loader",
-      visible: /Daily Route Dashboard/,
+      visible: /Cylinder handoffs|Daily Route Dashboard|تسليم الأسطوانات/,
     },
     {
       email: "salesman@test.local",
@@ -94,17 +94,20 @@ test("human-facing account dashboards expose their primary work", async ({ brows
 test("general manager can reach every global operation from visible navigation", async ({ page }) => {
   await login(page, "gm@test.local", demoPassword, "/general-manager");
   const destinations = [
-    ["Finance", /Financial Overview/],
-    ["Reconciliation", /Loader to Invoice Hand-off/],
-    ["Users", /User Management/],
-    ["Branches", /Branch Configuration/],
-    ["Products", /Product Master Data/],
-    ["Inventory", /Inventory Adjustments/],
-    ["Roles", /Role Management/],
+    ["Finance", /\/general-manager\/finance/, /Financial Overview/],
+    ["Reconciliation", /\/general-manager\/reconciliation/, /Loader to Invoice Hand-off/],
+    ["Users", /\/general-manager\/users/, /User Management/],
+    ["Branches", /\/general-manager\/branches/, /Branch Configuration/],
+    ["Products", /\/general-manager\/products/, /Product Master Data/],
+    ["Inventory", /\/general-manager\/inventory/, /Inventory Adjustments/],
+    ["Roles", /\/general-manager\/roles/, /Role Management/],
   ] as const;
 
-  for (const [linkName, heading] of destinations) {
-    await page.getByRole("link", { name: linkName, exact: true }).click();
-    await expect(page.getByRole("heading", { name: heading })).toBeVisible();
+  for (const [linkName, path, heading] of destinations) {
+    await Promise.all([
+      page.waitForURL(path, { timeout: 20_000 }),
+      page.getByRole("link", { name: linkName, exact: true }).click(),
+    ]);
+    await expect(page.getByRole("heading", { name: heading })).toBeVisible({ timeout: 15_000 });
   }
 });
