@@ -1,4 +1,4 @@
-import type { UserRole } from "@prisma/client";
+import type { UserRole } from "@/generated/prisma/client";
 import { getCurrentUser } from "@/lib/session";
 import { logAction } from "@/lib/audit";
 import { getEffectivePermissions, hasPermission, type Permission } from "@/lib/permissions";

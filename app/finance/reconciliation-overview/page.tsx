@@ -1,12 +1,14 @@
-import { Prisma } from "@prisma/client";
-import Link from "next/link";
 import { redirect } from "next/navigation";
+import { approveReconciliationDiscrepancy } from "@/app/actions/manager";
+import { OmanDateInput } from "@/components/OmanDateInput";
+import { businessDate } from "@/lib/business-date";
 import { formatDateDMY } from "@/lib/date-format";
 import { Permissions } from "@/lib/permissions";
 import { checkPermission, requirePermission } from "@/lib/permission-guard";
-import { getCurrentUser } from "@/lib/session";
-import { hasGlobalSalesAccess } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
+import { getCurrentUser, hasGlobalSalesAccess } from "@/lib/session";
+import { PageHeader } from "@/components/ui/PageHeader";
+import { ButtonLink } from "@/components/ui/Button";
 
 export const dynamic = "force-dynamic";
 
@@ -41,9 +43,12 @@ function nextDay(date: Date) {
 }
 
 function dayKey(value: Date) {
-  const year = value.getFullYear();
-  const month = `${value.getMonth() + 1}`.padStart(2, "0");
-  const day = `${value.getDate()}`.padStart(2, "0");
+  // Attribute invoices to the Muscat business day, not server-local time, so a sale at
+  // 00:00–04:00 Muscat (20:00–24:00 UTC) is not mis-bucketed to the previous day.
+  const d = businessDate(value);
+  const year = d.getUTCFullYear();
+  const month = `${d.getUTCMonth() + 1}`.padStart(2, "0");
+  const day = `${d.getUTCDate()}`.padStart(2, "0");
   return `${year}-${month}-${day}`;
 }
 
@@ -69,6 +74,14 @@ export default async function ReconciliationOverviewPage({
   }
 
   const params = (await searchParams) ?? {};
+  const workspaceHome =
+    currentUser.role === "ADMIN" ? "/admin" : currentUser.role === "MANAGER" ? "/manager" : "/general-manager";
+  const resetPath =
+    currentUser.role === "ADMIN"
+      ? "/admin/reconciliation"
+      : currentUser.role === "MANAGER"
+        ? "/manager/reconciliation"
+        : "/general-manager/reconciliation";
   const startDate = parseDate(params.start) ?? startOfMonth();
   const endDateInput = parseDate(params.end);
   const endDateExclusive = endDateInput ? nextDay(endDateInput) : endOfMonth();
@@ -92,9 +105,9 @@ export default async function ReconciliationOverviewPage({
     }),
     prisma.user.findMany({
       where: hasGlobalAccess
-        ? undefined
+        ? { role: "SALESMAN", isActive: true }
         : currentUser.branchId
-          ? { branchId: currentUser.branchId }
+          ? { branchId: currentUser.branchId, role: "SALESMAN", isActive: true }
           : { id: "__no_user__" },
       orderBy: { fullName: "asc" },
       select: { id: true, fullName: true },
@@ -124,6 +137,7 @@ export default async function ReconciliationOverviewPage({
     }),
     prisma.invoice.findMany({
       where: {
+        status: "ISSUED",
         createdAt: {
           gte: startDate,
           lt: endDateExclusive,
@@ -172,6 +186,7 @@ export default async function ReconciliationOverviewPage({
       calculatedSold,
       actualInvoiced,
       variance,
+      status: reconciliation.status,
     };
   });
 
@@ -190,65 +205,56 @@ export default async function ReconciliationOverviewPage({
   );
 
   return (
-    <main className="min-h-screen bg-slate-50 p-4 md:p-8">
+    <main className="min-h-screen bg-app-bg p-4 md:p-8">
       <div className="mx-auto flex max-w-screen-2xl flex-col gap-6">
-        <header className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-            <div>
-              <p className="text-sm font-black uppercase tracking-wide text-slate-500">Finance / Reconciliation Overview</p>
-              <h1 className="mt-1 text-3xl font-black text-slate-950">Loader to Invoice Hand-off</h1>
-              <p className="mt-2 max-w-3xl text-sm font-bold text-slate-600">
-                Compare what the loader recorded against what the salesman invoiced. Use this to spot missing sales or route variance.
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-3">
-              <Link href="/manager" className="rounded border border-slate-300 bg-white px-4 py-2 text-sm font-black text-slate-900">
-                Back to Manager
-              </Link>
-              <Link href="/loader" className="rounded bg-slate-950 px-4 py-2 text-sm font-black text-white">
-                Loader Dashboard
-              </Link>
-            </div>
-          </div>
-        </header>
+        <PageHeader
+          eyebrow="Finance / Reconciliation Overview"
+          title="Loader to Invoice Hand-off"
+          description="Compare what the loader recorded against what the salesman invoiced. Use this to spot missing sales or route variance."
+          actions={
+            <ButtonLink href={workspaceHome} variant="ghost">
+              Back to Dashboard
+            </ButtonLink>
+          }
+        />
 
         <section className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-          <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-            <p className="text-xs font-black uppercase tracking-wide text-slate-500">Total Loaded</p>
+          <div className="ui-card ui-card-pad">
+            <p className="ui-stat-label">Total Loaded</p>
             <div className="mt-2 text-4xl font-black text-slate-950">{formatNumber(totals.loaded)}</div>
           </div>
-          <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-            <p className="text-xs font-black uppercase tracking-wide text-slate-500">Returned Full</p>
+          <div className="ui-card ui-card-pad">
+            <p className="ui-stat-label">Returned Full</p>
             <div className="mt-2 text-4xl font-black text-amber-700">{formatNumber(totals.returnedFull)}</div>
           </div>
-          <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-            <p className="text-xs font-black uppercase tracking-wide text-slate-500">Actual Invoiced</p>
-            <div className="mt-2 text-4xl font-black text-emerald-700">{formatNumber(totals.actualInvoiced)}</div>
+          <div className="ui-card ui-card-pad">
+            <p className="ui-stat-label">Actual Invoiced</p>
+            <div className="mt-2 text-4xl font-black text-brand-700">{formatNumber(totals.actualInvoiced)}</div>
           </div>
-          <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-            <p className="text-xs font-black uppercase tracking-wide text-slate-500">Variance</p>
-            <div className={`mt-2 text-4xl font-black ${totals.variance === 0 ? "text-slate-950" : "text-red-700"}`}>
+          <div className="ui-card ui-card-pad">
+            <p className="ui-stat-label">Variance</p>
+            <div className={`mt-2 text-4xl font-black ${totals.variance === 0 ? "text-slate-950" : "text-rose-700"}`}>
               {formatNumber(totals.variance)}
             </div>
           </div>
         </section>
 
-        <section className="rounded-lg border border-slate-200 bg-white shadow-sm">
+        <section className="ui-card">
           <div className="border-b border-slate-200 px-5 py-4">
-            <h2 className="text-lg font-black text-slate-950">Scope Filters</h2>
+            <h2 className="ui-section-title">Scope Filters</h2>
           </div>
           <form method="get" className="grid grid-cols-1 gap-4 p-4 md:grid-cols-2 xl:grid-cols-4">
             <label className="block">
-              <span className="text-xs font-black uppercase tracking-wide text-slate-500">Start Date</span>
-              <input name="start" type="date" defaultValue={params.start ?? ""} className="mt-2 h-12 w-full rounded border border-slate-300 px-3 text-sm font-bold" />
+              <span className="ui-label">Start Date</span>
+              <OmanDateInput name="start" defaultValue={params.start ?? ""} className="ui-input" />
             </label>
             <label className="block">
-              <span className="text-xs font-black uppercase tracking-wide text-slate-500">End Date</span>
-              <input name="end" type="date" defaultValue={params.end ?? ""} className="mt-2 h-12 w-full rounded border border-slate-300 px-3 text-sm font-bold" />
+              <span className="ui-label">End Date</span>
+              <OmanDateInput name="end" defaultValue={params.end ?? ""} className="ui-input" />
             </label>
             <label className="block">
-              <span className="text-xs font-black uppercase tracking-wide text-slate-500">Branch</span>
-              <select name="branchId" defaultValue={requestedBranchId ?? ""} className="mt-2 h-12 w-full rounded border border-slate-300 px-3 text-sm font-bold">
+              <span className="ui-label">Branch</span>
+              <select name="branchId" defaultValue={requestedBranchId ?? ""} className="ui-input">
                 <option value="">{hasGlobalAccess ? "All Branches" : "Current Branch"}</option>
                 {availableBranches.map((branch) => (
                   <option key={branch.id} value={branch.id}>
@@ -258,8 +264,8 @@ export default async function ReconciliationOverviewPage({
               </select>
             </label>
             <label className="block">
-              <span className="text-xs font-black uppercase tracking-wide text-slate-500">Salesman</span>
-              <select name="userId" defaultValue={requestedUserId ?? ""} className="mt-2 h-12 w-full rounded border border-slate-300 px-3 text-sm font-bold">
+              <span className="ui-label">Salesman</span>
+              <select name="userId" defaultValue={requestedUserId ?? ""} className="ui-input">
                 <option value="">All Salesmen</option>
                 {availableUsers.map((user) => (
                   <option key={user.id} value={user.id}>
@@ -269,15 +275,15 @@ export default async function ReconciliationOverviewPage({
               </select>
             </label>
             <div className="md:col-span-2 xl:col-span-4 flex gap-3">
-              <button type="submit" className="rounded bg-slate-950 px-4 py-2 text-sm font-black text-white">Apply Filters</button>
-              <Link href="/finance/reconciliation-overview" className="rounded border border-slate-300 bg-white px-4 py-2 text-sm font-black text-slate-900">Reset</Link>
+              <button type="submit" className="ui-btn ui-btn-primary">Apply Filters</button>
+              <ButtonLink href={resetPath} variant="ghost">Reset</ButtonLink>
             </div>
           </form>
         </section>
 
-        <section className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+        <section className="ui-card overflow-hidden">
           <div className="border-b border-slate-200 px-5 py-4">
-            <h2 className="text-lg font-black text-slate-950">Daily Comparison</h2>
+            <h2 className="ui-section-title">Daily Comparison</h2>
             <p className="mt-1 text-sm font-bold text-slate-600">
               Date range: {formatDateDMY(startDate)} to {formatDateDMY(endDateDisplay)}
             </p>
@@ -296,12 +302,13 @@ export default async function ReconciliationOverviewPage({
                   <th className="px-4 py-3">Calculated Sold</th>
                   <th className="px-4 py-3">Actual Invoiced</th>
                   <th className="px-4 py-3">Variance</th>
+                  <th className="px-4 py-3">Approval</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200">
                 {rows.length === 0 ? (
                   <tr>
-                    <td className="px-4 py-5 font-bold text-slate-600" colSpan={10}>
+                    <td className="px-4 py-5 font-bold text-slate-600" colSpan={11}>
                       No routes found in this range.
                     </td>
                   </tr>
@@ -319,6 +326,17 @@ export default async function ReconciliationOverviewPage({
                       <td className="px-4 py-3 font-bold text-slate-700">{formatNumber(row.actualInvoiced)}</td>
                       <td className={`px-4 py-3 font-black ${row.variance === 0 ? "text-slate-950" : "text-red-700"}`}>
                         {formatNumber(row.variance)}
+                      </td>
+                      <td className="px-4 py-3">
+                        {row.status === "DISCREPANCY_PENDING" ? (
+                          <form action={approveReconciliationDiscrepancy} className="flex min-w-72 gap-2">
+                            <input type="hidden" name="reconciliationId" value={row.id} />
+                            <input name="reason" required minLength={5} placeholder="Approval reason" className="h-10 flex-1 rounded border px-2" />
+                            <button className="rounded bg-amber-700 px-3 font-black text-white">Approve</button>
+                          </form>
+                        ) : (
+                          <span className="font-bold text-emerald-700">Closed</span>
+                        )}
                       </td>
                     </tr>
                   ))

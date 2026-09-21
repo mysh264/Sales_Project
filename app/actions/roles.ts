@@ -1,8 +1,16 @@
 "use server";
 
+import type { UserRole } from "@/generated/prisma/client";
 import { revalidatePath } from "next/cache";
 import { auditSnapshot, logAction } from "@/lib/audit";
-import { Permissions, assignablePermissions, normalizePermissions } from "@/lib/permissions";
+import {
+  Permissions,
+  assignablePermissions,
+  canAssignProfile,
+  getEffectivePermissions,
+  normalizePermissions,
+  type Permission,
+} from "@/lib/permissions";
 import { requirePermission } from "@/lib/permission-guard";
 import { prisma } from "@/lib/prisma";
 
@@ -17,13 +25,25 @@ function permissionList(formData: FormData) {
   return normalizePermissions(values).filter((value) => assignablePermissions.includes(value));
 }
 
-async function getActorId() {
+type RoleActor = {
+  id: string;
+  role: UserRole;
+  roleProfile?: { permissions: string[] } | null;
+};
+
+async function getActor() {
   const { user } = await requirePermission(Permissions.Roles_Update);
   if (!user) {
     throw new Error("Unauthorized");
   }
 
-  return user.id;
+  return user;
+}
+
+function requireAssignablePermissions(actor: RoleActor, permissions: Permission[]) {
+  if (!canAssignProfile(actor.role, getEffectivePermissions(actor), permissions)) {
+    throw new Error("You cannot grant a role permissions you do not have.");
+  }
 }
 
 export async function createRole(formData: FormData) {
@@ -38,7 +58,8 @@ export async function createRole(formData: FormData) {
     throw new Error("Select at least one permission.");
   }
 
-  const actorId = await getActorId();
+  const actor = await getActor();
+  requireAssignablePermissions(actor, permissions);
 
   await prisma.$transaction(async (tx) => {
     const existing = await tx.role.findUnique({ where: { name } });
@@ -51,7 +72,7 @@ export async function createRole(formData: FormData) {
       data: { name, permissions },
     });
 
-    await logAction(actorId, "CREATE_ROLE", "Role", role.id, null, auditSnapshot(role), { tx });
+    await logAction(actor.id, "CREATE_ROLE", "Role", role.id, null, auditSnapshot(role), { tx });
   });
 
   revalidatePath("/admin/roles");
@@ -76,7 +97,8 @@ export async function updateRole(formData: FormData) {
     throw new Error("Select at least one permission.");
   }
 
-  const actorId = await getActorId();
+  const actor = await getActor();
+  requireAssignablePermissions(actor, permissions);
 
   await prisma.$transaction(async (tx) => {
     const existing = await tx.role.findUniqueOrThrow({ where: { id: roleId } });
@@ -84,8 +106,12 @@ export async function updateRole(formData: FormData) {
       where: { id: roleId },
       data: { name, permissions },
     });
+    await tx.user.updateMany({
+      where: { roleId },
+      data: { sessionVersion: { increment: 1 } },
+    });
 
-    await logAction(actorId, "UPDATE_ROLE", "Role", role.id, auditSnapshot(existing), auditSnapshot(role), { tx });
+    await logAction(actor.id, "UPDATE_ROLE", "Role", role.id, auditSnapshot(existing), auditSnapshot(role), { tx });
   });
 
   revalidatePath("/admin/roles");
@@ -100,7 +126,7 @@ export async function deleteRole(formData: FormData) {
     throw new Error("Missing role.");
   }
 
-  const actorId = await getActorId();
+  const actor = await getActor();
 
   await prisma.$transaction(async (tx) => {
     const role = await tx.role.findUniqueOrThrow({
@@ -114,7 +140,7 @@ export async function deleteRole(formData: FormData) {
 
     await tx.role.delete({ where: { id: roleId } });
 
-    await logAction(actorId, "DELETE_ROLE", "Role", role.id, auditSnapshot(role), null, { tx });
+    await logAction(actor.id, "DELETE_ROLE", "Role", role.id, auditSnapshot(role), null, { tx });
   });
 
   revalidatePath("/admin/roles");

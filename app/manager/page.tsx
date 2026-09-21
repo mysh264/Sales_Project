@@ -1,10 +1,19 @@
-import { DebtStatus, InvoiceStatus, Prisma } from "@prisma/client";
+import { DebtStatus, InvoiceStatus, Prisma } from "@/generated/prisma/client";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getFinancialSummary } from "@/app/actions/finance";
+import { OmanDateInput } from "@/components/OmanDateInput";
+import { ButtonLink } from "@/components/ui/Button";
+import { Card, CardHeader } from "@/components/ui/Card";
+import { PageHeader } from "@/components/ui/PageHeader";
+import { Stat } from "@/components/ui/Stat";
+import { StatusBadge } from "@/components/ui/Badge";
+import { Donut, BarList, Trend, KpiCallout } from "@/components/ui/Chart";
 import { formatDateTimeDMY } from "@/lib/date-format";
+import { formatOmr } from "@/lib/money";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser, hasGlobalSalesAccess } from "@/lib/session";
+import { hasPermission, Permissions } from "@/lib/permissions";
 
 export const dynamic = "force-dynamic";
 
@@ -30,12 +39,8 @@ function endOfMonth() {
 }
 
 function parseDate(value?: string) {
-  if (!value) {
-    return null;
-  }
-
+  if (!value) return null;
   const parsed = new Date(`${value}T00:00:00`);
-
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
@@ -43,25 +48,14 @@ function nextDay(date: Date) {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1);
 }
 
-function formatOmr(value: Prisma.Decimal | number | null | undefined) {
-  const amount = value instanceof Prisma.Decimal ? value.toNumber() : Number(value ?? 0);
-  return new Intl.NumberFormat("en-OM", {
-    style: "currency",
-    currency: "OMR",
-    minimumFractionDigits: 3,
-    maximumFractionDigits: 3,
-  }).format(amount);
-}
-
-function statusBadge(status: string) {
-  const classes =
-    status === "ISSUED"
-      ? "bg-green-100 text-green-800"
-      : status === "CANCELLED"
-        ? "bg-red-100 text-red-800"
-        : "bg-slate-100 text-slate-800";
-
-  return <span className={`rounded px-2 py-1 text-xs font-black uppercase ${classes}`}>{status}</span>;
+function lastSixMonths() {
+  const now = new Date();
+  const months: { start: Date; end: Date; label: string }[] = [];
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    months.push({ start: d, end: new Date(now.getFullYear(), now.getMonth() - i + 1, 1), label: d.toLocaleDateString("en-OM", { month: "short" }) });
+  }
+  return months;
 }
 
 export default async function ManagerDashboardPage({
@@ -83,21 +77,22 @@ export default async function ManagerDashboardPage({
   const requestedBranchId = hasGlobalAccess ? params.branchId?.trim() || null : branchId;
   const requestedUserId = params.userId?.trim() || null;
   const customerFilter = params.customer?.trim() || "";
-  const statusFilter = params.status?.trim() || "";
+  const requestedStatus = params.status?.trim() || "";
+  const statusFilter = requestedStatus === InvoiceStatus.CANCELLED ? InvoiceStatus.CANCELLED : InvoiceStatus.ISSUED;
+  const months = lastSixMonths();
+
   const branch =
     currentUser.branch ??
     (branchId
-      ? await prisma.branch.findUnique({
-          where: { id: branchId },
-        })
+      ? await prisma.branch.findUnique({ where: { id: branchId } })
       : null);
 
   if (!hasGlobalAccess && !branch) {
     return (
-      <main className="min-h-screen bg-slate-50 p-4 md:p-8">
-        <div className="mx-auto max-w-7xl rounded-lg bg-white p-6 text-xl font-black text-slate-900 shadow-sm">
-          No branch is configured for this account.
-        </div>
+      <main className="min-h-screen bg-app-bg p-4 md:p-8">
+        <Card className="mx-auto mt-10 max-w-xl text-center">
+          <p className="text-xl font-black text-slate-900">No branch is configured for this account.</p>
+        </Card>
       </main>
     );
   }
@@ -110,9 +105,9 @@ export default async function ManagerDashboardPage({
     }),
     prisma.user.findMany({
       where: hasGlobalAccess
-        ? undefined
+        ? { role: "SALESMAN" }
         : branch?.id
-          ? { branchId: branch.id }
+          ? { branchId: branch.id, role: "SALESMAN" }
           : { id: "__no_user__" },
       orderBy: { fullName: "asc" },
       select: { id: true, fullName: true, branchId: true },
@@ -127,45 +122,21 @@ export default async function ManagerDashboardPage({
       : { branchId: branchId ?? "" }),
     ...(requestedUserId ? { salesmanId: requestedUserId } : {}),
     ...(customerFilter
-      ? {
-          customer: {
-            name: {
-              contains: customerFilter,
-              mode: "insensitive" as const,
-            },
-          },
-        }
+      ? { customer: { name: { contains: customerFilter, mode: "insensitive" as const } } }
       : {}),
-    ...(statusFilter && statusFilter !== "ALL" ? { status: statusFilter as InvoiceStatus } : { status: "ISSUED" }),
-    createdAt: {
-      gte: startDate,
-      lt: endDateExclusive,
-    },
+    status: statusFilter,
+    createdAt: { gte: startDate, lt: endDateExclusive },
   };
 
   const debtWhere: Prisma.CustomerDebtWhereInput = {
-    ...(hasGlobalAccess
-      ? requestedBranchId
-        ? { customer: { branchId: requestedBranchId } }
-        : {}
-      : { customer: { branchId: branch?.id ?? "" } }),
+    customer: {
+      ...(hasGlobalAccess ? (requestedBranchId ? { branchId: requestedBranchId } : {}) : { branchId: branch?.id ?? "" }),
+      ...(customerFilter ? { name: { contains: customerFilter, mode: "insensitive" as const } } : {}),
+    },
     ...(requestedUserId ? { invoice: { salesmanId: requestedUserId } } : {}),
-    ...(customerFilter
-      ? {
-          customer: {
-            name: {
-              contains: customerFilter,
-              mode: "insensitive" as const,
-            },
-          },
-        }
-      : {}),
     balanceAmount: { gt: new Prisma.Decimal(0) },
     status: { in: activeDebtStatuses },
-    createdAt: {
-      gte: startDate,
-      lt: endDateExclusive,
-    },
+    createdAt: { gte: startDate, lt: endDateExclusive },
   };
 
   const movementWhere = hasGlobalAccess
@@ -174,84 +145,97 @@ export default async function ManagerDashboardPage({
       : { createdAt: { gte: startDate, lt: endDateExclusive } }
     : { branchId: branch?.id ?? "", createdAt: { gte: startDate, lt: endDateExclusive } };
 
-  const [summary, outstandingDebt, movementCount, globalViewUsers, userCount] = await Promise.all([
-    getFinancialSummary({
-      startDate,
-      endDateExclusive,
-      branchId: requestedBranchId,
-      salesmanId: requestedUserId,
-    }),
-    prisma.customerDebt.aggregate({
-      _sum: { balanceAmount: true },
-      where: debtWhere,
-    }),
+  const [summary, outstandingDebt, movementCount, globalViewUsers, userCount, monthlyRevenue, topSalesmen] = await Promise.all([
+    getFinancialSummary({ startDate, endDateExclusive, branchId: requestedBranchId, salesmanId: requestedUserId }),
+    prisma.customerDebt.aggregate({ _sum: { balanceAmount: true }, where: debtWhere }),
     prisma.cylinderMovement.count({ where: movementWhere }),
     prisma.user.count({
       where: {
+        ...(!hasGlobalAccess ? { branchId: branchId ?? "__no_branch__" } : {}),
         OR: [{ hasGlobalAccess: true }, { allowGlobalSalesView: true }],
       },
     }),
-    prisma.user.count(),
+    prisma.user.count({ where: !hasGlobalAccess ? { branchId: branchId ?? "__no_branch__" } : undefined }),
+    Promise.all(
+      months.map((m) =>
+        prisma.invoice.aggregate({
+          _sum: { totalAmount: true },
+          where: { ...invoiceWhere, createdAt: { gte: m.start, lt: m.end } },
+        }),
+      ),
+    ),
+    prisma.invoice.groupBy({
+      by: ["salesmanId"],
+      where: invoiceWhere,
+      _sum: { totalAmount: true },
+      orderBy: { _sum: { totalAmount: "desc" } },
+      take: 5,
+    }),
   ]);
 
   const latestInvoices = await prisma.invoice.findMany({
     where: invoiceWhere,
-    include: {
-      customer: true,
-      salesman: true,
-    },
+    include: { customer: true, salesman: true },
     orderBy: { createdAt: "desc" },
     take: 10,
   });
 
   const outstandingDebtValue = outstandingDebt._sum?.balanceAmount ?? new Prisma.Decimal(0);
+  const collected = new Prisma.Decimal(summary.totalSalesToday).sub(outstandingDebtValue);
+  const trendPoints = monthlyRevenue.map((m) => Number(m._sum.totalAmount ?? 0));
+
+  const salesmanMap = new Map(availableUsers.map((u) => [u.id, u.fullName]));
+  const topSalesmenItems = topSalesmen
+    .map((s) => ({
+      label: salesmanMap.get(s.salesmanId) ?? "Unknown",
+      value: Number(s._sum.totalAmount ?? 0),
+    }))
+    .filter((s) => s.value > 0);
 
   const stats = [
-    { label: "Revenue in Scope", value: formatOmr(Number(summary.totalSalesToday)), tone: "text-green-700" },
-    { label: "Outstanding Debt", value: formatOmr(outstandingDebtValue), tone: "text-red-700" },
-    { label: "Cylinder Movements", value: movementCount.toLocaleString("en-OM"), tone: "text-slate-900" },
+    { label: "Revenue in Scope", value: formatOmr(Number(summary.totalSalesToday)), tone: "success" as const },
+    { label: "Outstanding Debt", value: formatOmr(outstandingDebtValue), tone: "danger" as const },
+    { label: "Cylinder Movements", value: movementCount.toLocaleString("en-OM"), tone: "default" as const },
   ];
 
   return (
-    <main className="min-h-screen bg-slate-50 p-4 md:p-8">
-      <div className="mx-auto max-w-7xl">
-        <header className="mb-6 flex items-center justify-between gap-4">
-          <div>
-            <p className="text-sm font-black uppercase tracking-wide text-slate-500">Branch Manager</p>
-            <h1 className="text-3xl font-black text-slate-950">{branch?.name ?? "All Branches"}</h1>
-            <p className="mt-1 text-sm font-bold text-slate-600">
-            {hasGlobalAccess ? "Global sales visibility is enabled for this account." : "Branch-level view only."}
-          </p>
-        </div>
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <Link href="/manager/settings" className="rounded bg-slate-950 px-4 py-2 text-sm font-black text-white">
-              Price Settings
-            </Link>
-            <Link href="/manager/all-sales" className="rounded bg-green-700 px-4 py-2 text-sm font-black text-white">
-              All Sales
-            </Link>
-            <Link href="/general-manager/users" className="rounded border border-slate-300 bg-white px-4 py-2 text-sm font-black text-slate-950">
-              User Management
-            </Link>
-          </div>
-        </header>
+    <main className="min-h-screen bg-app-bg p-4 md:p-8">
+      <div className="mx-auto max-w-7xl animate-fade-in">
+        <PageHeader
+          eyebrow="Branch Manager"
+          title={branch?.name ?? "All Branches"}
+          description={hasGlobalAccess ? "Global sales visibility is enabled for this account." : "Branch-level view only."}
+          actions={
+            <>
+              <ButtonLink href="/manager/settings" variant="primary">
+                Price Settings
+              </ButtonLink>
+              <ButtonLink href="/manager/all-sales" variant="success">
+                All Sales
+              </ButtonLink>
+              {hasPermission(currentUser, Permissions.Users_Update) ? (
+                <ButtonLink href="/manager/users" variant="ghost">
+                  User Management
+                </ButtonLink>
+              ) : null}
+            </>
+          }
+        />
 
-        <section className="rounded-lg border border-slate-200 bg-white shadow-sm">
-          <div className="border-b border-slate-200 px-4 py-3">
-            <h2 className="text-lg font-black text-slate-950">Scope Filters</h2>
-          </div>
-          <form method="get" className="grid grid-cols-1 gap-4 p-4 md:grid-cols-2 xl:grid-cols-4">
+        <Card className="mb-6">
+          <CardHeader title="Scope Filters" description="Narrow the dashboard to a date range, branch, salesman or customer." />
+          <form method="get" className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
             <label className="block">
-              <span className="text-xs font-black uppercase tracking-wide text-slate-500">Start Date</span>
-              <input name="start" type="date" defaultValue={params.start ?? ""} className="mt-2 h-12 w-full rounded border border-slate-300 px-3 text-sm font-bold" />
+              <span className="ui-label">Start Date</span>
+              <OmanDateInput name="start" defaultValue={params.start ?? ""} className="ui-input" />
             </label>
             <label className="block">
-              <span className="text-xs font-black uppercase tracking-wide text-slate-500">End Date</span>
-              <input name="end" type="date" defaultValue={params.end ?? ""} className="mt-2 h-12 w-full rounded border border-slate-300 px-3 text-sm font-bold" />
+              <span className="ui-label">End Date</span>
+              <OmanDateInput name="end" defaultValue={params.end ?? ""} className="ui-input" />
             </label>
             <label className="block">
-              <span className="text-xs font-black uppercase tracking-wide text-slate-500">Branch</span>
-              <select name="branchId" defaultValue={requestedBranchId ?? ""} className="mt-2 h-12 w-full rounded border border-slate-300 px-3 text-sm font-bold">
+              <span className="ui-label">Branch</span>
+              <select name="branchId" defaultValue={requestedBranchId ?? ""} className="ui-input">
                 <option value="">{hasGlobalAccess ? "All Branches" : "Current Branch"}</option>
                 {availableBranches.map((item) => (
                   <option key={item.id} value={item.id}>
@@ -261,8 +245,8 @@ export default async function ManagerDashboardPage({
               </select>
             </label>
             <label className="block">
-              <span className="text-xs font-black uppercase tracking-wide text-slate-500">Salesman</span>
-              <select name="userId" defaultValue={requestedUserId ?? ""} className="mt-2 h-12 w-full rounded border border-slate-300 px-3 text-sm font-bold">
+              <span className="ui-label">Salesman</span>
+              <select name="userId" defaultValue={requestedUserId ?? ""} className="ui-input">
                 <option value="">All Salesmen</option>
                 {availableUsers.map((user) => (
                   <option key={user.id} value={user.id}>
@@ -272,79 +256,98 @@ export default async function ManagerDashboardPage({
               </select>
             </label>
             <label className="block md:col-span-2 xl:col-span-2">
-              <span className="text-xs font-black uppercase tracking-wide text-slate-500">Customer Search</span>
-              <input name="customer" defaultValue={customerFilter} placeholder="Customer name" className="mt-2 h-12 w-full rounded border border-slate-300 px-3 text-sm font-bold" />
+              <span className="ui-label">Customer Search</span>
+              <input name="customer" defaultValue={customerFilter} placeholder="Customer name" className="ui-input" />
             </label>
             <label className="block">
-              <span className="text-xs font-black uppercase tracking-wide text-slate-500">Status</span>
-              <select name="status" defaultValue={statusFilter || "ALL"} className="mt-2 h-12 w-full rounded border border-slate-300 px-3 text-sm font-bold">
-                <option value="ALL">Open / Partial</option>
-                <option value="OPEN">Open</option>
-                <option value="PARTIALLY_PAID">Partially Paid</option>
-                <option value="PAID">Paid</option>
-                <option value="WRITTEN_OFF">Written Off</option>
+              <span className="ui-label">Status</span>
+              <select name="status" defaultValue={statusFilter} className="ui-input">
+                <option value="ISSUED">Issued</option>
+                <option value="CANCELLED">Cancelled</option>
               </select>
             </label>
             <div className="md:col-span-2 xl:col-span-4 flex gap-3">
-              <button type="submit" className="rounded bg-slate-950 px-4 py-2 text-sm font-black text-white">Apply Filters</button>
-              <Link href="/manager" className="rounded border border-slate-300 bg-white px-4 py-2 text-sm font-black text-slate-900">Reset</Link>
+              <button type="submit" className="ui-btn ui-btn-primary">
+                Apply Filters
+              </button>
+              <Link href="/manager" className="ui-btn ui-btn-ghost">
+                Reset
+              </Link>
             </div>
           </form>
-        </section>
+        </Card>
 
         <section className="grid grid-cols-1 gap-4 md:grid-cols-3">
           {stats.map((stat) => (
-            <article key={stat.label} className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-              <p className="text-sm font-black uppercase tracking-wide text-slate-500">{stat.label}</p>
-              <p className={`mt-2 text-3xl font-black ${stat.tone}`}>{stat.value}</p>
-            </article>
+            <Stat key={stat.label} label={stat.label} value={stat.value} tone={stat.tone} />
           ))}
         </section>
 
-        <section className="mt-6 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
-          <div className="border-b border-slate-200 px-4 py-3">
-            <h2 className="text-lg font-black text-slate-950">Latest Invoices</h2>
-          </div>
+        <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <Card>
+            <CardHeader title="Collected vs Outstanding" description="Revenue collected against outstanding debt in scope." />
+            <Donut
+              segments={[
+                { label: "Collected", value: Number(collected), color: "#10b981" },
+                { label: "Outstanding", value: Number(outstandingDebtValue), color: "#f43f5e" },
+              ]}
+              centerValue={formatOmr(Number(summary.totalSalesToday))}
+              centerLabel="Total Revenue"
+            />
+          </Card>
+
+          <Card>
+            <CardHeader title="6-Month Revenue Trend" description="Issued revenue per month (OMR)." />
+            <KpiCallout>
+              <Trend points={trendPoints} labels={months.map((m) => m.label)} height={72} />
+              <p className="mt-2 text-right text-sm font-bold text-emerald-600">
+                {formatOmr(trendPoints.reduce((a, b) => a + b, 0))} last 6 months
+              </p>
+            </KpiCallout>
+          </Card>
+        </div>
+
+        {topSalesmenItems.length > 0 ? (
+          <Card className="mt-4">
+            <CardHeader title="Top Salesmen" description="Highest revenue by salesman in the current scope." />
+            <BarList items={topSalesmenItems} formatValue={(v) => formatOmr(v)} tone="success" />
+          </Card>
+        ) : null}
+
+        <Card className="mt-4">
+          <CardHeader title="Latest Invoices" />
           <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-left text-sm">
-              <thead className="bg-slate-100 text-xs font-black uppercase tracking-wide text-slate-600">
+            <table className="ui-table">
+              <thead>
                 <tr>
-                  <th className="px-4 py-2">ID</th>
-                  <th className="px-4 py-2">Date</th>
-                  <th className="px-4 py-2">Customer</th>
-                  <th className="px-4 py-2">Salesman</th>
-                  <th className="px-4 py-2 text-right">Total</th>
-                  <th className="px-4 py-2 text-right">Debt</th>
-                  <th className="px-4 py-2">Status</th>
-                  <th className="px-4 py-2 text-right">Print Options</th>
+                  <th>ID</th>
+                  <th>Date</th>
+                  <th>Customer</th>
+                  <th>Salesman</th>
+                  <th className="text-right">Total</th>
+                  <th className="text-right">Debt</th>
+                  <th>Status</th>
+                  <th className="text-right">Print Options</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-200">
+              <tbody>
                 {latestInvoices.map((invoice) => (
-                  <tr key={invoice.id} className="hover:bg-slate-50">
-                    <td className="whitespace-nowrap px-4 py-2 font-bold text-slate-900">{invoice.invoiceNumber}</td>
-                    <td className="whitespace-nowrap px-4 py-2 text-slate-700">{formatDateTimeDMY(invoice.createdAt)}</td>
-                    <td className="px-4 py-2 text-slate-900">{invoice.customer.name}</td>
-                    <td className="px-4 py-2 text-slate-700">{invoice.salesman.fullName}</td>
-                    <td className="whitespace-nowrap px-4 py-2 text-right font-bold text-slate-900">
-                      {formatOmr(invoice.totalAmount)}
+                  <tr key={invoice.id}>
+                    <td className="is-strong">{invoice.invoiceNumber}</td>
+                    <td className="whitespace-nowrap">{formatDateTimeDMY(invoice.createdAt)}</td>
+                    <td>{invoice.customer.name}</td>
+                    <td>{invoice.salesman.fullName}</td>
+                    <td className="num">{formatOmr(invoice.totalAmount)}</td>
+                    <td className="num text-rose-600">{formatOmr(invoice.debtAmount)}</td>
+                    <td>
+                      <StatusBadge status={invoice.status} />
                     </td>
-                    <td className="whitespace-nowrap px-4 py-2 text-right font-bold text-red-700">
-                      {formatOmr(invoice.debtAmount)}
-                    </td>
-                    <td className="whitespace-nowrap px-4 py-2">{statusBadge(invoice.status)}</td>
-                    <td className="whitespace-nowrap px-4 py-2 text-right">
+                    <td>
                       <div className="flex justify-end gap-2">
-                        <Link
-                          href={`/print/${invoice.id}?size=mobile`}
-                          className="rounded border border-slate-300 px-3 py-2 text-xs font-black text-slate-950"
-                        >
+                        <Link href={`/print/${invoice.id}?size=mobile`} className="ui-btn ui-btn-ghost ui-btn-sm">
                           Mobile Receipt
                         </Link>
-                        <Link
-                          href={`/print/${invoice.id}?size=a4`}
-                          className="rounded bg-slate-950 px-3 py-2 text-xs font-black text-white"
-                        >
+                        <Link href={`/print/${invoice.id}?size=a4`} className="ui-btn ui-btn-primary ui-btn-sm">
                           A4 Invoice
                         </Link>
                       </div>
@@ -353,7 +356,7 @@ export default async function ManagerDashboardPage({
                 ))}
                 {latestInvoices.length === 0 ? (
                   <tr>
-                    <td className="px-4 py-4 text-center font-bold text-slate-500" colSpan={8}>
+                    <td className="px-4 py-10 text-center font-bold text-slate-500" colSpan={8}>
                       No invoices yet.
                     </td>
                   </tr>
@@ -361,28 +364,26 @@ export default async function ManagerDashboardPage({
               </tbody>
             </table>
           </div>
-        </section>
+        </Card>
 
-        <section className="mt-6 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
-          <div className="border-b border-slate-200 px-4 py-3">
-            <h2 className="text-lg font-black text-slate-950">User Management</h2>
-          </div>
-          <div className="grid grid-cols-1 gap-4 p-4 md:grid-cols-3">
-            <article className="rounded-lg border border-slate-200 p-4">
-              <p className="text-xs font-black uppercase tracking-wide text-slate-500">Users</p>
-              <p className="mt-2 text-3xl font-black text-slate-950">{userCount}</p>
-            </article>
-            <article className="rounded-lg border border-slate-200 p-4">
-              <p className="text-xs font-black uppercase tracking-wide text-slate-500">Global Sales View</p>
-              <p className="mt-2 text-3xl font-black text-slate-950">{globalViewUsers}</p>
-            </article>
+        <Card className="mt-4">
+          <CardHeader title="User Management" />
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+            <div className="ui-stat">
+              <p className="ui-stat-label">Users</p>
+              <p className="ui-stat-value">{userCount}</p>
+            </div>
+            <div className="ui-stat">
+              <p className="ui-stat-label">Global Sales View</p>
+              <p className="ui-stat-value">{globalViewUsers}</p>
+            </div>
             <div className="flex items-center">
-              <Link href="/general-manager/users" className="rounded bg-slate-950 px-4 py-3 text-sm font-black text-white">
+              <ButtonLink href="/manager/users" variant="primary">
                 Open Employee Directory
-              </Link>
+              </ButtonLink>
             </div>
           </div>
-        </section>
+        </Card>
       </div>
     </main>
   );

@@ -4,9 +4,10 @@ ENV NEXT_TELEMETRY_DISABLED=1
 
 FROM base AS deps
 COPY package.json package-lock.json* ./
-RUN npm install
+RUN npm ci
 
 FROM base AS builder
+ENV DATABASE_URL=postgresql://build:build@127.0.0.1:1/build
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npx prisma generate
@@ -20,20 +21,20 @@ RUN adduser --system --uid 1001 nextjs
 
 COPY --from=builder /app/public ./public
 COPY --from=deps /app/node_modules ./node_modules
-COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
-COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
+COPY --from=builder /app/generated ./generated
 COPY --from=builder /app/package.json ./package.json
 COPY --from=builder /app/package-lock.json ./package-lock.json
+COPY --from=builder /app/tsconfig.json ./tsconfig.json
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 COPY --from=builder /app/prisma ./prisma
+COPY --from=builder /app/prisma.config.ts ./prisma.config.ts
 COPY --from=builder /app/lib ./lib
 COPY --from=builder /app/scripts ./scripts
-COPY --from=builder /app/update_admin_role.sql ./update_admin_role.sql
-COPY --from=builder /app/update_tax_rate.sql ./update_tax_rate.sql
+RUN mkdir -p /app/storage/uploads && chown -R nextjs:nodejs /app/storage
 
 USER nextjs
 EXPOSE 3000
 ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
-CMD ["node", "server.js"]
+CMD ["sh", "-c", "npx prisma migrate deploy && npx tsx scripts/bootstrap-admin.ts && exec node server.js"]

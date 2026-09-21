@@ -1,8 +1,10 @@
-import { Prisma } from "@prisma/client";
+import { Prisma } from "@/generated/prisma/client";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { formatDateTimeDMY } from "@/lib/date-format";
 import { prisma } from "@/lib/prisma";
+import { getCurrentUser } from "@/lib/session";
+import { invoiceAccessWhere } from "@/lib/invoice-access";
 import { ClearNewInvoiceStorage } from "./ClearNewInvoiceStorage";
 
 export const dynamic = "force-dynamic";
@@ -18,9 +20,10 @@ function money(value: Prisma.Decimal | number | null | undefined) {
 
 export default async function ReceiptPage({ params }: ReceiptPageProps) {
   const { invoiceId } = await params;
+  const currentUser = await getCurrentUser();
 
-  const invoice = await prisma.invoice.findUnique({
-    where: { id: invoiceId },
+  const invoice = await prisma.invoice.findFirst({
+    where: { id: invoiceId, ...invoiceAccessWhere(currentUser) },
     include: {
       customer: true,
       items: {
@@ -49,23 +52,14 @@ export default async function ReceiptPage({ params }: ReceiptPageProps) {
     <main className="min-h-screen bg-white text-black print:min-h-0">
       <ClearNewInvoiceStorage />
       <div className="mx-auto w-full max-w-md bg-white p-4 print:hidden">
-        <Link
-          href="/salesman"
-          className="flex min-h-20 items-center justify-center rounded-lg bg-green-700 px-5 text-center text-2xl font-black text-white shadow-lg"
-        >
+        <Link href="/salesman" className="ui-btn ui-btn-success ui-btn-lg min-h-16 w-full text-lg">
           Done / Back to Dashboard
         </Link>
         <div className="mt-3 grid grid-cols-1 gap-3">
-          <Link
-            href={`/print/${invoice.id}?size=mobile`}
-            className="flex min-h-16 items-center justify-center rounded-lg bg-slate-950 px-5 text-center text-xl font-black text-white shadow-lg"
-          >
+          <Link href={`/print/${invoice.id}?size=mobile`} className="ui-btn ui-btn-primary ui-btn-lg min-h-14 w-full">
             Print Small Receipt
           </Link>
-          <Link
-            href={`/print/${invoice.id}?size=a4`}
-            className="flex min-h-16 items-center justify-center rounded-lg bg-blue-700 px-5 text-center text-xl font-black text-white shadow-lg"
-          >
+          <Link href={`/print/${invoice.id}?size=a4`} className="ui-btn ui-btn-secondary ui-btn-lg min-h-14 w-full">
             Print Full Invoice
           </Link>
         </div>
@@ -180,8 +174,14 @@ export default async function ReceiptPage({ params }: ReceiptPageProps) {
           )}
           {invoice.customerCredit.greaterThan(0) ? (
             <div className="flex justify-between gap-2 font-black text-green-700">
-              <span>Change Returned</span>
+              <span>Credit Added</span>
               <span>{money(invoice.customerCredit)} {invoice.currency}</span>
+            </div>
+          ) : null}
+          {invoice.creditApplied.greaterThan(0) ? (
+            <div className="flex justify-between gap-2 font-black text-emerald-700">
+              <span>Previous Credit Applied</span>
+              <span>{money(invoice.creditApplied)} {invoice.currency}</span>
             </div>
           ) : null}
         </section>

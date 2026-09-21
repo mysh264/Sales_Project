@@ -4,15 +4,18 @@ This document is the dry-run checklist for system testing and operations. It ref
 
 ## Test Accounts
 
+Demo accounts are created only when `SEED_DEMO_USERS=true`. Their password comes from
+`SEED_DEMO_PASSWORD`; the admin password comes from `SEED_ADMIN_PASSWORD`. Never use
+the example values below in production.
+
 | Role Name | Suggested Username | Suggested Password | Test Description |
 |---|---|---|---|
-| Admin | `admin@mahmoudbox.com` | `SuperSecure123!` | Full system access, including admin, audit, branches, and role management. |
-| General Manager | `gm@test.local` | `Pass123!` | Company-wide oversight, branch setup, and user management. |
-| Manager | `manager@test.local` | `Pass123!` | Branch finance view, sales review, and settings management. |
-| Accountant | `accountant@test.local` | `Pass123!` | Finance dashboard, debt collection, and pricing control. |
-| Loader | `loader@test.local` | `Pass123!` | Morning load and evening return workflows. |
-| Salesman A | `salesman-a@test.local` | `Pass123!` | Assign to Branch A for branch isolation testing. |
-| Salesman B | `salesman-b@test.local` | `Pass123!` | Assign to Branch B for branch isolation testing. |
+| Admin | `admin@mahmoudbox.com` | From `SEED_ADMIN_PASSWORD` | Full system access, including admin, audit, branches, and role management. |
+| General Manager | `gm@test.local` | From `SEED_DEMO_PASSWORD` | Company-wide oversight, branch setup, and user management. |
+| Manager | `manager@test.local` | From `SEED_DEMO_PASSWORD` | Consolidated branch operations, finance, debt collection, pricing, inventory, and branch user management. |
+| Loader | `loader@test.local` | From `SEED_DEMO_PASSWORD` | Morning load and evening return workflows. |
+| Salesman A | `salesman-a@test.local` | From `SEED_DEMO_PASSWORD` | Assign to Branch A for branch isolation testing. |
+| Salesman B | `salesman-b@test.local` | From `SEED_DEMO_PASSWORD` | Assign to Branch B for branch isolation testing. |
 
 ## Functional Verification Matrix
 
@@ -20,6 +23,7 @@ This document is the dry-run checklist for system testing and operations. It ref
 |---|---|---|---|---|
 | Auth | `/login` | Login with valid credentials | Session cookie is created and middleware routes the user to the correct home page. |  |
 | Auth | `/login` | Login with invalid credentials | Login is rejected and no session is created. |  |
+| Auth | `/profile/security` | Enrol and verify an authenticator | MFA becomes required for subsequent logins and existing sessions are revoked. |  |
 | Root Routing | `/` | Open the root path after login | Redirects to the correct role home path. |  |
 | Sales | `/salesman` | Open salesman dashboard | Shows today sales, debt list, payment breakdown, and action buttons. |  |
 | Sales | `/salesman/new-order` | Create invoice | Invoice is saved, receipt route opens, and local draft storage is cleared. |  |
@@ -30,13 +34,17 @@ This document is the dry-run checklist for system testing and operations. It ref
 | Sales | `/print/[invoiceId]?size=mobile` | Print small receipt | Mobile receipt format renders correctly. |  |
 | Sales | `/print/[invoiceId]?size=a4` | Print full invoice | A4 invoice format renders correctly. |  |
 | Sales | `/salesman/*` as non-salesman | Try direct access | Unauthorized user is redirected or blocked. |  |
-| Logistics | `/loader` | Open loader dashboard | Shows truck cards with Morning Load or Evening Return actions. |  |
-| Logistics | `/loader/load/[truckId]` | Record morning load | Load session is saved and inventory is deducted. |  |
-| Logistics | `/loader/return/[sessionId]` | Record evening return | Return items are saved and inventory is restored. |  |
+| Logistics | `/loader` | Open loader dashboard | Shows salesman cards with Morning Load or Evening Return actions. |  |
+| Logistics | `/loader/load/[salesmanId]` | Record morning load | Daily reconciliation is saved and branch inventory is atomically deducted. |  |
+| Logistics | `/loader/return/[salesmanId]` | Record evening return | Matching returns close immediately; mismatches remain pending and do not restore inventory. |  |
 | Logistics | `/logistics/reconciliation` | Record morning and evening reconciliation | Daily reconciliation is saved with product-level line items. |  |
 | Logistics | `/logistics/reconciliation` as unauthorized role | Open reconciliation page | Unauthorized user is blocked. |  |
+| Finance | `/finance/reconciliation-overview` | Approve a pending discrepancy with a reason | A management account posts the return once, closes reconciliation, and records an audit entry. |  |
 | Finance | `/manager` | Open branch manager dashboard | Shows branch KPIs and latest invoices. |  |
 | Finance | `/manager/dashboard` | Open finance dashboard | Shows financial summary, debt table, and recent audit entries. |  |
+| Finance | `/manager/reconciliation` | Review Loader-to-Salesman hand-off | Shows branch salesmen, loaded quantities, invoices, variances, and approval state without leaving the Manager workspace. |  |
+| Inventory | `/manager/inventory` | Adjust branch inventory | Manager can make a reasoned audited adjustment and immediately see the updated branch balance. |  |
+| Team | `/manager/users` | Manage branch employees | Manager sees only the branch team and can manage Loader and Salesman accounts without entering the General Manager interface. |  |
 | Finance | `/manager/settings` | Update price rule | Min and max pricing are saved and immediately enforced. |  |
 | Finance | `/manager/all-sales` | View all sales | Shows branch-scoped sales unless global sales access is enabled. |  |
 | General Manager | `/general-manager` | Open global overview | Shows global KPIs and branch performance table. |  |
@@ -45,10 +53,14 @@ This document is the dry-run checklist for system testing and operations. It ref
 | Role Admin | `/admin/roles` | Create role | Role is created with selected permissions. |  |
 | Role Admin | `/admin/roles?cloneFrom=[id]` | Clone role | New role starts with the same permissions as the source role. |  |
 | Audit Admin | `/admin/audit-logs` | View audit logs | Admin-only audit table loads with filters and JSON details. |  |
-| Admin Console | `/admin-console` | Open system console | Shows system-wide counts and master user visibility. |  |
+| Admin Users | `/admin/users` | Create an employee and reset their password | The account, branch, role, and password controls stay inside the visible Admin workspace and both actions are audited. |  |
+| Admin Protection | `/admin/users` | Inspect the signed-in Admin row | Self-deactivation and self-demotion controls are unavailable, and matching server-side requests are rejected. |  |
+| Admin Master Data | `/admin/branches` → `/admin/products` → `/admin/inventory` | Create a branch and product, then adjust their stock | The new branch/product pair receives an inventory balance automatically and is immediately usable in operations. |  |
+| Admin Operations | `/admin/finance`, `/admin/sales`, `/admin/reconciliation` | Traverse operational oversight pages | Company-wide finance, invoices, and reconciliations remain inside the visible Admin navigation. |  |
 | Admin Root | `/admin` | Open admin home | Shows admin navigation and summary view. |  |
 | Branch Isolation | Any branch-scoped route | Tamper with IDs in the URL | Data from the other branch must not leak into the page. |  |
 | Admin Override | Same branch-scoped routes | Log in as Admin | Admin can see records from both branches. |  |
+| Connected Daily Flow | Manager → Loader → Salesman → Loader → Manager | Add stock, load a route, invoice a sale, return cylinders, review reconciliation | Every account sees the same branch, product, quantities, invoice, and final closed route through its own human-facing interface. |  |
 
 ## Audit Log Logic
 
@@ -86,6 +98,8 @@ This document is the dry-run checklist for system testing and operations. It ref
 | Unauthorized access | Any blocked access attempt must create a `SECURITY_BREACH` audit entry. |
 | Successful action | Any business action should log its exact action name. |
 | Branch scoping | Non-admin data queries should be filtered by `branchId` through the branch scope helper. |
+| Management consolidation | `MANAGER` replaces the former Manager, Accountant Manager, and Accountant built-in account types. |
 | Admin scope | Admin can override branch restrictions and see all branches. |
+| Admin self-protection | The signed-in Admin cannot deactivate itself or replace its own Admin role. |
+| Master-data connectivity | Every newly created branch/product combination gets a zero inventory balance before operational use. |
 | Review workflow | Use this matrix as the dry-run checklist before production sign-off. |
-

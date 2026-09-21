@@ -3,6 +3,9 @@ import { redirect } from "next/navigation";
 import { saveProduct, toggleProductStatus } from "@/app/actions/products";
 import { getCurrentUser } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
+import { requirePermission } from "@/lib/permission-guard";
+import { Permissions } from "@/lib/permissions";
+import { PageHeader } from "@/components/ui/PageHeader";
 
 export const dynamic = "force-dynamic";
 
@@ -19,9 +22,7 @@ export default async function AdminProductsPage({ searchParams }: ProductsPagePr
     redirect("/login");
   }
 
-  if (currentUser.role !== "ADMIN") {
-    redirect("/admin");
-  }
+  await requirePermission(Permissions.Products_Update);
 
   const params = (await searchParams) ?? {};
 
@@ -42,25 +43,23 @@ export default async function AdminProductsPage({ searchParams }: ProductsPagePr
   const activeCount = products.filter((product) => product.isActive).length;
 
   return (
-    <main className="min-h-screen bg-slate-50 p-4 md:p-8">
+    <main className="min-h-screen bg-app-bg p-4 md:p-8">
       <div className="mx-auto flex max-w-screen-2xl flex-col gap-6">
-        <header className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-          <div>
-            <p className="text-sm font-black uppercase tracking-wide text-slate-500">Admin / Products</p>
-            <h1 className="text-3xl font-black text-slate-950">Product Master Data</h1>
-            <p className="mt-2 text-sm font-bold text-slate-600">
-              Add, edit, activate, and deactivate products by branch without breaking invoice history.
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-3">
-            <Link href="/admin" className="rounded border border-slate-300 bg-white px-4 py-2 text-sm font-black text-slate-900">
-              Back to Admin
-            </Link>
-            <Link href="/admin/products" className="rounded bg-slate-950 px-4 py-2 text-sm font-black text-white">
-              Refresh
-            </Link>
-          </div>
-        </header>
+        <PageHeader
+          eyebrow="Admin / Products"
+          title="Product Master Data"
+          description="Add, edit, activate, and deactivate products by branch without breaking invoice history."
+          actions={
+            <>
+              <Link href="/admin" className="rounded border border-slate-300 bg-white px-4 py-2 text-sm font-black text-slate-900">
+                Back to Admin
+              </Link>
+              <Link href="/admin/products" className="ui-btn ui-btn-primary">
+                Refresh
+              </Link>
+            </>
+          }
+        />
 
         <section className="grid grid-cols-1 gap-4 md:grid-cols-3">
           <article className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
@@ -138,7 +137,7 @@ export default async function AdminProductsPage({ searchParams }: ProductsPagePr
                 />
               </label>
               <div className="md:col-span-2">
-                <button type="submit" className="h-11 rounded bg-slate-950 px-5 text-sm font-black text-white">
+                <button type="submit" className="ui-btn ui-btn-primary">
                   {productToEdit ? "Save Product" : "Create Product"}
                 </button>
                 {productToEdit ? (

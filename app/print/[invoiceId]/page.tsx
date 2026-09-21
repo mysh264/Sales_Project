@@ -1,8 +1,10 @@
-import { Prisma } from "@prisma/client";
+import { Prisma } from "@/generated/prisma/client";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { formatDateTimeDMY } from "@/lib/date-format";
 import { prisma } from "@/lib/prisma";
+import { getCurrentUser } from "@/lib/session";
+import { invoiceAccessWhere } from "@/lib/invoice-access";
 import { PrintButton } from "./PrintButton";
 
 export const dynamic = "force-dynamic";
@@ -21,9 +23,10 @@ export default async function UnifiedPrintPage({ params, searchParams }: PrintPa
   const { invoiceId } = await params;
   const { size } = await searchParams;
   const isA4 = size === "a4";
+  const currentUser = await getCurrentUser();
 
-  const invoice = await prisma.invoice.findUnique({
-    where: { id: invoiceId },
+  const invoice = await prisma.invoice.findFirst({
+    where: { id: invoiceId, ...invoiceAccessWhere(currentUser) },
     include: {
       customer: true,
       branch: true,
@@ -187,10 +190,16 @@ export default async function UnifiedPrintPage({ params, searchParams }: PrintPa
               ))}
               {invoice.customerCredit.greaterThan(0) ? (
                 <div className="grid grid-cols-[150px_1fr] gap-4 border-t border-slate-300 pt-2 font-black text-green-700">
-                  <span>Change Returned</span>
+                  <span>Credit Added</span>
                   <span className="text-right">
                     {money(invoice.customerCredit)} {invoice.currency}
                   </span>
+                </div>
+              ) : null}
+              {invoice.creditApplied.greaterThan(0) ? (
+                <div className="grid grid-cols-[150px_1fr] gap-4 font-black text-emerald-700">
+                  <span>Previous Credit Applied</span>
+                  <span className="text-right">{money(invoice.creditApplied)} {invoice.currency}</span>
                 </div>
               ) : null}
             </section>
@@ -286,10 +295,16 @@ export default async function UnifiedPrintPage({ params, searchParams }: PrintPa
               </div>
               {invoice.customerCredit.greaterThan(0) ? (
                 <div className="flex justify-between font-black text-green-700">
-                  <span>Change Returned</span>
+                  <span>Credit Added</span>
                   <span>
                     {money(invoice.customerCredit)} {invoice.currency}
                   </span>
+                </div>
+              ) : null}
+              {invoice.creditApplied.greaterThan(0) ? (
+                <div className="flex justify-between gap-2 font-black text-emerald-700">
+                  <span>Previous Credit Applied</span>
+                  <span>{money(invoice.creditApplied)} {invoice.currency}</span>
                 </div>
               ) : null}
             </section>

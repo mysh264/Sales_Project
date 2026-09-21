@@ -1,15 +1,18 @@
 import { redirect } from "next/navigation";
 import { createOrder } from "@/app/actions/sales";
+import { searchCustomers } from "@/app/actions/customer-search";
 import { buildInvoiceSerial } from "@/lib/invoice";
 import { prisma } from "@/lib/prisma";
-import { getCurrentUser, hasGlobalSalesAccess } from "@/lib/session";
+import { getCurrentUser } from "@/lib/session";
 import { NewInvoiceForm } from "./NewInvoiceForm";
+import { PageHeader } from "@/components/ui/PageHeader";
 
 export const dynamic = "force-dynamic";
 
 type NewOrderPageProps = {
   searchParams?: Promise<{
     error?: string;
+    customerId?: string;
   }>;
 };
 
@@ -20,19 +23,17 @@ export default async function NewOrderPage({ searchParams }: NewOrderPageProps) 
     redirect("/login");
   }
   const branchId = salesman.branchId;
-  const hasGlobalAccess = hasGlobalSalesAccess(salesman);
 
   if (!branchId) {
     redirect("/login");
   }
 
-  const customerWhere = hasGlobalAccess ? {} : { branchId };
-  const debtWhere = hasGlobalAccess
-    ? { balanceAmount: { gt: 0 } }
-    : {
-        balanceAmount: { gt: 0 },
-        customer: { branchId },
-      };
+  const customerWhere = { branchId };
+  const debtWhere = {
+    balanceAmount: { gt: 0 },
+    customer: { branchId },
+  };
+  const priceRuleNow = new Date();
 
   const [customers, products, customerDebtRows] = await Promise.all([
     prisma.customer.findMany({
@@ -44,7 +45,11 @@ export default async function NewOrderPage({ searchParams }: NewOrderPageProps) 
       include: {
         priceRules: {
           orderBy: { startsAt: "desc" },
-          where: { endsAt: null },
+          where: {
+            branchId,
+            startsAt: { lte: priceRuleNow },
+            OR: [{ endsAt: null }, { endsAt: { gt: priceRuleNow } }],
+          },
         },
       },
       orderBy: { name: "asc" },
@@ -54,6 +59,7 @@ export default async function NewOrderPage({ searchParams }: NewOrderPageProps) 
       select: {
         customerId: true,
         balanceAmount: true,
+        invoice: { select: { currency: true } },
       },
     }),
   ]);
@@ -63,18 +69,19 @@ export default async function NewOrderPage({ searchParams }: NewOrderPageProps) 
     name: product.name,
     cylinderSize: product.cylinderSize,
     pressure: product.pressure,
-    minPrice:
-      product.priceRules.find((rule) => rule.branchId === branchId)?.minPrice.toFixed(3) ??
-      product.priceRules[0]?.minPrice.toFixed(3) ??
-      "0.000",
-    maxPrice:
-      product.priceRules.find((rule) => rule.branchId === branchId)?.maxPrice.toFixed(3) ??
-      product.priceRules[0]?.maxPrice.toFixed(3) ??
-      "0.000",
-    defaultPrice:
-      product.priceRules.find((rule) => rule.branchId === branchId)?.minPrice.toFixed(3) ??
-      product.priceRules[0]?.minPrice.toFixed(3) ??
-      "0.000",
+    prices: product.priceRules.reduce<Record<string, { minPrice: string; maxPrice: string; defaultPrice: string }>>(
+      (prices, rule) => {
+        if (!prices[rule.currency]) {
+          prices[rule.currency] = {
+            minPrice: rule.minPrice.toFixed(3),
+            maxPrice: rule.maxPrice.toFixed(3),
+            defaultPrice: rule.minPrice.toFixed(3),
+          };
+        }
+        return prices;
+      },
+      {},
+    ),
   }));
 
   const customerData = customers.map((customer) => ({
@@ -84,34 +91,50 @@ export default async function NewOrderPage({ searchParams }: NewOrderPageProps) 
     address: customer.address ?? "",
     vatNumber: customer.vatNumber ?? "",
   }));
+  const customerCreditBalances = Object.fromEntries(
+    customers.map((customer) => [customer.id, customer.creditBalance.toFixed(3)]),
+  );
 
-  const customerDebtBalances = customerDebtRows.reduce<Record<string, string>>((accumulator, debt) => {
-    const current = Number.parseFloat(accumulator[debt.customerId] ?? "0");
+  const customerDebtBalances = customerDebtRows.reduce<Record<string, Record<string, string>>>((accumulator, debt) => {
+    const balancesByCurrency = accumulator[debt.customerId] ?? {};
+    const current = Number.parseFloat(balancesByCurrency[debt.invoice.currency] ?? "0");
     const next = current + debt.balanceAmount.toNumber();
-    accumulator[debt.customerId] = next.toFixed(3);
+    balancesByCurrency[debt.invoice.currency] = next.toFixed(3);
+    accumulator[debt.customerId] = balancesByCurrency;
     return accumulator;
   }, {});
 
   const resolvedSearchParams = (await searchParams) ?? {};
   const errorMessage = typeof resolvedSearchParams.error === "string" ? resolvedSearchParams.error : "";
-  const defaultTaxRate = salesman.branch.defaultTaxRate.toNumber() > 0
-    ? Math.round(salesman.branch.defaultTaxRate.toNumber()).toString()
-    : "5";
+  const initialCustomerId =
+    typeof resolvedSearchParams.customerId === "string" ? resolvedSearchParams.customerId : undefined;
+  const defaultTaxRate = salesman.branch.defaultTaxRate.toString();
+  const invoiceSerial = buildInvoiceSerial();
 
   return (
-    <main className="min-h-screen bg-gray-50 px-3 py-4 md:px-6 md:py-6">
-      <NewInvoiceForm
-        salesmanName={salesman.fullName}
-        branchName={salesman.branch.name}
-        defaultCurrency={salesman.branch.defaultCurrency}
-        defaultTaxRate={defaultTaxRate}
-        invoiceSerial={buildInvoiceSerial()}
-        action={createOrder}
-        customers={customerData}
-        products={productData}
-        customerDebtBalances={customerDebtBalances}
-        errorMessage={errorMessage}
-      />
+    <main className="min-h-screen bg-app-bg p-3 md:p-6">
+      <div className="mx-auto max-w-6xl animate-fade-in">
+        <PageHeader
+          eyebrow={`${salesman.branch.name} · ${salesman.branch.defaultCurrency}`}
+          title="New Cylinder Order"
+          description={`Invoice ${invoiceSerial} — create a customer invoice with live pricing.`}
+        />
+        <NewInvoiceForm
+          salesmanName={salesman.fullName}
+          branchName={salesman.branch.name}
+          defaultCurrency={salesman.branch.defaultCurrency}
+          defaultTaxRate={defaultTaxRate}
+          invoiceSerial={invoiceSerial}
+          action={createOrder}
+          customers={customerData}
+          products={productData}
+          customerDebtBalances={customerDebtBalances}
+          customerCreditBalances={customerCreditBalances}
+          searchCustomersAction={searchCustomers}
+          errorMessage={errorMessage}
+          initialCustomerId={initialCustomerId}
+        />
+      </div>
     </main>
   );
 }

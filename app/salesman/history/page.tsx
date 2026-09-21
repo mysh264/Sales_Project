@@ -1,32 +1,14 @@
-import { Prisma } from "@prisma/client";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { formatDateTimeDMY } from "@/lib/date-format";
+import { formatMoney } from "@/lib/money";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
+import { PageHeader } from "@/components/ui/PageHeader";
+import { ButtonLink } from "@/components/ui/Button";
+import { StatusBadge } from "@/components/ui/Badge";
 
 export const dynamic = "force-dynamic";
-
-function formatOmr(value: Prisma.Decimal | number | null | undefined) {
-  const amount = value instanceof Prisma.Decimal ? value.toNumber() : Number(value ?? 0);
-  return new Intl.NumberFormat("en-OM", {
-    style: "currency",
-    currency: "OMR",
-    minimumFractionDigits: 3,
-    maximumFractionDigits: 3,
-  }).format(amount);
-}
-
-function statusBadge(status: string) {
-  const classes =
-    status === "ISSUED"
-      ? "bg-green-100 text-green-800"
-      : status === "CANCELLED"
-        ? "bg-red-100 text-red-800"
-        : "bg-slate-100 text-slate-800";
-
-  return <span className={`rounded px-2 py-1 text-xs font-black uppercase ${classes}`}>{status}</span>;
-}
 
 export default async function SalesmanHistoryPage() {
   const currentUser = await getCurrentUser();
@@ -37,64 +19,59 @@ export default async function SalesmanHistoryPage() {
 
   const invoices = await prisma.invoice.findMany({
     where: { salesmanId: currentUser.id },
-    include: {
-      customer: true,
-    },
+    include: { customer: true },
     orderBy: { createdAt: "desc" },
+    take: 200,
   });
 
   return (
-    <main className="min-h-screen bg-slate-100 p-4 md:p-8">
-      <div className="mx-auto flex max-w-5xl flex-col gap-6">
-        <header className="rounded-lg bg-ink p-5 text-white shadow-lg">
-          <p className="text-sm font-black uppercase tracking-wide text-slate-300">My Sales History</p>
-          <h1 className="mt-1 text-3xl font-black">Invoices by {currentUser.fullName}</h1>
-          <p className="mt-2 text-sm font-semibold text-slate-200">Only your own invoices are shown here.</p>
-        </header>
+    <main className="min-h-screen bg-app-bg p-4 pb-safe md:p-8">
+      <div className="mx-auto flex max-w-5xl flex-col gap-6 animate-fade-in">
+        <PageHeader
+          eyebrow="Sales history"
+          title={`Invoices by ${currentUser.fullName}`}
+          description="Only your own invoices are shown here."
+          actions={<ButtonLink href="/salesman" variant="ghost">Back to dashboard</ButtonLink>}
+        />
 
-        <Link href="/salesman" className="inline-flex w-fit rounded bg-slate-950 px-4 py-2 text-sm font-black text-white">
-          Back to Dashboard
-        </Link>
-
-        <section className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+        <section className="ui-card overflow-hidden p-0">
           <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-left text-sm">
-              <thead className="bg-slate-100 text-xs font-black uppercase tracking-wide text-slate-600">
+            <table className="ui-table">
+              <thead>
                 <tr>
-                  <th className="px-4 py-2">Date</th>
-                  <th className="px-4 py-2">Customer</th>
-                  <th className="px-4 py-2 text-right">Total</th>
-                  <th className="px-4 py-2">Status</th>
-                  <th className="px-4 py-2 text-right">Action</th>
+                  <th>Date</th>
+                  <th>Customer</th>
+                  <th className="text-right">Total</th>
+                  <th>Status</th>
+                  <th className="text-right">Action</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-200">
+              <tbody>
                 {invoices.map((invoice) => (
-                  <tr key={invoice.id} className="hover:bg-slate-50">
-                    <td className="whitespace-nowrap px-4 py-2 font-bold text-slate-700">
+                  <tr key={invoice.id}>
+                    <td className="whitespace-nowrap font-bold text-slate-700">
                       {formatDateTimeDMY(invoice.createdAt)}
                     </td>
-                    <td className="px-4 py-2">
+                    <td>
                       <p className="font-black text-slate-950">{invoice.customer.name}</p>
                       <p className="text-xs font-bold text-slate-500">{invoice.invoiceNumber}</p>
                     </td>
-                    <td className="whitespace-nowrap px-4 py-2 text-right font-black text-slate-950">
-                      {formatOmr(invoice.totalAmount)}
+                    <td className="num">{formatMoney(invoice.totalAmount, invoice.currency)}</td>
+                    <td>
+                      <StatusBadge status={invoice.status} />
                     </td>
-                    <td className="whitespace-nowrap px-4 py-2">{statusBadge(invoice.status)}</td>
-                    <td className="whitespace-nowrap px-4 py-2 text-right">
-                      <Link
-                        href={`/print/${invoice.id}?size=a4`}
-                        className="rounded bg-slate-950 px-3 py-2 text-xs font-black text-white"
-                      >
-                        Print/View
-                      </Link>
+                    <td>
+                      <div className="flex justify-end">
+                        <Link href={`/print/${invoice.id}?size=mobile`} className="ui-btn ui-btn-primary ui-btn-sm">
+                          Print/View
+                        </Link>
+                      </div>
                     </td>
                   </tr>
                 ))}
                 {invoices.length === 0 ? (
                   <tr>
-                    <td className="px-4 py-6 text-center font-bold text-slate-500" colSpan={5}>
+                    <td className="px-4 py-10 text-center font-bold text-slate-500" colSpan={5}>
                       No invoices found.
                     </td>
                   </tr>

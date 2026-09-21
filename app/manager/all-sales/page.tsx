@@ -1,9 +1,18 @@
-import { Prisma } from "@prisma/client";
+import { Prisma } from "@/generated/prisma/client";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { OmanDateInput } from "@/components/OmanDateInput";
 import { formatDateTimeDMY } from "@/lib/date-format";
+import { invoiceAccessWhere } from "@/lib/invoice-access";
+import { Permissions } from "@/lib/permissions";
+import { requirePermission } from "@/lib/permission-guard";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser, hasGlobalSalesAccess } from "@/lib/session";
+import { ButtonLink } from "@/components/ui/Button";
+import { Card, CardHeader } from "@/components/ui/Card";
+import { PageHeader } from "@/components/ui/PageHeader";
+import { Stat } from "@/components/ui/Stat";
+import { StatusBadge } from "@/components/ui/Badge";
 
 export const dynamic = "force-dynamic";
 
@@ -12,6 +21,7 @@ type AllSalesSearchParams = {
   end?: string;
   branchId?: string;
   userId?: string;
+  page?: string;
 };
 
 function startOfMonth() {
@@ -38,25 +48,14 @@ function nextDay(date: Date) {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1);
 }
 
-function formatOmr(value: Prisma.Decimal | number | null | undefined) {
+function formatCurrency(value: Prisma.Decimal | number | null | undefined, currency: string) {
   const amount = value instanceof Prisma.Decimal ? value.toNumber() : Number(value ?? 0);
   return new Intl.NumberFormat("en-OM", {
     style: "currency",
-    currency: "OMR",
+    currency,
     minimumFractionDigits: 3,
     maximumFractionDigits: 3,
   }).format(amount);
-}
-
-function statusBadge(status: string) {
-  const classes =
-    status === "ISSUED"
-      ? "bg-green-100 text-green-800"
-      : status === "CANCELLED"
-        ? "bg-red-100 text-red-800"
-        : "bg-slate-100 text-slate-800";
-
-  return <span className={`rounded px-2 py-1 text-xs font-black uppercase ${classes}`}>{status}</span>;
 }
 
 export default async function ManagerAllSalesPage({
@@ -65,6 +64,7 @@ export default async function ManagerAllSalesPage({
   searchParams?: Promise<AllSalesSearchParams>;
 }) {
   const currentUser = await getCurrentUser();
+  await requirePermission(Permissions.Finance_Read);
 
   if (!currentUser) {
     redirect("/login");
@@ -74,9 +74,15 @@ export default async function ManagerAllSalesPage({
   const monthStart = parseDate(params.start) ?? startOfMonth();
   const monthEndExclusive = parseDate(params.end) ? nextDay(parseDate(params.end)!) : endOfMonth();
   const hasGlobalAccess = hasGlobalSalesAccess(currentUser);
+  const workspaceHome = currentUser.role === "ADMIN" ? "/admin" : "/manager";
+  const pricingPath = currentUser.role === "ADMIN" ? "/admin/products" : "/manager/settings";
+  const resetPath = currentUser.role === "ADMIN" ? "/admin/sales" : "/manager/all-sales";
   const branchId = currentUser.branchId;
   const requestedBranchId = hasGlobalAccess ? params.branchId?.trim() || null : branchId;
   const requestedUserId = params.userId?.trim() || null;
+  const pageSize = 50;
+  const page = Math.max(1, Number.parseInt(params.page ?? "1", 10) || 1);
+  const skip = (page - 1) * pageSize;
 
   const branchWhere = hasGlobalAccess
     ? requestedBranchId
@@ -87,22 +93,50 @@ export default async function ManagerAllSalesPage({
   const invoiceWhere = {
     ...(branchWhere ?? {}),
     ...(requestedUserId ? { salesmanId: requestedUserId } : {}),
+    ...invoiceAccessWhere(currentUser),
+    status: "ISSUED" as const,
     createdAt: { gte: monthStart, lt: monthEndExclusive },
   };
 
-  const invoices = await prisma.invoice.findMany({
-    where: invoiceWhere,
-    include: {
-      customer: true,
-      salesman: true,
-      branch: true,
-    },
-    orderBy: { createdAt: "desc" },
-    take: 50,
-  });
+  const [invoices, totalsByCurrency, totalCount] = await Promise.all([
+    prisma.invoice.findMany({
+      where: invoiceWhere,
+      include: {
+        customer: true,
+        salesman: true,
+        branch: true,
+      },
+      orderBy: { createdAt: "desc" },
+      skip,
+      take: pageSize,
+    }),
+    prisma.invoice.groupBy({
+      by: ["currency"],
+      where: invoiceWhere,
+      _sum: { totalAmount: true, debtAmount: true },
+    }),
+    prisma.invoice.count({ where: invoiceWhere }),
+  ]);
 
-  const monthlyRevenue = invoices.reduce((sum, invoice) => sum.add(invoice.totalAmount), new Prisma.Decimal(0));
-  const totalDebt = invoices.reduce((sum, invoice) => sum.add(invoice.debtAmount), new Prisma.Decimal(0));
+  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+  const queryBase = new URLSearchParams();
+  if (params.start) queryBase.set("start", params.start);
+  if (params.end) queryBase.set("end", params.end);
+  if (requestedBranchId) queryBase.set("branchId", requestedBranchId);
+  if (requestedUserId) queryBase.set("userId", requestedUserId);
+  const pageHref = (targetPage: number) => {
+    const q = new URLSearchParams(queryBase);
+    q.set("page", String(targetPage));
+    return `${resetPath}?${q.toString()}`;
+  };
+
+  const fallbackCurrency = currentUser.branch?.defaultCurrency ?? "OMR";
+  const formatTotals = (field: "totalAmount" | "debtAmount") =>
+    totalsByCurrency.length > 0
+      ? totalsByCurrency
+          .map((total) => formatCurrency(total._sum[field], total.currency))
+          .join(" · ")
+      : formatCurrency(0, fallbackCurrency);
 
   const [branches, users] = await Promise.all([
     prisma.branch.findMany({
@@ -112,9 +146,9 @@ export default async function ManagerAllSalesPage({
     }),
     prisma.user.findMany({
       where: hasGlobalAccess
-        ? undefined
+        ? { role: "SALESMAN" }
         : currentUser.branchId
-          ? { branchId: currentUser.branchId }
+          ? { branchId: currentUser.branchId, role: "SALESMAN" }
           : { id: "__no_user__" },
       orderBy: { fullName: "asc" },
       select: { id: true, fullName: true, branchId: true },
@@ -122,54 +156,43 @@ export default async function ManagerAllSalesPage({
   ]);
 
   return (
-    <main className="min-h-screen bg-slate-50 p-4 md:p-8">
-      <div className="mx-auto flex max-w-7xl flex-col gap-6">
-        <header className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
-          <p className="text-sm font-black uppercase tracking-wide text-slate-500">Manager Sales View</p>
-          <h1 className="mt-1 text-3xl font-black text-slate-950">All Sales</h1>
-          <p className="mt-2 text-sm font-bold text-slate-600">
-            {hasGlobalAccess
+    <main className="min-h-screen bg-app-bg p-4 md:p-8">
+      <div className="mx-auto flex max-w-7xl flex-col gap-6 animate-fade-in">
+        <PageHeader
+          eyebrow="Sales Ledger"
+          title="All Sales"
+          description={
+            hasGlobalAccess
               ? "Global sales access is enabled for this account."
-              : "Restricted to your branch because global sales access is disabled."}
-          </p>
-        </header>
-
-        <div className="flex flex-wrap gap-3">
-          <Link href="/manager" className="rounded bg-slate-950 px-4 py-2 text-sm font-black text-white">
-            Back to Branch Dashboard
-          </Link>
-          <Link href="/manager/settings" className="rounded border border-slate-300 bg-white px-4 py-2 text-sm font-black text-slate-950">
-            Price Settings
-          </Link>
-        </div>
+              : "Restricted to your branch because global sales access is disabled."
+          }
+          actions={
+            <>
+              <ButtonLink href={workspaceHome} variant="ghost">Back to Dashboard</ButtonLink>
+              <ButtonLink href={pricingPath} variant="ghost">Price Settings</ButtonLink>
+            </>
+          }
+        />
 
         <section className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <article className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-            <p className="text-xs font-black uppercase tracking-wide text-slate-500">Revenue This Month</p>
-            <p className="mt-2 text-3xl font-black text-green-700">{formatOmr(monthlyRevenue)}</p>
-          </article>
-          <article className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-            <p className="text-xs font-black uppercase tracking-wide text-slate-500">Outstanding Debt</p>
-            <p className="mt-2 text-3xl font-black text-red-700">{formatOmr(totalDebt)}</p>
-          </article>
+          <Stat label="Revenue in Period" value={formatTotals("totalAmount")} tone="success" />
+          <Stat label="Outstanding Debt" value={formatTotals("debtAmount")} tone="danger" />
         </section>
 
-        <section className="rounded-lg border border-slate-200 bg-white shadow-sm">
-          <div className="border-b border-slate-200 px-4 py-3">
-            <h2 className="text-lg font-black text-slate-950">Filters</h2>
-          </div>
+        <Card className="overflow-hidden p-0">
+          <CardHeader title="Filters" description="Filter the ledger by date range, branch or salesman." />
           <form method="get" className="grid grid-cols-1 gap-4 p-4 md:grid-cols-2 xl:grid-cols-4">
             <label className="block">
-              <span className="text-xs font-black uppercase tracking-wide text-slate-500">Start Date</span>
-              <input name="start" type="date" defaultValue={params.start ?? ""} className="mt-2 h-12 w-full rounded border border-slate-300 px-3 text-sm font-bold" />
+              <span className="ui-label">Start Date</span>
+              <OmanDateInput name="start" defaultValue={params.start ?? ""} className="ui-input" />
             </label>
             <label className="block">
-              <span className="text-xs font-black uppercase tracking-wide text-slate-500">End Date</span>
-              <input name="end" type="date" defaultValue={params.end ?? ""} className="mt-2 h-12 w-full rounded border border-slate-300 px-3 text-sm font-bold" />
+              <span className="ui-label">End Date</span>
+              <OmanDateInput name="end" defaultValue={params.end ?? ""} className="ui-input" />
             </label>
             <label className="block">
-              <span className="text-xs font-black uppercase tracking-wide text-slate-500">Branch</span>
-              <select name="branchId" defaultValue={requestedBranchId ?? ""} className="mt-2 h-12 w-full rounded border border-slate-300 px-3 text-sm font-bold">
+              <span className="ui-label">Branch</span>
+              <select name="branchId" defaultValue={requestedBranchId ?? ""} className="ui-input">
                 <option value="">{hasGlobalAccess ? "All Branches" : "Current Branch"}</option>
                 {branches.map((branch) => (
                   <option key={branch.id} value={branch.id}>
@@ -179,8 +202,8 @@ export default async function ManagerAllSalesPage({
               </select>
             </label>
             <label className="block">
-              <span className="text-xs font-black uppercase tracking-wide text-slate-500">Salesman</span>
-              <select name="userId" defaultValue={requestedUserId ?? ""} className="mt-2 h-12 w-full rounded border border-slate-300 px-3 text-sm font-bold">
+              <span className="ui-label">Salesman</span>
+              <select name="userId" defaultValue={requestedUserId ?? ""} className="ui-input">
                 <option value="">All Salesmen</option>
                 {users.map((user) => (
                   <option key={user.id} value={user.id}>
@@ -190,59 +213,53 @@ export default async function ManagerAllSalesPage({
               </select>
             </label>
             <div className="md:col-span-2 xl:col-span-4 flex gap-3">
-              <button type="submit" className="rounded bg-slate-950 px-4 py-2 text-sm font-black text-white">Apply Filters</button>
-              <Link href="/manager/all-sales" className="rounded border border-slate-300 bg-white px-4 py-2 text-sm font-black text-slate-900">Reset</Link>
+              <button type="submit" className="ui-btn ui-btn-primary">Apply Filters</button>
+              <Link href={resetPath} className="ui-btn ui-btn-ghost">Reset</Link>
             </div>
           </form>
-        </section>
+        </Card>
 
-        <section className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
-          <div className="border-b border-slate-200 px-4 py-3">
-            <h2 className="text-lg font-black text-slate-950">Sales Ledger</h2>
-          </div>
+        <Card className="overflow-hidden p-0">
+          <CardHeader
+            title="Sales Ledger"
+            description={`Showing ${invoices.length} of ${totalCount} invoices (page ${page} of ${totalPages}).`}
+          />
           <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-left text-sm">
-              <thead className="bg-slate-100 text-xs font-black uppercase tracking-wide text-slate-600">
+            <table className="ui-table">
+              <thead>
                 <tr>
-                  <th className="px-4 py-2">Date</th>
-                  <th className="px-4 py-2">Branch</th>
-                  <th className="px-4 py-2">Customer</th>
-                  <th className="px-4 py-2">Salesman</th>
-                  <th className="px-4 py-2 text-right">Total</th>
-                  <th className="px-4 py-2 text-right">Debt</th>
-                  <th className="px-4 py-2">Status</th>
-                  <th className="px-4 py-2 text-right">Print</th>
+                  <th>Date</th>
+                  <th>Branch</th>
+                  <th>Customer</th>
+                  <th>Salesman</th>
+                  <th className="text-right">Total</th>
+                  <th className="text-right">Debt</th>
+                  <th>Status</th>
+                  <th className="text-right">Print</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-200">
+              <tbody>
                 {invoices.map((invoice) => (
-                  <tr key={invoice.id} className="hover:bg-slate-50">
-                    <td className="whitespace-nowrap px-4 py-2 font-bold text-slate-700">
-                      {formatDateTimeDMY(invoice.createdAt)}
-                    </td>
-                    <td className="px-4 py-2 font-bold text-slate-900">{invoice.branch.name}</td>
-                    <td className="px-4 py-2 text-slate-900">{invoice.customer.name}</td>
-                    <td className="px-4 py-2 text-slate-700">{invoice.salesman.fullName}</td>
-                    <td className="whitespace-nowrap px-4 py-2 text-right font-black text-slate-950">
-                      {formatOmr(invoice.totalAmount)}
-                    </td>
-                    <td className="whitespace-nowrap px-4 py-2 text-right font-black text-red-700">
-                      {formatOmr(invoice.debtAmount)}
-                    </td>
-                    <td className="whitespace-nowrap px-4 py-2">{statusBadge(invoice.status)}</td>
-                    <td className="whitespace-nowrap px-4 py-2 text-right">
-                      <Link
-                        href={`/print/${invoice.id}?size=a4`}
-                        className="rounded bg-slate-950 px-3 py-2 text-xs font-black text-white"
-                      >
-                        Print/View
-                      </Link>
+                  <tr key={invoice.id}>
+                    <td className="whitespace-nowrap">{formatDateTimeDMY(invoice.createdAt)}</td>
+                    <td className="font-semibold text-slate-600">{invoice.branch.name}</td>
+                    <td className="font-bold text-slate-900">{invoice.customer.name}</td>
+                    <td className="font-semibold text-slate-700">{invoice.salesman.fullName}</td>
+                    <td className="num">{formatCurrency(invoice.totalAmount, invoice.currency)}</td>
+                    <td className="num text-rose-600">{formatCurrency(invoice.debtAmount, invoice.currency)}</td>
+                    <td><StatusBadge status={invoice.status} /></td>
+                    <td>
+                      <div className="flex justify-end">
+                        <Link href={`/print/${invoice.id}?size=a4`} className="ui-btn ui-btn-primary ui-btn-sm">
+                          Print / View
+                        </Link>
+                      </div>
                     </td>
                   </tr>
                 ))}
                 {invoices.length === 0 ? (
                   <tr>
-                    <td className="px-4 py-6 text-center font-bold text-slate-500" colSpan={8}>
+                    <td className="px-4 py-10 text-center font-bold text-slate-500" colSpan={8}>
                       No sales found.
                     </td>
                   </tr>
@@ -250,7 +267,28 @@ export default async function ManagerAllSalesPage({
               </tbody>
             </table>
           </div>
-        </section>
+          {totalPages > 1 ? (
+            <div className="flex items-center justify-between gap-3 border-t border-slate-100 px-4 py-3">
+              <Link
+                href={pageHref(Math.max(1, page - 1))}
+                className={`ui-btn ui-btn-ghost ui-btn-sm ${page <= 1 ? "pointer-events-none opacity-40" : ""}`}
+                aria-disabled={page <= 1}
+              >
+                Previous
+              </Link>
+              <p className="text-sm font-bold text-slate-600">
+                Page {page} / {totalPages}
+              </p>
+              <Link
+                href={pageHref(Math.min(totalPages, page + 1))}
+                className={`ui-btn ui-btn-ghost ui-btn-sm ${page >= totalPages ? "pointer-events-none opacity-40" : ""}`}
+                aria-disabled={page >= totalPages}
+              >
+                Next
+              </Link>
+            </div>
+          ) : null}
+        </Card>
       </div>
     </main>
   );

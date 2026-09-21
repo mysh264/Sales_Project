@@ -1,8 +1,7 @@
 "use server";
 
-import { CylinderMovementType, DebtStatus, InvoiceStatus, PaymentMethod, Prisma } from "@prisma/client";
-import { mkdir, writeFile } from "node:fs/promises";
-import path from "node:path";
+import { CylinderMovementType, DebtStatus, InvoiceStatus, PaymentMethod, Prisma } from "@/generated/prisma/client";
+import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { auditSnapshot, logAction } from "@/lib/audit";
@@ -11,6 +10,14 @@ import { requirePermission } from "@/lib/permission-guard";
 import { prisma } from "@/lib/prisma";
 import { buildInvoiceSerial } from "@/lib/invoice";
 import { getCurrentUser } from "@/lib/session";
+import { deletePrivateUpload, storePrivateUpload } from "@/lib/uploads";
+import { businessDate, businessDayRange } from "@/lib/business-date";
+import { logEvent } from "@/lib/logger";
+import { moneyToFixed, roundMoney, roundRate } from "@/lib/money";
+import { assertDebtCollectionAvailable } from "@/lib/debt-collection";
+import { loadAfterLock } from "@/lib/debt-lock";
+import { sumFullQuantitiesByProduct } from "@/lib/invoice-lines";
+import { resolveInvoiceCurrency } from "@/lib/accounting-currency";
 
 function text(formData: FormData, key: string) {
   const value = formData.get(key);
@@ -19,12 +26,11 @@ function text(formData: FormData, key: string) {
 
 function moneyValue(formData: FormData, key: string) {
   const value = text(formData, key);
-  return value ? new Prisma.Decimal(value) : new Prisma.Decimal(0);
-}
-
-function decimalValue(formData: FormData, key: string, fallback: Prisma.Decimal) {
-  const value = text(formData, key);
-  return value ? new Prisma.Decimal(value) : fallback;
+  const amount = value ? new Prisma.Decimal(value) : new Prisma.Decimal(0);
+  if (amount.isNegative()) {
+    throw new Error("Payment and collection amounts cannot be negative.");
+  }
+  return roundMoney(amount);
 }
 
 function parseDate(value: string) {
@@ -36,6 +42,17 @@ function parseDate(value: string) {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
+function nonNegativeInteger(value: string, label: string) {
+  if (!/^\d+$/.test(value || "0")) {
+    throw new Error(`${label} must be a whole number of zero or more.`);
+  }
+  const parsed = Number(value || "0");
+  if (!Number.isSafeInteger(parsed)) {
+    throw new Error(`${label} is too large.`);
+  }
+  return parsed;
+}
+
 function decimalMax(value: Prisma.Decimal, floor: Prisma.Decimal) {
   return value.greaterThan(floor) ? value : floor;
 }
@@ -44,21 +61,8 @@ function percentRate(value: Prisma.Decimal) {
   return value.div(100);
 }
 
-async function storeUpload(file: FormDataEntryValue | null, folder: string) {
-  if (!(file instanceof File) || file.size === 0) {
-    return null;
-  }
-
-  const bytes = Buffer.from(await file.arrayBuffer());
-  const safeName = file.name.replace(/[^a-zA-Z0-9._-]+/g, "_");
-  const fileName = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${safeName}`;
-  const publicDir = path.join(process.cwd(), "public", "uploads", folder);
-  await mkdir(publicDir, { recursive: true });
-  await writeFile(path.join(publicDir, fileName), bytes);
-  return `/uploads/${folder}/${fileName}`;
-}
-
 export async function createOrder(formData: FormData) {
+  const storedUploadUrls: string[] = [];
   try {
     const currentUser = await getCurrentUser();
 
@@ -75,15 +79,31 @@ export async function createOrder(formData: FormData) {
     const customerPhone = text(formData, "customerPhone");
     const customerAddress = text(formData, "customerAddress");
     const customerVatNumber = text(formData, "customerVatNumber");
-    const manualSerial = text(formData, "manualSerial");
-    const invoiceSerial = manualSerial || text(formData, "invoiceSerial") || buildInvoiceSerial();
+    // invoiceSerial is the server-generated unique key; the salesman may also provide a
+    // human-facing invoice number via the "Invoice Serial" field, which we store as invoiceNumber.
+    const invoiceSerial = text(formData, "invoiceSerial") || buildInvoiceSerial();
+    const submittedInvoiceNumber = text(formData, "manualSerial").trim();
+    const invoiceNumber = submittedInvoiceNumber || invoiceSerial;
     const submissionToken = text(formData, "submissionToken");
-    const invoiceDate = parseDate(text(formData, "invoiceDate")) ?? new Date();
-    const currency = text(formData, "currency") || branch?.defaultCurrency || "OMR";
-    const branchTaxRate = branch?.defaultTaxRate && branch.defaultTaxRate.greaterThan(0)
-      ? branch.defaultTaxRate
-      : new Prisma.Decimal("5.0000");
-    const taxRate = decimalValue(formData, "taxRate", branchTaxRate);
+    const now = new Date();
+    // Invoices are recorded for the current Oman business day only. Backdating to a previous
+    // day is intentionally disallowed: a morning load is only ever recorded for "today", so a
+    // backdated invoice could never be reconciled against the correct day's load and would be
+    // silently inconsistent. (See report item B5.)
+    const invoiceDate = now;
+
+    // Currency candidate from the form; final accounting currency is resolved inside the
+    // transaction after the customer row (and any open debts) is known.
+    const submittedCurrency = text(formData, "currency").toUpperCase();
+
+    // VAT rate: the form may override the branch default within a sane band (0–25%).
+    const branchTaxRate = roundRate(branch?.defaultTaxRate ?? new Prisma.Decimal("5.00"));
+    const submittedTaxRateRaw = text(formData, "taxRate");
+    const submittedTaxRate = submittedTaxRateRaw ? roundRate(submittedTaxRateRaw) : null;
+    const taxRate =
+      submittedTaxRate && submittedTaxRate.greaterThanOrEqualTo(0) && submittedTaxRate.lessThanOrEqualTo(25)
+        ? submittedTaxRate
+        : branchTaxRate;
     const applyDebtCollection = text(formData, "applyDebtCollection") === "true";
     const requestedDebtCollection = moneyValue(formData, "debtCollectionAmount");
 
@@ -91,6 +111,13 @@ export async function createOrder(formData: FormData) {
     const rowFulls = formData.getAll("rowFull").filter((value): value is string => typeof value === "string");
     const rowEmpties = formData.getAll("rowEmpty").filter((value): value is string => typeof value === "string");
     const rowPrices = formData.getAll("rowPrice").filter((value): value is string => typeof value === "string");
+    if (
+      rowProductIds.length !== rowFulls.length ||
+      rowProductIds.length !== rowEmpties.length ||
+      rowProductIds.length !== rowPrices.length
+    ) {
+      throw new Error("Invoice line data is incomplete.");
+    }
 
     if (!customerId && !customerName && !customerPhone) {
       throw new Error("Enter a customer name or phone number.");
@@ -113,47 +140,65 @@ export async function createOrder(formData: FormData) {
       const branchRow = await tx.branch.findUniqueOrThrow({ where: { id: branchId } });
       const salesman = await tx.user.findUniqueOrThrow({ where: { id: currentUser.id } });
 
-    const customerScope = currentUser.hasGlobalAccess ? {} : { branchId: branchRow.id };
+    const customerScope = { branchId: branchRow.id };
 
-    const existingCustomer = customerId
-      ? await tx.customer.findFirst({
+    let customer;
+    if (customerId) {
+      // The submitted customer must belong to the salesman's branch. Do NOT fall
+      // back to creating/guessing a customer here — that would let a salesman in one
+      // branch hijack a customer (or create a phantom) in another branch.
+      customer = await tx.customer.findFirst({
+        where: { id: customerId, ...customerScope },
+      });
+      if (!customer) {
+        throw new Error("Customer not found in your branch.");
+      }
+    } else {
+      customer =
+        (await tx.customer.findFirst({
           where: {
-            id: customerId,
             ...customerScope,
+            ...(customerPhone ? { phone: customerPhone } : { id: "__new_customer__" }),
           },
-        })
-      : null;
+        })) ??
+        (await tx.customer.create({
+          data: {
+            branchId: branchRow.id,
+            customerNumber: `CUS-${randomUUID()}`,
+            name: customerName || customerPhone,
+            phone: customerPhone || null,
+            address: customerAddress || null,
+            vatNumber: customerVatNumber || null,
+            phoneCode: branchRow.defaultPhoneCode,
+            taxRate,
+          },
+        }));
+    }
 
-    const customer =
-      existingCustomer ??
-      (await tx.customer.findFirst({
-        where: {
-          ...customerScope,
-          OR: [
-            customerPhone ? { phone: customerPhone } : undefined,
-            customerName ? { name: { equals: customerName, mode: "insensitive" } } : undefined,
-          ].filter(Boolean) as Prisma.CustomerWhereInput[],
-        },
-      })) ??
-      (await tx.customer.create({
-        data: {
-          branchId: branchRow.id,
-          name: customerName || customerPhone,
-          phone: customerPhone || null,
-          address: customerAddress || null,
-          vatNumber: customerVatNumber || null,
-          phoneCode: branchRow.defaultPhoneCode,
-          taxRate,
-        },
-      }));
+    const openDebtRows = await tx.customerDebt.findMany({
+      where: {
+        customerId: customer.id,
+        status: { in: [DebtStatus.OPEN, DebtStatus.PARTIALLY_PAID] },
+      },
+      select: { invoice: { select: { currency: true } } },
+    });
+    const currency = resolveInvoiceCurrency({
+      submittedCurrency,
+      branchDefaultCurrency: branchRow.defaultCurrency,
+      creditBalance: customer.creditBalance,
+      openDebtCurrencies: openDebtRows.map((row) => row.invoice.currency),
+    });
 
     const lines = [];
 
     for (let index = 0; index < rowProductIds.length; index += 1) {
       const productId = rowProductIds[index];
-      const fullQty = Number.parseInt(rowFulls[index] || "0", 10) || 0;
-      const emptyQty = Number.parseInt(rowEmpties[index] || "0", 10) || 0;
-      const unitPrice = new Prisma.Decimal(rowPrices[index] || "0");
+      const fullQty = nonNegativeInteger(rowFulls[index] || "0", "Delivered quantity");
+      const emptyQty = nonNegativeInteger(rowEmpties[index] || "0", "Returned quantity");
+      const unitPrice = roundMoney(rowPrices[index] || "0");
+      if (unitPrice.isNegative()) {
+        throw new Error("Sale price cannot be negative.");
+      }
 
       if (fullQty === 0 && emptyQty === 0) {
         continue;
@@ -163,8 +208,8 @@ export async function createOrder(formData: FormData) {
         throw new Error("Enter a sale price for every delivered cylinder.");
       }
 
-      const product = await tx.product.findUniqueOrThrow({
-        where: { id: productId },
+      const product = await tx.product.findFirstOrThrow({
+        where: { id: productId, isActive: true, OR: [{ branchId: null }, { branchId: branchRow.id }] },
         include: {
           priceRules: {
             where: { endsAt: null },
@@ -173,9 +218,9 @@ export async function createOrder(formData: FormData) {
         },
       });
 
-      const priceRule = product.priceRules.find((rule) => rule.branchId === branchRow.id);
+      const priceRule = product.priceRules.find((rule) => rule.branchId === branchRow.id && rule.currency === currency);
       if (!priceRule) {
-        throw new Error(`No active price rule is configured for ${product.name} in ${branchRow.name}.`);
+        throw new Error(`No active ${currency} price rule is configured for ${product.name} in ${branchRow.name}.`);
       }
 
       if (fullQty > 0 && (unitPrice.lessThan(priceRule.minPrice) || unitPrice.greaterThan(priceRule.maxPrice))) {
@@ -187,7 +232,7 @@ export async function createOrder(formData: FormData) {
         fullQty,
         emptyQty,
         unitPrice,
-        lineSubtotal: unitPrice.mul(fullQty),
+        lineSubtotal: roundMoney(unitPrice.mul(fullQty)),
       });
     }
 
@@ -195,40 +240,102 @@ export async function createOrder(formData: FormData) {
       throw new Error("Enter at least one cylinder quantity.");
     }
 
-    const subtotal = lines.reduce((sum, line) => sum.add(line.lineSubtotal), new Prisma.Decimal(0));
-    const taxAmount = subtotal.mul(percentRate(taxRate));
-    const totalAmount = subtotal.add(taxAmount);
-    console.log("invoice.calculate", {
-      subtotal: subtotal.toFixed(3),
-      vatAmount: taxAmount.toFixed(3),
-      total: totalAmount.toFixed(3),
+    const routeDate = businessDate(invoiceDate);
+    const { start: routeStart, end: routeEnd } = businessDayRange(invoiceDate);
+    await tx.$queryRaw<Array<{ lock_acquired: number }>>`
+      SELECT 1::int AS lock_acquired
+      FROM (SELECT pg_advisory_xact_lock(hashtext(${salesman.id}), hashtext(${routeDate.toISOString()}))) AS acquired
+    `;
+    const reconciliation = await tx.dailyReconciliation.findUnique({
+      where: {
+        salesmanId_reconciliationDate: {
+          salesmanId: salesman.id,
+          reconciliationDate: routeDate,
+        },
+      },
+      include: { items: true },
+    });
+    if (!reconciliation || reconciliation.status !== "MORNING_RECORDED") {
+      throw new Error("A morning load must be recorded before creating sales.");
+    }
+    const loadedByProduct = new Map(reconciliation.items.map((item) => [item.productId, item.morningFull]));
+    const existingSales = await tx.invoiceItem.groupBy({
+      by: ["productId"],
+      where: {
+        invoice: {
+          salesmanId: salesman.id,
+          status: InvoiceStatus.ISSUED,
+          createdAt: { gte: routeStart, lt: routeEnd },
+        },
+      },
+      _sum: { fullCylindersDelivered: true },
+    });
+    const soldByProduct = new Map(existingSales.map((row) => [row.productId, row._sum.fullCylindersDelivered ?? 0]));
+    const requestedFullByProduct = sumFullQuantitiesByProduct(lines);
+    for (const [productId, fullQty] of requestedFullByProduct) {
+      if ((soldByProduct.get(productId) ?? 0) + fullQty > (loadedByProduct.get(productId) ?? 0)) {
+        throw new Error("Sale quantity exceeds this salesman's remaining morning load.");
+      }
+    }
+
+    const subtotal = roundMoney(lines.reduce((sum, line) => sum.add(line.lineSubtotal), new Prisma.Decimal(0)));
+    const taxAmount = roundMoney(subtotal.mul(percentRate(taxRate)));
+    const totalAmount = roundMoney(subtotal.add(taxAmount));
+    logEvent("info", "invoice.calculate", {
+      subtotal: moneyToFixed(subtotal),
+      vatAmount: moneyToFixed(taxAmount),
+      total: moneyToFixed(totalAmount),
     });
     const cashAmount = moneyValue(formData, "cashAmount");
     const checkAmount = moneyValue(formData, "checkAmount");
     const transferAmount = moneyValue(formData, "bankTransferAmount");
-    const paidAmount = cashAmount.add(checkAmount).add(transferAmount);
+    const externalPaidAmount = roundMoney(cashAmount.add(checkAmount).add(transferAmount));
     const debtCollectionAmount = applyDebtCollection ? requestedDebtCollection : new Prisma.Decimal(0);
+    if (checkAmount.greaterThan(0) && !text(formData, "checkNumber")) {
+      throw new Error("Cheque number is required for cheque payments.");
+    }
+    if (transferAmount.greaterThan(0) && !text(formData, "transferReference")) {
+      throw new Error("Transfer reference is required for bank transfers.");
+    }
 
-    const debtAmount = decimalMax(totalAmount.sub(paidAmount), new Prisma.Decimal(0));
-    const customerCredit = decimalMax(paidAmount.sub(totalAmount), new Prisma.Decimal(0));
+    // Serialize credit consumption for this customer so two simultaneous invoices
+    // cannot both spend the same balance.
+    await tx.$queryRaw<Array<{ lock_acquired: number }>>`
+      SELECT 1::int AS lock_acquired
+      FROM (SELECT pg_advisory_xact_lock(hashtext('customer-credit'), hashtext(${customer.id}))) AS acquired
+    `;
+    const lockedCustomer = await tx.customer.findUniqueOrThrow({ where: { id: customer.id } });
+    const amountDueAfterExternalPayment = roundMoney(decimalMax(totalAmount.sub(externalPaidAmount), new Prisma.Decimal(0)));
+    const creditApplied = lockedCustomer.creditBalance.greaterThan(amountDueAfterExternalPayment)
+      ? amountDueAfterExternalPayment
+      : lockedCustomer.creditBalance;
+    const rawPaidAmount = roundMoney(externalPaidAmount.add(creditApplied));
+    // An overpayment (cash/cheque/transfer exceeding the invoice total) must not make
+    // paidAmount exceed totalAmount: the invoice is fully paid and the excess is held as
+    // customer credit (see customerCredit below). This keeps "paid vs total" reports honest.
+    const paidAmount = roundMoney(rawPaidAmount.greaterThan(totalAmount) ? totalAmount : rawPaidAmount);
+    const debtAmount = roundMoney(decimalMax(totalAmount.sub(paidAmount), new Prisma.Decimal(0)));
+    const customerCredit = roundMoney(decimalMax(externalPaidAmount.sub(totalAmount), new Prisma.Decimal(0)));
 
     const currentDebt = await tx.customerDebt.aggregate({
       where: {
         customerId: customer.id,
         status: { in: [DebtStatus.OPEN, DebtStatus.PARTIALLY_PAID] },
+        invoice: { currency },
       },
       _sum: { balanceAmount: true },
     });
     const outstandingDebt = currentDebt._sum.balanceAmount ?? new Prisma.Decimal(0);
-    const projectedDebt = outstandingDebt.add(debtAmount);
+    assertDebtCollectionAvailable(debtCollectionAmount, outstandingDebt);
+    const projectedDebt = roundMoney(outstandingDebt.sub(debtCollectionAmount).add(debtAmount));
 
-    if (customer.creditLimit && projectedDebt.greaterThan(customer.creditLimit)) {
+    if (lockedCustomer.creditLimit && projectedDebt.greaterThan(lockedCustomer.creditLimit)) {
       throw new Error("Credit Limit Exceeded");
     }
 
     const createdInvoice = await tx.invoice.create({
       data: {
-        invoiceNumber: invoiceSerial,
+        invoiceNumber,
         invoiceSerial,
         submissionToken,
         branchId: branchRow.id,
@@ -242,8 +349,9 @@ export async function createOrder(formData: FormData) {
         totalAmount,
         paidAmount,
         debtAmount,
-        debtCollectionAmount,
+        debtCollectionAmount: new Prisma.Decimal(0),
         customerCredit,
+        creditApplied,
         createdAt: invoiceDate,
         items: {
           create: lines.map((line) => ({
@@ -256,9 +364,17 @@ export async function createOrder(formData: FormData) {
         },
       },
     });
+    await tx.customer.update({
+      where: { id: customer.id },
+      data: {
+        creditBalance: lockedCustomer.creditBalance.sub(creditApplied).add(customerCredit),
+      },
+    });
 
-    const transferAttachment = await storeUpload(formData.get("transferReceipt"), "transfers");
-    const checkAttachment = await storeUpload(formData.get("checkReceipt"), "checks");
+    const transferAttachment = await storePrivateUpload(formData.get("transferReceipt"), "transfers");
+    const checkAttachment = await storePrivateUpload(formData.get("checkReceipt"), "checks");
+    if (transferAttachment) storedUploadUrls.push(transferAttachment);
+    if (checkAttachment) storedUploadUrls.push(checkAttachment);
     const checkDate = parseDate(text(formData, "checkDate"));
     const checkNumber = text(formData, "checkNumber");
     const transferReference = text(formData, "transferReference");
@@ -306,13 +422,29 @@ export async function createOrder(formData: FormData) {
         where: {
           customerId: customer.id,
           balanceAmount: { gt: 0 },
+          status: { in: [DebtStatus.OPEN, DebtStatus.PARTIALLY_PAID] },
+          invoice: { currency },
         },
         orderBy: { createdAt: "asc" },
+        select: { id: true },
       });
 
-      for (const debt of openDebts) {
+      for (const candidate of openDebts) {
         if (remainingCollection.lessThanOrEqualTo(0)) {
           break;
+        }
+
+        const debt = await loadAfterLock(
+          async () => {
+            await tx.$queryRaw<Array<{ lock_acquired: number }>>`
+              SELECT 1::int AS lock_acquired
+              FROM (SELECT pg_advisory_xact_lock(hashtext('debt-collection'), hashtext(${candidate.id})) AS acquired) AS lock_row
+            `;
+          },
+          () => tx.customerDebt.findUniqueOrThrow({ where: { id: candidate.id } }),
+        );
+        if (debt.balanceAmount.lessThanOrEqualTo(0)) {
+          continue;
         }
 
         const appliedToDebt = remainingCollection.greaterThan(debt.balanceAmount) ? debt.balanceAmount : remainingCollection;
@@ -327,6 +459,14 @@ export async function createOrder(formData: FormData) {
           },
         });
 
+        await tx.payment.create({
+          data: {
+            invoiceId: debt.invoiceId,
+            method: PaymentMethod.CASH,
+            amount: appliedToDebt,
+          },
+        });
+
         await tx.customerDebt.update({
           where: { id: debt.id },
           data: {
@@ -335,18 +475,29 @@ export async function createOrder(formData: FormData) {
           },
         });
 
+        // Keep the source invoice's paid/debt totals consistent (mirrors manager.collectDebt).
+        await tx.invoice.update({
+          where: { id: debt.invoiceId },
+          data: {
+            paidAmount: { increment: appliedToDebt },
+            debtAmount: { decrement: appliedToDebt },
+          },
+        });
+
         remainingCollection = remainingCollection.sub(appliedToDebt);
         appliedCollection = appliedCollection.add(appliedToDebt);
       }
 
-      if (appliedCollection.greaterThan(0)) {
-        await tx.invoice.update({
-          where: { id: createdInvoice.id },
-          data: {
-            debtCollectionAmount: appliedCollection,
-          },
-        });
+      if (remainingCollection.greaterThan(0)) {
+        throw new Error("Debt balance changed while collecting. Review the current balance and try again.");
       }
+
+      await tx.invoice.update({
+        where: { id: createdInvoice.id },
+        data: {
+          debtCollectionAmount: appliedCollection,
+        },
+      });
     }
 
     if (debtAmount.greaterThan(0)) {
@@ -362,10 +513,6 @@ export async function createOrder(formData: FormData) {
     }
 
     for (const line of lines) {
-      const inventoryBefore = await tx.inventoryBalance.findUnique({
-        where: { branchId_productId: { branchId: branchRow.id, productId: line.productId } },
-      });
-
       if (line.fullQty > 0) {
         await tx.cylinderMovement.create({
           data: {
@@ -390,33 +537,6 @@ export async function createOrder(formData: FormData) {
         });
       }
 
-      await tx.inventoryBalance.upsert({
-        where: { branchId_productId: { branchId: branchRow.id, productId: line.productId } },
-        update: {
-          fullCount: { decrement: line.fullQty },
-          emptyCount: { increment: line.emptyQty },
-        },
-        create: {
-          branchId: branchRow.id,
-          productId: line.productId,
-          fullCount: -line.fullQty,
-          emptyCount: line.emptyQty,
-        },
-      });
-
-      const inventoryAfter = await tx.inventoryBalance.findUniqueOrThrow({
-        where: { branchId_productId: { branchId: branchRow.id, productId: line.productId } },
-      });
-
-      await logAction(
-        salesman.id,
-        "UPDATE_INVENTORY",
-        "InventoryBalance",
-        inventoryAfter.id,
-        auditSnapshot(inventoryBefore),
-        auditSnapshot(inventoryAfter),
-        { tx },
-      );
     }
 
     const finalInvoice = await tx.invoice.findUniqueOrThrow({
@@ -455,6 +575,7 @@ export async function createOrder(formData: FormData) {
     ) {
       throw error;
     }
+    await Promise.all(storedUploadUrls.map((url) => deletePrivateUpload(url)));
 
     if (
       error instanceof Prisma.PrismaClientKnownRequestError &&

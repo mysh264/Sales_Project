@@ -34,44 +34,40 @@ export function SalesmanHandoffPicker({ salesmen }: SalesmanHandoffPickerProps) 
   }
 
   return (
-    <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+    <section className="ui-card p-5">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <p className="text-xs font-black uppercase tracking-wide text-slate-500">Salesman Hand-off</p>
-          <h2 className="mt-1 text-xl font-black text-slate-950">Select a salesman to start a route</h2>
+          <p className="ui-label mb-0">Salesman hand-off</p>
+          <h2 className="mt-1 font-display text-xl font-black text-slate-950">Select a salesman to start a route</h2>
           <p className="mt-2 text-sm font-bold text-slate-600">
             Morning loads and evening returns are tracked directly against the salesman.
           </p>
         </div>
-        <label className="block w-full lg:max-w-md">
-          <span className="text-xs font-black uppercase tracking-wide text-slate-500">Salesman</span>
+        <label className="ui-field w-full lg:max-w-md">
+          <span className="ui-label">Salesman</span>
           <select
             value={selectedSalesmanId}
             onChange={(event) => setSelectedSalesmanId(event.target.value)}
-            className="mt-2 h-12 w-full rounded-lg border border-slate-300 px-3 text-sm font-bold"
+            className="ui-input"
           >
-              {salesmen.map((salesman) => (
-                <option key={salesman.id} value={salesman.id}>
-                  {salesman.fullName}
-                </option>
-              ))}
+            {salesmen.map((salesman) => (
+              <option key={salesman.id} value={salesman.id}>
+                {salesman.fullName}
+              </option>
+            ))}
           </select>
         </label>
       </div>
 
       {selectedSalesman ? (
         <div className="mt-4 flex flex-col gap-3 sm:flex-row">
-          <button
-            type="button"
-            onClick={openMorningLoad}
-            className="flex min-h-16 flex-1 items-center justify-center rounded-lg bg-emerald-700 px-5 text-center text-lg font-black text-white shadow-sm"
-          >
+          <button type="button" onClick={openMorningLoad} className="ui-btn ui-btn-success ui-btn-lg min-h-16 flex-1 text-lg">
             Morning Load
           </button>
           <button
             type="button"
             onClick={openEveningReturn}
-            className="flex min-h-16 flex-1 items-center justify-center rounded-lg bg-amber-600 px-5 text-center text-lg font-black text-white shadow-sm"
+            className="ui-btn ui-btn-lg min-h-16 flex-1 bg-safety-600 text-lg text-white hover:bg-safety-700"
           >
             Evening Return
           </button>

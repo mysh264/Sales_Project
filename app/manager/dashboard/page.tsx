@@ -1,12 +1,17 @@
-import { DebtStatus, Prisma } from "@prisma/client";
-import Link from "next/link";
+import { DebtStatus, Prisma } from "@/generated/prisma/client";
 import { forbidden, redirect } from "next/navigation";
 import { getFinancialSummary } from "@/app/actions/finance";
+import { writeOffDebt } from "@/app/actions/manager";
 import { formatDateTimeDMY } from "@/lib/date-format";
+import { debtStatusWhere } from "@/lib/debt-filter";
 import { Permissions } from "@/lib/permissions";
 import { checkPermission, requirePermission } from "@/lib/permission-guard";
 import { prisma } from "@/lib/prisma";
+import { formatMoney } from "@/lib/money";
 import { getCurrentUser, hasGlobalSalesAccess } from "@/lib/session";
+import { PageHeader } from "@/components/ui/PageHeader";
+import { StatusBadge } from "@/components/ui/Badge";
+import { ButtonLink } from "@/components/ui/Button";
 
 export const dynamic = "force-dynamic";
 
@@ -17,30 +22,11 @@ type ManagerDashboardPageProps = {
   }>;
 };
 
-function formatOmr(value: Prisma.Decimal | number | string | null | undefined) {
+function money(value: Prisma.Decimal | number | string | null | undefined) {
   const amount =
     value instanceof Prisma.Decimal ? value.toNumber() : typeof value === "string" ? Number(value) : Number(value ?? 0);
-
-  return new Intl.NumberFormat("en-OM", {
-    style: "currency",
-    currency: "OMR",
-    minimumFractionDigits: 3,
-    maximumFractionDigits: 3,
-  }).format(amount);
+  return formatMoney(amount, "OMR");
 }
-
-function statusBadge(status: string) {
-  const classes =
-    status === "PAID"
-      ? "bg-green-100 text-green-800"
-      : status === "PARTIALLY_PAID"
-        ? "bg-amber-100 text-amber-800"
-        : "bg-red-100 text-red-800";
-
-  return <span className={`rounded px-2 py-1 text-xs font-black uppercase ${classes}`}>{status.replaceAll("_", " ")}</span>;
-}
-
-const openDebtStatuses: DebtStatus[] = [DebtStatus.OPEN, DebtStatus.PARTIALLY_PAID];
 
 type DebtRow = Prisma.CustomerDebtGetPayload<{
   include: {
@@ -82,6 +68,20 @@ async function getFinanceUser() {
 export default async function ManagerDashboardPage({ searchParams }: ManagerDashboardPageProps) {
   const currentUser = await getFinanceUser();
   const hasGlobalAccess = hasGlobalSalesAccess(currentUser);
+  const workspaceHome =
+    currentUser.role === "ADMIN" ? "/admin" : currentUser.role === "GENERAL_MANAGER" ? "/general-manager" : "/manager";
+  const pricingPath =
+    currentUser.role === "ADMIN"
+      ? "/admin/products"
+      : currentUser.role === "GENERAL_MANAGER"
+        ? "/general-manager/products"
+        : "/manager/settings";
+  const resetPath =
+    currentUser.role === "ADMIN"
+      ? "/admin/finance"
+      : currentUser.role === "GENERAL_MANAGER"
+        ? "/general-manager/finance"
+        : "/manager/dashboard";
 
   if (!currentUser.branchId && !hasGlobalAccess) {
     redirect("/manager");
@@ -90,7 +90,10 @@ export default async function ManagerDashboardPage({ searchParams }: ManagerDash
   const summary = await getFinancialSummary();
   const params = (await searchParams) ?? {};
   const customerFilter = params.customer?.trim() || "";
-  const statusFilter = params.status?.trim() || "";
+  const requestedStatus = params.status?.trim() || "";
+  const statusFilter = Object.values(DebtStatus).includes(requestedStatus as DebtStatus)
+    ? (requestedStatus as DebtStatus)
+    : "";
 
   const scopeBranchId = !hasGlobalAccess ? currentUser.branchId ?? "" : "";
 
@@ -112,18 +115,7 @@ export default async function ManagerDashboardPage({ searchParams }: ManagerDash
           },
         }
       : {}),
-    ...(statusFilter && statusFilter !== "ALL"
-      ? {
-          status: statusFilter as DebtStatus,
-        }
-      : {
-          status: {
-            in: openDebtStatuses,
-          },
-        }),
-    balanceAmount: {
-      gt: new Prisma.Decimal(0),
-    },
+    ...debtStatusWhere(statusFilter),
   };
 
   const [debts, scopedInvoices, scopedDebts]: [DebtRow[], { id: string }[], DebtAuditScopeRow[]] = await Promise.all([
@@ -179,11 +171,7 @@ export default async function ManagerDashboardPage({ searchParams }: ManagerDash
 
   const recentFinancialAudits = await prisma.auditLog.findMany({
     where: {
-      ...(scopedTargetIds.size > 0
-        ? {
-            targetId: { in: Array.from(scopedTargetIds) },
-          }
-        : {}),
+      ...(scopeBranchId ? { targetId: { in: Array.from(scopedTargetIds) } } : {}),
       targetModel: {
         in: ["Invoice", "CustomerDebt", "DebtPayment", "Payment"],
       },
@@ -204,67 +192,61 @@ export default async function ManagerDashboardPage({ searchParams }: ManagerDash
   });
 
   return (
-    <main className="min-h-screen bg-slate-50 p-4 md:p-8">
+    <main className="min-h-screen bg-app-bg p-4 md:p-8">
       <div className="mx-auto flex max-w-7xl flex-col gap-6">
-        <header className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-            <div>
-              <p className="text-sm font-black uppercase tracking-wide text-slate-500">Finance Dashboard</p>
-              <h1 className="mt-1 text-3xl font-black text-slate-950">
-                {summary.scopeLabel} Financial Overview
-              </h1>
-              <p className="mt-2 max-w-3xl text-sm font-bold text-slate-600">
-                Daily revenue, VAT, and debt tracking for managers and accountants.
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-3">
-              <Link href="/manager" className="rounded border border-slate-300 bg-white px-4 py-2 text-sm font-black text-slate-900">
-                Back to Branch Dashboard
-              </Link>
-              <Link href="/manager/settings" className="rounded bg-slate-950 px-4 py-2 text-sm font-black text-white">
+        <PageHeader
+          eyebrow="Finance Dashboard"
+          title={`${summary.scopeLabel} Financial Overview`}
+          description="Daily revenue, VAT, and debt tracking for the consolidated Manager account."
+          actions={
+            <>
+              <ButtonLink href={workspaceHome} variant="ghost">
+                Back to Dashboard
+              </ButtonLink>
+              <ButtonLink href={pricingPath} variant="primary">
                 Price Settings
-              </Link>
-            </div>
-          </div>
-        </header>
+              </ButtonLink>
+            </>
+          }
+        />
 
         <section className="grid grid-cols-1 gap-4 md:grid-cols-3">
-          <article className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-            <p className="text-xs font-black uppercase tracking-wide text-slate-500">Total Sales Today</p>
-            <p className="mt-2 text-3xl font-black text-green-700">{formatOmr(summary.totalSalesToday)}</p>
+          <article className="ui-card ui-card-pad">
+            <p className="ui-stat-label">Total Sales Today</p>
+            <p className="mt-2 text-3xl font-black text-brand-700">{money(summary.totalSalesToday)}</p>
           </article>
-          <article className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-            <p className="text-xs font-black uppercase tracking-wide text-slate-500">Total VAT Today</p>
-            <p className="mt-2 text-3xl font-black text-slate-950">{formatOmr(summary.totalVatToday)}</p>
+          <article className="ui-card ui-card-pad">
+            <p className="ui-stat-label">Total VAT Today</p>
+            <p className="mt-2 text-3xl font-black text-slate-950">{money(summary.totalVatToday)}</p>
           </article>
-          <article className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-            <p className="text-xs font-black uppercase tracking-wide text-slate-500">Total Outstanding Debt</p>
-            <p className="mt-2 text-3xl font-black text-red-700">{formatOmr(summary.totalOutstandingDebtToday)}</p>
+          <article className="ui-card ui-card-pad">
+            <p className="ui-stat-label">Total Outstanding Debt</p>
+            <p className="mt-2 text-3xl font-black text-rose-700">{money(summary.totalOutstandingDebt)}</p>
             <p className="mt-3 text-xs font-bold text-slate-500">
-              Pending invoice debt collection recorded today: {formatOmr(summary.pendingDebtCollectionToday)}
+              Pending invoice debt collection recorded today: {money(summary.debtCollectedToday)}
             </p>
           </article>
         </section>
 
         <section className="grid grid-cols-1 gap-6 xl:grid-cols-[320px_minmax(0,1fr)]">
-          <aside className="h-fit rounded-lg border border-slate-200 bg-white p-5 shadow-sm xl:sticky xl:top-6">
-            <h2 className="text-lg font-black text-slate-950">Debt Filters</h2>
+          <aside className="ui-card ui-card-pad h-fit xl:sticky xl:top-6">
+            <h2 className="ui-section-title">Debt Filters</h2>
             <form method="get" className="mt-4 space-y-4">
               <div>
-                <label className="block text-xs font-black uppercase tracking-wide text-slate-500">Customer Search</label>
+                <label className="ui-label">Customer Search</label>
                 <input
                   name="customer"
                   defaultValue={customerFilter}
                   placeholder="Customer name"
-                  className="mt-2 h-12 w-full rounded-lg border border-slate-300 px-3 text-sm font-bold"
+                  className="ui-input"
                 />
               </div>
               <div>
-                <label className="block text-xs font-black uppercase tracking-wide text-slate-500">Status</label>
+                <label className="ui-label">Status</label>
                 <select
                   name="status"
                   defaultValue={statusFilter || "ALL"}
-                  className="mt-2 h-12 w-full rounded-lg border border-slate-300 px-3 text-sm font-bold"
+                  className="ui-input"
                 >
                   <option value="ALL">Open / Partial</option>
                   <option value="OPEN">Open</option>
@@ -274,12 +256,12 @@ export default async function ManagerDashboardPage({ searchParams }: ManagerDash
                 </select>
               </div>
               <div className="flex gap-3">
-                <button type="submit" className="rounded bg-slate-950 px-4 py-2 text-sm font-black text-white">
+                <button type="submit" className="ui-btn ui-btn-primary">
                   Apply Filters
                 </button>
-                <Link href="/manager/dashboard" className="rounded border border-slate-300 bg-white px-4 py-2 text-sm font-black text-slate-900">
+                <ButtonLink href={resetPath} variant="ghost">
                   Reset
-                </Link>
+                </ButtonLink>
               </div>
             </form>
           </aside>
@@ -300,6 +282,7 @@ export default async function ManagerDashboardPage({ searchParams }: ManagerDash
                       <th className="px-4 py-2 text-right">Balance</th>
                       <th className="px-4 py-2">Status</th>
                       <th className="px-4 py-2">Updated</th>
+                      <th className="px-4 py-2 text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-200">
@@ -311,17 +294,39 @@ export default async function ManagerDashboardPage({ searchParams }: ManagerDash
                         </td>
                         <td className="px-4 py-2 font-bold text-slate-700">{debt.invoice.invoiceNumber}</td>
                         <td className="whitespace-nowrap px-4 py-2 text-right font-bold text-slate-900">
-                          {formatOmr(debt.originalAmount)}
+                          {money(debt.originalAmount)}
                         </td>
                         <td className="whitespace-nowrap px-4 py-2 text-right font-bold text-slate-900">
-                          {formatOmr(debt.invoice.debtCollectionAmount)}
+                          {money(debt.invoice.debtCollectionAmount)}
                         </td>
-                        <td className="whitespace-nowrap px-4 py-2 text-right font-black text-red-700">
-                          {formatOmr(debt.balanceAmount)}
+                        <td className="whitespace-nowrap px-4 py-2 text-right font-black text-rose-700">
+                          {money(debt.balanceAmount)}
                         </td>
-                        <td className="px-4 py-2">{statusBadge(debt.status)}</td>
+                        <td className="px-4 py-2"><StatusBadge status={debt.status} /></td>
                         <td className="whitespace-nowrap px-4 py-2 font-bold text-slate-700">
                           {formatDateTimeDMY(debt.updatedAt)}
+                        </td>
+                        <td className="whitespace-nowrap px-4 py-2 text-right">
+                          {debt.balanceAmount.greaterThan(0) && debt.status !== "WRITTEN_OFF" ? (
+                            <form action={writeOffDebt} className="flex justify-end gap-2">
+                              <input type="hidden" name="debtId" value={debt.id} />
+                              <input
+                                name="reason"
+                                required
+                                minLength={5}
+                                placeholder="Write-off reason"
+                                className="h-9 w-40 rounded border border-slate-300 px-2 text-xs font-bold"
+                              />
+                              <button
+                                type="submit"
+                                className="h-9 rounded bg-slate-700 px-3 text-xs font-black text-white"
+                              >
+                                Write Off
+                              </button>
+                            </form>
+                          ) : (
+                            <span className="text-xs font-bold text-slate-400">—</span>
+                          )}
                         </td>
                       </tr>
                     ))}

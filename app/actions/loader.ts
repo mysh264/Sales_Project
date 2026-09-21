@@ -1,37 +1,27 @@
 "use server";
 
-import { ReconciliationStatus } from "@prisma/client";
+import { CylinderMovementType, ReconciliationStatus } from "@/generated/prisma/client";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { auditSnapshot, logAction } from "@/lib/audit";
 import { Permissions } from "@/lib/permissions";
 import { requirePermission } from "@/lib/permission-guard";
 import { prisma } from "@/lib/prisma";
-
-type MorningLoadItem = {
-  productId: string;
-  morningFull: number;
-};
-
-type EveningReconcileItem = {
-  productId: string;
-  morningFull: number;
-  eveningReturnedFull: number;
-  eveningReturnedEmpty: number;
-};
+import { businessDate, businessDayRange } from "@/lib/business-date";
+import {
+  calculateRouteReturn,
+  canHandleReconciliationBranch,
+  canReplaceMorningLoad,
+  parseCylinderQuantity,
+} from "@/lib/reconciliation";
 
 function text(formData: FormData, key: string) {
   const value = formData.get(key);
   return typeof value === "string" ? value.trim() : "";
 }
 
-function intValue(formData: FormData, key: string) {
-  const value = Number.parseInt(text(formData, key) || "0", 10);
-  return Number.isFinite(value) && value > 0 ? value : 0;
-}
-
 function dayOnly(date = new Date()) {
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  return businessDate(date);
 }
 
 function parseRows(formData: FormData, morningKey: string, returnedFullKey?: string, returnedEmptyKey?: string) {
@@ -47,9 +37,9 @@ function parseRows(formData: FormData, morningKey: string, returnedFullKey?: str
   return productIds
     .map((productId, index) => ({
       productId,
-      morningFull: Number.parseInt(morningValues[index] || "0", 10) || 0,
-      eveningReturnedFull: Number.parseInt(fullValues[index] || "0", 10) || 0,
-      eveningReturnedEmpty: Number.parseInt(emptyValues[index] || "0", 10) || 0,
+      morningFull: parseCylinderQuantity(morningValues[index]),
+      eveningReturnedFull: parseCylinderQuantity(fullValues[index]),
+      eveningReturnedEmpty: parseCylinderQuantity(emptyValues[index]),
     }))
     .filter((item) => item.productId);
 }
@@ -80,27 +70,6 @@ function normalizeProductRows<T extends { productId: string; morningFull: number
 function validationRedirect(basePath: string, salesmanId: string, message: string) {
   const params = new URLSearchParams({ error: message });
   redirect(`${basePath}/${encodeURIComponent(salesmanId)}?${params.toString()}`);
-}
-
-function canHandleRoute(
-  currentUser: {
-    role: string;
-    branchId: string | null;
-    hasGlobalAccess?: boolean | null;
-  },
-  salesman: {
-    branchId: string | null;
-  },
-) {
-  if (currentUser.role === "ADMIN" || currentUser.hasGlobalAccess) {
-    return true;
-  }
-
-  if (!currentUser.branchId || !salesman.branchId) {
-    return true;
-  }
-
-  return currentUser.branchId === salesman.branchId;
 }
 
 async function resolveSalesmanContext(salesmanId: string) {
@@ -143,14 +112,12 @@ export async function processMorningLoad(formData: FormData) {
 
   const { user: currentUser } = await requirePermission(Permissions.Logistics_Update);
   const salesman = await resolveSalesmanContext(salesmanId);
-
-  if (!canHandleRoute(currentUser, salesman)) {
-    validationRedirect("/loader/load", salesmanId, "You can only hand off routes within your own branch.");
-  }
-
   const branchId = salesman.branchId ?? currentUser.branchId;
   if (!branchId) {
     throw new Error("Salesman must belong to a branch.");
+  }
+  if (!canHandleReconciliationBranch(currentUser, branchId)) {
+    validationRedirect("/loader/load", salesmanId, "You can only hand off routes within your own branch.");
   }
 
   const rows = normalizeProductRows(
@@ -168,6 +135,10 @@ export async function processMorningLoad(formData: FormData) {
   const reconciliationDate = dayOnly();
 
   await prisma.$transaction(async (tx) => {
+    await tx.$queryRaw<Array<{ lock_acquired: number }>>`
+      SELECT 1::int AS lock_acquired
+      FROM (SELECT pg_advisory_xact_lock(hashtext(${`morning-load:${salesmanId}`}), hashtext(${reconciliationDate.toISOString()})) AS acquired) AS lock_row
+    `;
     const existing = await tx.dailyReconciliation.findUnique({
       where: {
         salesmanId_reconciliationDate: {
@@ -180,8 +151,32 @@ export async function processMorningLoad(formData: FormData) {
       },
     });
 
-    if (existing?.status === ReconciliationStatus.EVENING_RECONCILED) {
-      throw new Error("This salesman already has a completed route for today.");
+    if (existing) {
+      const { start, end } = businessDayRange(existing.reconciliationDate);
+      const invoiceCount = await tx.invoice.count({
+        where: {
+          salesmanId,
+          status: "ISSUED",
+          createdAt: { gte: start, lt: end },
+        },
+      });
+      if (!canReplaceMorningLoad({ status: existing.status, invoiceCount })) {
+        throw new Error("Morning load cannot be changed after sales or evening reconciliation have started.");
+      }
+    }
+
+    if (existing) {
+      for (const item of existing.items) {
+        // Best-effort undo of the prior load's inventory deduction. If the balance row
+        // is missing (e.g. product was reactivated after the branch was created and no
+        // row was backfilled) there is nothing to credit back, so skip silently.
+        await tx.inventoryBalance.upsert({
+          where: { branchId_productId: { branchId, productId: item.productId } },
+          create: { branchId, productId: item.productId, fullCount: item.morningFull, emptyCount: 0 },
+          update: { fullCount: { increment: item.morningFull } },
+        });
+      }
+      await tx.cylinderMovement.deleteMany({ where: { reconciliationId: existing.id } });
     }
 
     const reconciliation = existing
@@ -222,6 +217,39 @@ export async function processMorningLoad(formData: FormData) {
       })),
     });
 
+    // Ensure every product has an InventoryBalance row at this branch before the conditional
+    // deduction. A product that was inactive when the branch was created has no balance row
+    // (saveBranch/createMany only seeds active products), and was reactivated afterwards —
+    // auto-creating the row here lets the gte check below distinguish "missing row" from
+    // "genuinely insufficient stock" and gives a correct error in both cases.
+    for (const row of rows) {
+      await tx.inventoryBalance.upsert({
+        where: { branchId_productId: { branchId, productId: row.productId } },
+        create: { branchId, productId: row.productId, fullCount: 0, emptyCount: 0 },
+        update: {},
+      });
+    }
+
+    for (const row of rows) {
+      const deducted = await tx.inventoryBalance.updateMany({
+        where: { branchId, productId: row.productId, fullCount: { gte: row.morningFull } },
+        data: { fullCount: { decrement: row.morningFull } },
+      });
+      if (deducted.count !== 1) {
+        throw new Error("Insufficient branch inventory for this morning load.");
+      }
+      await tx.cylinderMovement.create({
+        data: {
+          branchId,
+          productId: row.productId,
+          reconciliationId: reconciliation.id,
+          type: CylinderMovementType.DAILY_LOAD_FULL,
+          fullDelta: -row.morningFull,
+          note: `Morning load for ${salesman.fullName}`,
+        },
+      });
+    }
+
     const reconciliationAfter = await tx.dailyReconciliation.findUniqueOrThrow({
       where: { id: reconciliation.id },
       include: {
@@ -260,11 +288,6 @@ export async function processEveningReturn(formData: FormData) {
   }
 
   const { user: currentUser } = await requirePermission(Permissions.Logistics_Update);
-  const salesman = await resolveSalesmanContext(salesmanId);
-
-  if (!canHandleRoute(currentUser, salesman)) {
-    validationRedirect("/loader/return", salesmanId, "You can only close routes within your own branch.");
-  }
 
   const reconciliationDate = dayOnly();
   const normalizedList = normalizeProductRows(
@@ -278,6 +301,10 @@ export async function processEveningReturn(formData: FormData) {
   }
 
   await prisma.$transaction(async (tx) => {
+    await tx.$queryRaw<Array<{ lock_acquired: number }>>`
+      SELECT 1::int AS lock_acquired
+      FROM (SELECT pg_advisory_xact_lock(hashtext(${`evening-return:${salesmanId}`}), hashtext(${reconciliationDate.toISOString()})) AS acquired) AS lock_row
+    `;
     const reconciliation = reconciliationId
       ? await tx.dailyReconciliation.findUniqueOrThrow({
           where: { id: reconciliationId },
@@ -303,45 +330,96 @@ export async function processEveningReturn(formData: FormData) {
           },
         });
 
-    if (reconciliation.status === ReconciliationStatus.EVENING_RECONCILED) {
-      throw new Error("This route has already been completed.");
+    if (
+      reconciliation.salesmanId !== salesmanId ||
+      !canHandleReconciliationBranch(currentUser, reconciliation.branchId)
+    ) {
+      throw new Error("Unauthorized reconciliation access.");
+    }
+
+    if (reconciliation.status !== ReconciliationStatus.MORNING_RECORDED) {
+      throw new Error("This route is no longer open for evening return entry.");
     }
 
     const itemMap = new Map<string, (typeof reconciliation.items)[number]>(
       reconciliation.items.map((item) => [item.productId, item]),
     );
+    const { start: invoiceDayStart, end: dayEnd } = businessDayRange(reconciliation.reconciliationDate);
+    const invoiceTotals = await tx.invoiceItem.groupBy({
+      by: ["productId"],
+      where: {
+        invoice: {
+          salesmanId,
+          status: "ISSUED",
+          createdAt: { gte: invoiceDayStart, lt: dayEnd },
+        },
+      },
+      _sum: { fullCylindersDelivered: true, emptyCylindersReturned: true },
+    });
+    const invoiceMap = new Map(invoiceTotals.map((row) => [row.productId, row._sum]));
+
+    // Every morning-load product must be represented in the evening return, otherwise its
+    // loaded-vs-invoiced variance is never checked and its cylinders are never returned to
+    // inventory. Silently omitting a product would mask a discrepancy and lose stock.
+    const submittedProductIds = new Set(normalizedList.map((row) => row.productId));
+    for (const item of reconciliation.items) {
+      if (!submittedProductIds.has(item.productId)) {
+        throw new Error("Evening reconciliation must include every morning-load product.");
+      }
+    }
 
     for (const row of normalizedList) {
+      if (
+        !Number.isSafeInteger(row.eveningReturnedFull) ||
+        !Number.isSafeInteger(row.eveningReturnedEmpty) ||
+        row.eveningReturnedFull < 0 ||
+        row.eveningReturnedEmpty < 0
+      ) {
+        throw new Error("Returned cylinder quantities must be whole numbers of zero or more.");
+      }
       const item = itemMap.get(row.productId);
 
       if (!item) {
         throw new Error("Evening reconciliation must include the morning load products.");
       }
 
-      const soldFull = item.morningFull - row.eveningReturnedFull;
-      const missingEmpty = item.morningFull - row.eveningReturnedFull - row.eveningReturnedEmpty;
-      if (soldFull < 0) {
-        throw new Error("Returned full cylinders cannot exceed morning load.");
-      }
-
-      if (missingEmpty < 0) {
-        throw new Error("Returned cylinders cannot exceed morning load.");
-      }
+      calculateRouteReturn({
+        morningFull: item.morningFull,
+        eveningReturnedFull: row.eveningReturnedFull,
+        eveningReturnedEmpty: row.eveningReturnedEmpty,
+      });
     }
+    const hasDiscrepancy = normalizedList.some((row) => {
+      const currentItem = itemMap.get(row.productId)!;
+      return (
+        currentItem.morningFull - row.eveningReturnedFull !==
+          (invoiceMap.get(row.productId)?.fullCylindersDelivered ?? 0) ||
+        row.eveningReturnedEmpty !== (invoiceMap.get(row.productId)?.emptyCylindersReturned ?? 0)
+      );
+    });
 
     const reconciliationBefore = auditSnapshot(reconciliation);
 
     await tx.dailyReconciliation.update({
       where: { id: reconciliation.id },
       data: {
-        status: ReconciliationStatus.EVENING_RECONCILED,
-        eveningReconciledAt: new Date(),
+        status: hasDiscrepancy ? ReconciliationStatus.DISCREPANCY_PENDING : ReconciliationStatus.EVENING_RECONCILED,
+        eveningReconciledAt: hasDiscrepancy ? null : new Date(),
+        discrepancyApprovedById: null,
+        discrepancyApprovedAt: null,
+        discrepancyReason: null,
       },
     });
 
     for (const row of normalizedList) {
       const currentItem = itemMap.get(row.productId)!;
-      const missingEmpty = currentItem.morningFull - row.eveningReturnedFull - row.eveningReturnedEmpty;
+      const invoiceSoldFull = invoiceMap.get(row.productId)?.fullCylindersDelivered ?? 0;
+      const invoiceEmptyReturned = invoiceMap.get(row.productId)?.emptyCylindersReturned ?? 0;
+      const { missingEmpty } = calculateRouteReturn({
+        morningFull: currentItem.morningFull,
+        eveningReturnedFull: row.eveningReturnedFull,
+        eveningReturnedEmpty: row.eveningReturnedEmpty,
+      });
       const updatedItem = await tx.dailyReconciliationItem.update({
         where: {
           reconciliationId_productId: {
@@ -354,8 +432,43 @@ export async function processEveningReturn(formData: FormData) {
           eveningReturnedEmpty: row.eveningReturnedEmpty,
           missingEmpty,
           soldFull: currentItem.morningFull - row.eveningReturnedFull,
+          invoiceSoldFull,
+          invoiceEmptyReturned,
+          varianceFull: currentItem.morningFull - row.eveningReturnedFull - invoiceSoldFull,
+          varianceEmpty: row.eveningReturnedEmpty - invoiceEmptyReturned,
         },
       });
+      if (!hasDiscrepancy) {
+        await tx.inventoryBalance.update({
+          where: { branchId_productId: { branchId: reconciliation.branchId, productId: row.productId } },
+          data: {
+            fullCount: { increment: row.eveningReturnedFull },
+            emptyCount: { increment: row.eveningReturnedEmpty },
+          },
+        });
+      }
+      if (!hasDiscrepancy && row.eveningReturnedFull > 0) {
+        await tx.cylinderMovement.create({
+          data: {
+            branchId: reconciliation.branchId,
+            productId: row.productId,
+            reconciliationId: reconciliation.id,
+            type: CylinderMovementType.DAILY_RETURN_FULL,
+            fullDelta: row.eveningReturnedFull,
+          },
+        });
+      }
+      if (!hasDiscrepancy && row.eveningReturnedEmpty > 0) {
+        await tx.cylinderMovement.create({
+          data: {
+            branchId: reconciliation.branchId,
+            productId: row.productId,
+            reconciliationId: reconciliation.id,
+            type: CylinderMovementType.DAILY_RETURN_EMPTY,
+            emptyDelta: row.eveningReturnedEmpty,
+          },
+        });
+      }
 
       await logAction(
         currentUser.id,

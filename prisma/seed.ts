@@ -1,8 +1,27 @@
-import { PrismaClient, UserRole } from "@prisma/client";
+import { PrismaClient, UserRole } from "@/generated/prisma/client";
 import bcrypt from "bcryptjs";
+import { PrismaPg } from "@prisma/adapter-pg";
 import { DEFAULT_ROLE_PERMISSIONS } from "../lib/permissions";
+import { assertSafeTestIdentity, requireTestPassword } from "../lib/test-user-seed";
 
-const prisma = new PrismaClient();
+const connectionString = process.env.DATABASE_URL;
+if (!connectionString) throw new Error("DATABASE_URL is required.");
+const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString, connectionTimeoutMillis: 5_000 }) });
+const adminSeedPassword = process.env.SEED_ADMIN_PASSWORD ?? "";
+const demoSeedPassword = process.env.SEED_DEMO_PASSWORD ?? "";
+const seedDemoUsers = process.env.SEED_DEMO_USERS === "true";
+const masterTesterEnabled = process.env.MASTERTESTER_ENABLED === "true";
+const masterTesterEmail = process.env.MASTERTESTER_EMAIL ?? "tester@mahmoudbox.com";
+const masterTesterPassword = requireTestPassword(
+  masterTesterEnabled,
+  process.env.MASTERTESTER_PASSWORD,
+  "MASTERTESTER_PASSWORD",
+);
+const testUserPassword = requireTestPassword(
+  masterTesterEnabled,
+  process.env.TESTER_CANNONICAL_PASSWORD,
+  "TESTER_CANNONICAL_PASSWORD",
+);
 
 const companyData = {
   name: "NATIONAL INDUSTRIAL GAS PLANT - OMAN",
@@ -79,23 +98,23 @@ const products = [
 const seedUsers = [
   {
     email: "admin@mahmoudbox.com",
-    password: "SuperSecure123!",
+    password: adminSeedPassword,
     role: UserRole.ADMIN,
     fullName: "Mahmoud Master Admin",
     phone: "+96890000010",
     needsBranch: false,
   },
   {
-    email: "accountant@test.local",
-    password: "Pass123!",
-    role: UserRole.ACCOUNTANT,
-    fullName: "Test Accountant",
-    phone: "+96890000011",
-    needsBranch: true,
+    email: "gm@test.local",
+    password: demoSeedPassword,
+    role: UserRole.GENERAL_MANAGER,
+    fullName: "Test General Manager",
+    phone: "+96890000017",
+    needsBranch: false,
   },
   {
     email: "manager@test.local",
-    password: "Pass123!",
+    password: demoSeedPassword,
     role: UserRole.MANAGER,
     fullName: "Test Manager",
     phone: "+96890000012",
@@ -103,7 +122,7 @@ const seedUsers = [
   },
   {
     email: "loader@test.local",
-    password: "Pass123!",
+    password: demoSeedPassword,
     role: UserRole.LOADER,
     fullName: "Test Loader",
     phone: "+96890000013",
@@ -111,7 +130,7 @@ const seedUsers = [
   },
   {
     email: "salesman@test.local",
-    password: "Pass123!",
+    password: demoSeedPassword,
     role: UserRole.SALESMAN,
     fullName: "Test Salesman",
     phone: "+96890000014",
@@ -119,7 +138,7 @@ const seedUsers = [
   },
   {
     email: "salesman-a@test.local",
-    password: "Pass123!",
+    password: demoSeedPassword,
     role: UserRole.SALESMAN,
     fullName: "Test Salesman A",
     phone: "+96890000015",
@@ -128,16 +147,51 @@ const seedUsers = [
   },
   {
     email: "salesman-b@test.local",
-    password: "Pass123!",
+    password: demoSeedPassword,
     role: UserRole.SALESMAN,
     fullName: "Test Salesman B",
-    phone: "+96890000016",
+    phone: "+968****0016",
     needsBranch: true,
     branchCode: "BRANCH_B",
   },
 ];
 
+// Canonical test users for the Master Tester feature.
+// Only seeded when MASTERTESTER_ENABLED=true. All 11 rows are marked
+// isTestUser=true, which is the gate that allows the master tester to
+// impersonate them. Real human users (admin, GM, etc.) are never marked,
+// so they can never be impersonated regardless of who is asking.
+//
+// Coverage matrix: 5 roles × 3 branches. ADMIN and GENERAL_MANAGER are
+// branch-independent and get assigned SUHAR_MAIN as a default home so
+// they appear in the switcher alongside the other roles.
+const canonicalTestUsers: Array<{
+  email: string;
+  role: UserRole;
+  fullName: string;
+  phone: string;
+  branchCode?: string;
+}> = [
+  { email: "test.admin@mahmoudbox.com",      role: UserRole.ADMIN,            fullName: "Test Admin",                phone: "+968****9001" },
+  { email: "test.gm@mahmoudbox.com",         role: UserRole.GENERAL_MANAGER,  fullName: "Test General Manager",      phone: "+968****9002" },
+  { email: "test.manager.suhar@mahmoudbox.com", role: UserRole.MANAGER,       fullName: "Test Manager (Suhar Main)", phone: "+968****9003", branchCode: "SUHAR_MAIN" },
+  { email: "test.manager.bra@mahmoudbox.com",   role: UserRole.MANAGER,       fullName: "Test Manager (Branch A)",   phone: "+968****9004", branchCode: "BRANCH_A" },
+  { email: "test.manager.brb@mahmoudbox.com",   role: UserRole.MANAGER,       fullName: "Test Manager (Branch B)",   phone: "+968****9005", branchCode: "BRANCH_B" },
+  { email: "test.loader.suhar@mahmoudbox.com",  role: UserRole.LOADER,        fullName: "Test Loader (Suhar Main)",  phone: "+968****9006", branchCode: "SUHAR_MAIN" },
+  { email: "test.loader.bra@mahmoudbox.com",    role: UserRole.LOADER,        fullName: "Test Loader (Branch A)",    phone: "+968****9007", branchCode: "BRANCH_A" },
+  { email: "test.loader.brb@mahmoudbox.com",    role: UserRole.LOADER,        fullName: "Test Loader (Branch B)",    phone: "+968****9008", branchCode: "BRANCH_B" },
+  { email: "test.salesman.suhar@mahmoudbox.com", role: UserRole.SALESMAN,     fullName: "Test Salesman (Suhar Main)", phone: "+968****9009", branchCode: "SUHAR_MAIN" },
+  { email: "test.salesman.bra@mahmoudbox.com",   role: UserRole.SALESMAN,     fullName: "Test Salesman (Branch A)",  phone: "+968****9010", branchCode: "BRANCH_A" },
+  { email: "test.salesman.brb@mahmoudbox.com",   role: UserRole.SALESMAN,     fullName: "Test Salesman (Branch B)",  phone: "+968****9011", branchCode: "BRANCH_B" },
+];
+
 async function main() {
+  if (adminSeedPassword.length < 12) {
+    throw new Error("SEED_ADMIN_PASSWORD must be set to at least 12 characters.");
+  }
+  if (seedDemoUsers && demoSeedPassword.length < 12) {
+    throw new Error("SEED_DEMO_PASSWORD must be set to at least 12 characters when SEED_DEMO_USERS=true.");
+  }
   const company =
     (await prisma.company.findFirst({ where: { vatNumber: companyData.vatNumber } })) ??
     (await prisma.company.create({ data: companyData }));
@@ -269,19 +323,21 @@ async function main() {
       }
     }
 
-    await prisma.inventoryBalance.upsert({
-      where: { branchId_productId: { branchId: branch.id, productId: product.id } },
-      update: {},
-      create: {
-        branchId: branch.id,
-        productId: product.id,
-        fullCount: 0,
-        emptyCount: 0,
-      },
-    });
+    for (const targetBranch of branches) {
+      await prisma.inventoryBalance.upsert({
+        where: { branchId_productId: { branchId: targetBranch.id, productId: product.id } },
+        update: {},
+        create: {
+          branchId: targetBranch.id,
+          productId: product.id,
+          fullCount: 0,
+          emptyCount: 0,
+        },
+      });
+    }
   }
 
-  for (const user of seedUsers) {
+  for (const user of seedUsers.filter((entry) => entry.role === UserRole.ADMIN || seedDemoUsers)) {
     const passwordHash = await bcrypt.hash(user.password, 12);
     const targetBranch = user.branchCode === "BRANCH_A" ? branchA : user.branchCode === "BRANCH_B" ? branchB : user.needsBranch ? branch : null;
 
@@ -310,8 +366,98 @@ async function main() {
     });
   }
 
+  if (masterTesterEnabled) {
+    // The master tester account itself. Only the tester holds
+    // Testers_Impersonate; everyone else has zero impersonation rights.
+    const existingTester = await prisma.user.findUnique({
+      where: { email: masterTesterEmail },
+      select: { isTestUser: true },
+    });
+    assertSafeTestIdentity(existingTester, masterTesterEmail);
+
+    const testerHash = await bcrypt.hash(masterTesterPassword, 12);
+    const testerRecord = await prisma.user.upsert({
+      where: { email: masterTesterEmail },
+      update: {
+        fullName: "Master Tester",
+        phone: "+968****0000",
+        role: UserRole.TESTER,
+        roleId: roleRecords[UserRole.TESTER],
+        isActive: true,
+        isTestUser: true,
+        allowGlobalSalesView: false,
+        passwordHash: testerHash,
+        branchId: branch.id,
+      },
+      create: {
+        email: masterTesterEmail,
+        fullName: "Master Tester",
+        phone: "+968****0000",
+        role: UserRole.TESTER,
+        roleId: roleRecords[UserRole.TESTER],
+        isTestUser: true,
+        isActive: true,
+        allowGlobalSalesView: false,
+        passwordHash: testerHash,
+        branchId: branch.id, // SUHAR_MAIN; the tester is branch-independent
+      },
+    });
+    console.info(JSON.stringify({
+      event: "seed.master_tester.upserted",
+      id: testerRecord.id,
+      email: masterTesterEmail,
+    }));
+
+    // The 11 canonical test users (one per role+branch). All marked
+    // isTestUser=true so the impersonation gate accepts them.
+    const canonHash = await bcrypt.hash(testUserPassword, 12);
+    for (const t of canonicalTestUsers) {
+      const targetBranch = t.branchCode === "BRANCH_A"
+        ? branchA
+        : t.branchCode === "BRANCH_B"
+        ? branchB
+        : branch; // SUHAR_MAIN default for branch-independent roles
+      const existingCanonicalUser = await prisma.user.findUnique({
+        where: { email: t.email },
+        select: { isTestUser: true },
+      });
+      assertSafeTestIdentity(existingCanonicalUser, t.email);
+
+      await prisma.user.upsert({
+        where: { email: t.email },
+        update: {
+          isTestUser: true,
+          isActive: true,
+          passwordHash: canonHash,
+          branchId: targetBranch.id,
+          role: t.role,
+          roleId: roleRecords[t.role],
+          fullName: t.fullName,
+          phone: t.phone,
+          allowGlobalSalesView: false,
+        },
+        create: {
+          email: t.email,
+          fullName: t.fullName,
+          phone: t.phone,
+          role: t.role,
+          roleId: roleRecords[t.role],
+          isTestUser: true,
+          isActive: true,
+          allowGlobalSalesView: false,
+          passwordHash: canonHash,
+          branchId: targetBranch.id,
+        },
+      });
+    }
+    console.info(JSON.stringify({
+      event: "seed.canonical_test_users.upserted",
+      count: canonicalTestUsers.length,
+    }));
+  }
+
   console.log(
-    "Seed complete: company, branch, products, price rules, inventory balances, roles, and role test accounts are ready.",
+    `Seed complete: master data and admin account are ready${seedDemoUsers ? " with demo users" : ""}${masterTesterEnabled ? ` + master tester (${masterTesterEmail}) + ${canonicalTestUsers.length} canonical test users` : ""}.`,
   );
 }
 

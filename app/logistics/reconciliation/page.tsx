@@ -1,12 +1,13 @@
 import Link from "next/link";
 import { forbidden, redirect } from "next/navigation";
-import { submitEveningReconcile } from "@/app/actions/logistics";
+import { submitEveningReconcile } from "@/app/actions/loader";
 import { ReconciliationWorkbench } from "./ReconciliationWorkbench";
 import { formatDateDMY } from "@/lib/date-format";
 import { Permissions } from "@/lib/permissions";
 import { checkPermission } from "@/lib/permission-guard";
 import { getCurrentUser, hasGlobalSalesAccess } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
+import { businessDate } from "@/lib/business-date";
 
 export const dynamic = "force-dynamic";
 
@@ -24,8 +25,7 @@ function formatNumber(value: number) {
 }
 
 function todayDate() {
-  const now = new Date();
-  return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  return businessDate();
 }
 
 export default async function LogisticsReconciliationPage({ searchParams }: ReconciliationPageProps) {
@@ -75,13 +75,13 @@ export default async function LogisticsReconciliationPage({ searchParams }: Reco
 
   if (!salesman) {
     return (
-      <main className="min-h-screen bg-slate-100 p-4 md:p-8">
-        <div className="mx-auto max-w-6xl rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+      <main className="min-h-screen bg-app-bg p-4 md:p-8">
+        <div className="mx-auto max-w-6xl ui-card p-6">
           <p className="text-sm font-black uppercase tracking-wide text-slate-500">Logistics / Reconciliation</p>
           <h1 className="mt-1 text-3xl font-black text-slate-950">Daily Reconciliation</h1>
           <p className="mt-3 text-base font-bold text-slate-700">No active salesmen are configured for this scope.</p>
           <div className="mt-5">
-            <Link href="/loader" className="rounded bg-slate-950 px-4 py-2 text-sm font-black text-white">
+            <Link href="/loader" className="ui-btn ui-btn-primary ui-btn-sm">
               Back to Loader
             </Link>
           </div>
@@ -113,9 +113,9 @@ export default async function LogisticsReconciliationPage({ searchParams }: Reco
   const morningItems = reconciliation?.items ?? [];
 
   return (
-    <main className="min-h-screen bg-slate-100 p-4 md:p-8">
+    <main className="min-h-screen bg-app-bg p-4 md:p-8">
       <div className="mx-auto flex max-w-6xl flex-col gap-6">
-        <header className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+        <header className="ui-card p-6">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div>
               <p className="text-sm font-black uppercase tracking-wide text-slate-500">Logistics / Reconciliation</p>
@@ -152,7 +152,7 @@ export default async function LogisticsReconciliationPage({ searchParams }: Reco
           </section>
         ) : null}
 
-        <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+        <section className="ui-card p-5">
           <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
             <div>
               <p className="text-xs font-black uppercase tracking-wide text-slate-500">Evening Load-In</p>
@@ -164,7 +164,7 @@ export default async function LogisticsReconciliationPage({ searchParams }: Reco
               </p>
             </div>
             {reconciliation ? (
-              <div className="rounded-lg bg-slate-100 px-4 py-3 text-sm font-black text-slate-900">
+              <div className="rounded-xl bg-brand-50 px-4 py-3 text-sm font-black text-slate-900">
                 Status: {reconciliation.status.replaceAll("_", " ")}
               </div>
             ) : null}
@@ -223,7 +223,7 @@ export default async function LogisticsReconciliationPage({ searchParams }: Reco
               })}
 
               <div className="flex flex-wrap gap-3">
-                <button type="submit" className="rounded bg-emerald-700 px-5 py-3 text-sm font-black text-white">
+                <button type="submit" className="ui-btn ui-btn-success">
                   Save Evening Reconciliation
                 </button>
                 <Link href={`/logistics/reconciliation?salesmanId=${encodeURIComponent(salesman.id)}`} className="rounded border border-slate-300 bg-white px-5 py-3 text-sm font-black text-slate-900">

@@ -4,13 +4,13 @@ services:
     container_name: sales_postgres
     restart: unless-stopped
     environment:
-      POSTGRES_DB: sales_tracking
-      POSTGRES_USER: sales_user
-      POSTGRES_PASSWORD: sales_password
+      POSTGRES_DB: ${POSTGRES_DB:-sales_tracking}
+      POSTGRES_USER: ${POSTGRES_USER:-sales_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in the deployment environment}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U sales_user -d sales_tracking"]
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -28,20 +28,85 @@ services:
         condition: service_healthy
     environment:
       NODE_ENV: production
-      DATABASE_URL: postgresql://sales_user:sales_password@db:5432/sales_tracking?schema=public
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL using the db service hostname}
+      JWT_SECRET: ${JWT_SECRET:?Set a random JWT_SECRET of at least 32 characters}
+      APP_ORIGIN: ${APP_ORIGIN:?Set the public HTTPS application origin}
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:?Set SEED_ADMIN_PASSWORD (>=12 chars) to bootstrap admin}
+      SEED_DEMO_PASSWORD: ${SEED_DEMO_PASSWORD:-}
+      SEED_DEMO_USERS: ${SEED_DEMO_USERS:-false}
+      UPLOAD_DIR: /app/storage/uploads
+      TZ: Asia/Muscat
       NEXT_TELEMETRY_DISABLED: "1"
-    ports:
-      - "3000:3000"
+      # Master Tester feature. When MASTERTESTER_ENABLED=true, the database
+      # seed creates the master tester account and the 11 canonical test
+      # users, and the /tester launchpad becomes reachable. Leave this
+      # false (or unset) in any production deploy.
+      MASTERTESTER_ENABLED: ${MASTERTESTER_ENABLED:-false}
+      MASTERTESTER_EMAIL: ${MASTERTESTER_EMAIL:-tester@mahmoudbox.com}
+      # No built-in passwords: the seed refuses to enable this feature unless
+      # both values are explicitly supplied with at least 12 characters.
+      MASTERTESTER_PASSWORD: ${MASTERTESTER_PASSWORD:-}
+      TESTER_CANNONICAL_PASSWORD: ${TESTER_CANNONICAL_PASSWORD:-}
+    volumes:
+      - uploads_data:/app/storage/uploads
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:3000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    # ports:
+    #   - "3000:3000"
     networks:
       - app_internal
       - docker_shared
 
+  maintenance:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      web:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL using the db service hostname}
+      UPLOAD_DIR: /app/storage/uploads
+      AUDIT_RETENTION_DAYS: ${AUDIT_RETENTION_DAYS:-365}
+    volumes:
+      - uploads_data:/app/storage/uploads
+    command: ["sh", "-c", "while true; do npx tsx scripts/retention.ts; sleep 86400; done"]
+    networks:
+      - app_internal
+
+  backup:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL using the db service hostname}
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-30}
+    volumes:
+      - backup_data:/backups
+      - uploads_data:/uploads:ro
+    command:
+      [
+        "sh",
+        "-c",
+        "while true; do stamp=$$(date -u +%Y%m%dT%H%M%SZ); pg_dump --format=custom --no-owner --no-acl \"$${DATABASE_URL%%\\?*}\" --file=\"/backups/sales-$$stamp.dump\" && tar -czf \"/backups/uploads-$$stamp.tar.gz\" -C /uploads . && find /backups -type f -mtime +$${BACKUP_RETENTION_DAYS} -delete; sleep 86400; done",
+      ]
+    networks:
+      - app_internal
+
 volumes:
   postgres_data:
+  uploads_data:
+  backup_data:
 
 networks:
   app_internal:
     driver: bridge
   docker_shared:
     external: true
-

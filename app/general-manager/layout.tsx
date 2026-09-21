@@ -1,23 +1,29 @@
-import Link from "next/link";
-import { logout } from "@/app/actions/auth";
-import { AdminConsoleLink } from "@/components/AdminConsoleLink";
+import { TopNav } from "@/components/ui/TopNav";
+import { LocaleToggle, readLocale, t } from "@/components/LocaleToggle";
 
-export default function GeneralManagerLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+export default async function GeneralManagerLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+  const locale = await readLocale();
   return (
     <>
-      <nav className="border-b border-slate-200 bg-white px-4 py-3 shadow-sm md:px-8">
-        <div className="mx-auto flex max-w-screen-xl flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <Link href="/general-manager" className="rounded bg-slate-950 px-4 py-2 text-sm font-black text-white">
-            Home
-          </Link>
-          <AdminConsoleLink className="rounded bg-purple-700 px-4 py-2 text-sm font-black text-white" />
-          <form action={logout}>
-            <button type="submit" className="rounded bg-red-700 px-4 py-2 text-sm font-black text-white">
-              Logout
-            </button>
-          </form>
-        </div>
-      </nav>
+      <TopNav
+        brand={t(locale, "brandGm")}
+        homeHref="/general-manager"
+        menuLabel={t(locale, "menu")}
+        closeLabel={t(locale, "close")}
+        logoutLabel={t(locale, "logout")}
+        items={[
+          { href: "/general-manager/finance", label: t(locale, "brandFinance") },
+          { href: "/general-manager/reconciliation", label: t(locale, "reconciliation") },
+          { href: "/general-manager/users", label: t(locale, "users") },
+          { href: "/general-manager/branches", label: t(locale, "branches") },
+          { href: "/general-manager/products", label: t(locale, "products") },
+          { href: "/general-manager/inventory", label: t(locale, "inventory") },
+          { href: "/general-manager/roles", label: t(locale, "roles") },
+          { href: "/general-manager/audit-logs", label: t(locale, "auditLogs") },
+          { href: "/profile/security", label: t(locale, "security") },
+        ]}
+        extra={<LocaleToggle nextPath="/general-manager" />}
+      />
       {children}
     </>
   );

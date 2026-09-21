@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { login } from "@/app/actions/auth";
+import { roleHome } from "@/lib/auth";
 
 export function LoginForm() {
   const [error, setError] = useState("");
@@ -13,8 +14,8 @@ export function LoginForm() {
         setError("");
         startTransition(async () => {
           try {
-            await login(formData);
-            window.location.href = "/";
+            const role = await login(formData);
+            window.location.assign(roleHome[role]);
           } catch {
             setError("Invalid email or password.");
           }
@@ -23,37 +24,45 @@ export function LoginForm() {
       className="mt-6 flex flex-col gap-4"
     >
       <label className="block">
-        <span className="text-sm font-black uppercase tracking-wide text-slate-700">Email</span>
+        <span className="ui-label">Email</span>
         <input
           name="email"
           type="email"
           required
           autoComplete="email"
-          className="mt-2 h-14 w-full rounded-lg border-4 border-slate-300 px-4 text-lg font-bold outline-none focus:border-slate-950"
+          className="ui-input h-14 text-base"
         />
+      </label>
+      <label className="block">
+        <span className="ui-label">Authenticator Code (if enabled)</span>
+        <input name="mfaCode" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" className="ui-input h-14 text-base" />
       </label>
 
       <label className="block">
-        <span className="text-sm font-black uppercase tracking-wide text-slate-700">Password</span>
+        <span className="ui-label">Recovery Code (if you cannot use your authenticator)</span>
+        <input name="recoveryCode" autoComplete="one-time-code" className="ui-input h-14 text-base" />
+      </label>
+
+      <label className="block">
+        <span className="ui-label">Password</span>
         <input
           name="password"
           type="password"
           required
           autoComplete="current-password"
-          className="mt-2 h-14 w-full rounded-lg border-4 border-slate-300 px-4 text-lg font-bold outline-none focus:border-slate-950"
+          className="ui-input h-14 text-base"
         />
       </label>
 
-      {error ? <p className="rounded-lg bg-red-50 p-3 text-base font-black text-red-800">{error}</p> : null}
+      {error ? <p className="ui-badge ui-badge-danger w-full justify-center py-2.5 text-sm">{error}</p> : null}
 
       <button
         type="submit"
         disabled={isPending}
-        className="h-16 rounded-lg bg-slate-950 px-5 text-2xl font-black text-white shadow-lg disabled:bg-slate-500"
+        className="ui-btn ui-btn-primary ui-btn-lg mt-1"
       >
         {isPending ? "Signing In" : "Login"}
       </button>
     </form>
   );
 }
-

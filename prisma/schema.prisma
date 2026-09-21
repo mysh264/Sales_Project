@@ -1,20 +1,19 @@
 generator client {
-  provider = "prisma-client-js"
+  provider = "prisma-client"
+  output   = "../generated/prisma"
 }
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
 }
 
 enum UserRole {
   ADMIN
   GENERAL_MANAGER
   MANAGER
-  ACCOUNTANT
-  ACCOUNTANT_MANAGER
   LOADER
   SALESMAN
+  TESTER
 }
 
 enum BranchType {
@@ -27,6 +26,7 @@ enum PaymentMethod {
   CHECK
   BANK_TRANSFER
   DEBT
+  WRITE_OFF
 }
 
 enum InvoiceStatus {
@@ -43,16 +43,17 @@ enum DebtStatus {
 }
 
 enum CylinderMovementType {
-  TRUCK_LOAD_FULL
+  DAILY_LOAD_FULL
   SALE_FULL_DELIVERED
   CUSTOMER_EMPTY_RETURNED
-  TRUCK_RETURN_FULL
-  TRUCK_RETURN_EMPTY
+  DAILY_RETURN_FULL
+  DAILY_RETURN_EMPTY
   STOCK_ADJUSTMENT
 }
 
 enum ReconciliationStatus {
   MORNING_RECORDED
+  DISCREPANCY_PENDING
   EVENING_RECONCILED
 }
 
@@ -85,9 +86,10 @@ model Branch {
   products            Product[]
   priceRules          ProductPriceRule[]
   invoices            Invoice[]
-  trucks              Truck[]
   inventoryBalances   InventoryBalance[]
   cylinderMovements   CylinderMovement[]
+  cylinders           Cylinder[]
+  cylinderEvents      CylinderEvent[]
   dailyReconciliations DailyReconciliation[]
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
@@ -108,22 +110,34 @@ model User {
   isActive              Boolean            @default(true)
   hasGlobalAccess       Boolean            @default(false)
   allowGlobalSalesView  Boolean            @default(false)
+  sessionVersion        Int                @default(1)
+  failedLoginAttempts   Int                @default(0)
+  lockedUntil           DateTime?
+  mfaSecret             String?
+  mfaEnabled            Boolean            @default(false)
+  mfaRecoveryCodes      String?            // JSON array of bcrypt hashes of one-time recovery codes
+  // Marked true only for the master tester account and the canonical test users
+  // it can impersonate. The impersonation server action refuses any target
+  // where isTestUser=false. The column is additive (defaults to false), so
+  // existing human users are unaffected and never impersonable.
+  isTestUser            Boolean            @default(false)
   branch                Branch?            @relation(fields: [branchId], references: [id])
   roleProfile           Role?              @relation(fields: [roleId], references: [id])
   salesInvoices         Invoice[]          @relation("SalesmanInvoices")
-  loadedTasks           TruckLoadSession[] @relation("LoaderSessions")
-  salesmanLoads         TruckLoadSession[] @relation("SalesmanLoadSessions")
   loaderReconciliations DailyReconciliation[] @relation("LoaderReconciliations")
   salesmanReconciliations DailyReconciliation[] @relation("SalesmanReconciliations")
+  approvedReconciliations DailyReconciliation[] @relation("ReconciliationApprovals")
   debtPayments          DebtPayment[]
-  trucks                Truck[]
-  auditLogs             AuditLog[]
+  auditLogs             AuditLog[]          @relation("AuditActor")
+  effectiveAuditLogs    AuditLog[]          @relation("AuditEffectiveUser")
+  cylinderEvents        CylinderEvent[]
   createdAt             DateTime           @default(now())
   updatedAt             DateTime           @updatedAt
 
   @@index([branchId])
   @@index([roleId])
   @@index([role])
+  @@index([isTestUser])
 }
 
 model Role {
@@ -138,19 +152,22 @@ model Role {
 }
 
 model AuditLog {
-  id          String   @id @default(uuid())
-  userId      String
-  action      String
-  targetModel String
-  targetId    String
-  oldValue    Json?
-  newValue    Json?
-  timestamp   DateTime @default(now())
-  ipAddress   String
-  userAgent   String
-  user        User     @relation(fields: [userId], references: [id])
+  id              String   @id @default(uuid())
+  userId          String
+  effectiveUserId String?
+  action          String
+  targetModel     String
+  targetId        String
+  oldValue        Json?
+  newValue        Json?
+  timestamp       DateTime @default(now())
+  ipAddress       String
+  userAgent       String
+  user            User     @relation("AuditActor", fields: [userId], references: [id])
+  effectiveUser   User?    @relation("AuditEffectiveUser", fields: [effectiveUserId], references: [id])
 
   @@index([userId, timestamp])
+  @@index([effectiveUserId, timestamp])
   @@index([targetModel, targetId])
 }
 
@@ -158,15 +175,22 @@ model Customer {
   id            String      @id @default(cuid())
   branchId      String
   name          String
+  customerNumber String @unique
   phone         String?
   address       String?
   phoneCode     String?
   vatNumber     String?
   taxRate       Decimal?    @db.Decimal(7, 4)
   creditLimit   Decimal?    @db.Decimal(12, 3)
+  creditBalance Decimal     @default(0) @db.Decimal(12, 3)
+  // Tokenized, read-only access to this customer's statements (no login required).
+  shareToken        String?   @unique
+  shareTokenExpires DateTime?
   branch        Branch      @relation(fields: [branchId], references: [id])
   invoices      Invoice[]
   debts         CustomerDebt[]
+  cylinders     Cylinder[]         @relation("CylinderCustomer")
+  cylinderEvents CylinderEvent[]    @relation("CylinderEventCustomer")
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
 
@@ -190,9 +214,8 @@ model Product {
   invoiceItems        InvoiceItem[]
   inventoryBalances   InventoryBalance[]
   cylinderMovements   CylinderMovement[]
+  cylinders           Cylinder[]
   dailyReconciliationItems DailyReconciliationItem[]
-  loadItems           TruckLoadItem[]
-  returnItems         TruckReturnItem[]
   createdAt           DateTime            @default(now())
   updatedAt           DateTime            @updatedAt
 
@@ -233,9 +256,11 @@ model Invoice {
   taxAmount         Decimal       @db.Decimal(12, 3)
   totalAmount       Decimal       @db.Decimal(12, 3)
   paidAmount        Decimal       @default(0) @db.Decimal(12, 3)
+  writtenOffAmount  Decimal       @default(0) @db.Decimal(12, 3)
   debtAmount        Decimal       @default(0) @db.Decimal(12, 3)
   debtCollectionAmount Decimal?    @default(0) @db.Decimal(12, 3)
   customerCredit    Decimal       @default(0) @db.Decimal(12, 3)
+  creditApplied     Decimal       @default(0) @db.Decimal(12, 3)
   notes             String?
   receiptPdfUrl     String?
   branch            Branch        @relation(fields: [branchId], references: [id])
@@ -245,6 +270,7 @@ model Invoice {
   payments          Payment[]
   customerDebts     CustomerDebt[]
   cylinderMovements CylinderMovement[]
+  cylinderEvents    CylinderEvent[]
   createdAt         DateTime      @default(now())
   updatedAt         DateTime      @updatedAt
 
@@ -321,42 +347,6 @@ model DebtPayment {
   @@index([collectedById])
 }
 
-model Truck {
-  id          String             @id @default(cuid())
-  branchId    String
-  salesmanId  String?
-  plateNumber String             @unique
-  label       String?
-  branch      Branch             @relation(fields: [branchId], references: [id])
-  salesman    User?              @relation(fields: [salesmanId], references: [id])
-  sessions    TruckLoadSession[]
-  createdAt   DateTime           @default(now())
-  updatedAt   DateTime           @updatedAt
-
-  @@index([branchId])
-  @@index([salesmanId])
-}
-
-model TruckLoadSession {
-  id          String            @id @default(cuid())
-  truckId     String
-  salesmanId  String
-  loaderId    String
-  loadedAt    DateTime          @default(now())
-  returnedAt  DateTime?
-  notes       String?
-  truck       Truck             @relation(fields: [truckId], references: [id])
-  salesman    User              @relation("SalesmanLoadSessions", fields: [salesmanId], references: [id])
-  loader      User              @relation("LoaderSessions", fields: [loaderId], references: [id])
-  loadItems   TruckLoadItem[]
-  returnItems TruckReturnItem[]
-  movements   CylinderMovement[]
-
-  @@index([truckId, loadedAt])
-  @@index([salesmanId, loadedAt])
-  @@index([loaderId])
-}
-
 model DailyReconciliation {
   id                  String                  @id @default(cuid())
   branchId            String
@@ -367,16 +357,23 @@ model DailyReconciliation {
   eveningReconciledAt DateTime?
   status              ReconciliationStatus    @default(MORNING_RECORDED)
   notes               String?
+  discrepancyApprovedById String?
+  discrepancyApprovedAt DateTime?
+  discrepancyReason   String?
   branch              Branch                  @relation(fields: [branchId], references: [id])
   salesman            User                    @relation("SalesmanReconciliations", fields: [salesmanId], references: [id])
   loader              User                    @relation("LoaderReconciliations", fields: [loaderId], references: [id])
+  discrepancyApprovedBy User?                 @relation("ReconciliationApprovals", fields: [discrepancyApprovedById], references: [id])
   items               DailyReconciliationItem[]
+  movements           CylinderMovement[]
+  cylinderEvents      CylinderEvent[]
   createdAt           DateTime                @default(now())
   updatedAt           DateTime                @updatedAt
 
   @@unique([salesmanId, reconciliationDate])
   @@index([branchId, reconciliationDate])
   @@index([salesmanId, reconciliationDate])
+  @@index([discrepancyApprovedById])
 }
 
 model DailyReconciliationItem {
@@ -388,34 +385,15 @@ model DailyReconciliationItem {
   eveningReturnedEmpty Int                @default(0)
   missingEmpty        Int                 @default(0)
   soldFull            Int                 @default(0)
+  invoiceSoldFull     Int                 @default(0)
+  invoiceEmptyReturned Int                @default(0)
+  varianceFull        Int                 @default(0)
+  varianceEmpty       Int                 @default(0)
   reconciliation      DailyReconciliation @relation(fields: [reconciliationId], references: [id], onDelete: Cascade)
   product             Product             @relation(fields: [productId], references: [id])
 
   @@unique([reconciliationId, productId])
   @@index([productId])
-}
-
-model TruckLoadItem {
-  id                String           @id @default(cuid())
-  sessionId         String
-  productId         String
-  fullCylindersLoad Int
-  session           TruckLoadSession @relation(fields: [sessionId], references: [id])
-  product           Product          @relation(fields: [productId], references: [id])
-
-  @@unique([sessionId, productId])
-}
-
-model TruckReturnItem {
-  id                   String           @id @default(cuid())
-  sessionId            String
-  productId            String
-  remainingFullCount   Int              @default(0)
-  collectedEmptyCount  Int              @default(0)
-  session              TruckLoadSession @relation(fields: [sessionId], references: [id])
-  product              Product          @relation(fields: [productId], references: [id])
-
-  @@unique([sessionId, productId])
 }
 
 model InventoryBalance {
@@ -436,7 +414,7 @@ model CylinderMovement {
   branchId       String
   productId      String
   invoiceId      String?
-  loadSessionId  String?
+  reconciliationId String?
   type           CylinderMovementType
   fullDelta      Int                  @default(0)
   emptyDelta     Int                  @default(0)
@@ -444,10 +422,65 @@ model CylinderMovement {
   branch         Branch               @relation(fields: [branchId], references: [id])
   product        Product              @relation(fields: [productId], references: [id])
   invoice        Invoice?             @relation(fields: [invoiceId], references: [id])
-  loadSession    TruckLoadSession?    @relation(fields: [loadSessionId], references: [id])
+  reconciliation DailyReconciliation? @relation(fields: [reconciliationId], references: [id])
   createdAt      DateTime             @default(now())
 
   @@index([branchId, productId, createdAt])
   @@index([invoiceId])
-  @@index([loadSessionId])
+  @@index([reconciliationId])
+}
+
+// Per-cylinder serial tracking (optional, additive). Existing count-based flow is
+// untouched; serials are recorded here when operators choose to scan/track them.
+enum CylinderStatus {
+  AVAILABLE
+  FILLED
+  OUT
+  RETURNED
+  RETIRED
+}
+
+model Cylinder {
+  id           String        @id @default(cuid())
+  branchId     String
+  productId    String
+  serial       String
+  status       CylinderStatus @default(AVAILABLE)
+  location     String? // e.g. "Warehouse", "In transit - <salesman>", "Customer <name>"
+  customerId   String?
+  branch       Branch        @relation(fields: [branchId], references: [id])
+  product      Product       @relation(fields: [productId], references: [id])
+  customer     Customer?     @relation("CylinderCustomer", fields: [customerId], references: [id])
+  events       CylinderEvent[]
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  @@unique([branchId, serial])
+  @@index([branchId])
+  @@index([productId])
+  @@index([status])
+  @@index([customerId])
+}
+
+model CylinderEvent {
+  id               String               @id @default(cuid())
+  cylinderId       String
+  branchId         String
+  type             CylinderMovementType
+  invoiceId        String?
+  reconciliationId  String?
+  salesmanId       String?
+  customerId       String?
+  note             String?
+  createdAt        DateTime            @default(now())
+  cylinder         Cylinder            @relation(fields: [cylinderId], references: [id], onDelete: Cascade)
+  branch           Branch              @relation(fields: [branchId], references: [id])
+  invoice          Invoice?            @relation(fields: [invoiceId], references: [id])
+  reconciliation   DailyReconciliation? @relation(fields: [reconciliationId], references: [id])
+  salesman         User?               @relation(fields: [salesmanId], references: [id])
+  customer         Customer?          @relation("CylinderEventCustomer", fields: [customerId], references: [id])
+
+  @@index([cylinderId, createdAt])
+  @@index([branchId])
+  @@index([customerId])
 }

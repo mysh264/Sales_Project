@@ -2,7 +2,17 @@ import { jwtVerify } from "jose/jwt/verify";
 import { cookies } from "next/headers";
 import type { SessionPayload } from "@/lib/auth";
 import { getJwtSecret, sessionCookieName } from "@/lib/auth";
+import { hasGlobalSalesVisibility } from "@/lib/global-access";
 import { prisma } from "@/lib/prisma";
+import { Prisma } from "@/generated/prisma/client";
+
+// Test hook: when a harness sets globalThis.__TEST_USER__ (a full user row),
+// skip the cookie/JWT lookup entirely. Never set in production. The shape
+// matches prisma.user.findFirst({ include: { branch, roleProfile } }).
+type TestUser = Prisma.UserGetPayload<{ include: { branch: true; roleProfile: true } }>;
+declare global {
+  var __TEST_USER__: TestUser | null | undefined;
+}
 
 export async function getSessionPayload() {
   const cookieStore = await cookies();
@@ -27,24 +37,29 @@ export async function getSessionPayload() {
 }
 
 export async function getCurrentUser() {
+  // Test hook: when a harness sets globalThis.__TEST_USER__ (a full user row),
+  // skip the cookie/JWT lookup entirely. Never set in production.
+  if (globalThis.__TEST_USER__) {
+    return globalThis.__TEST_USER__;
+  }
   const session = await getSessionPayload();
 
   if (!session) {
     return null;
   }
 
-  return prisma.user.findUnique({
-    where: { id: session.userId },
+  const user = await prisma.user.findFirst({
+    where: { id: session.userId, isActive: true },
     include: { branch: true, roleProfile: true },
   });
+  if (!user || user.sessionVersion !== session.sessionVersion) {
+    return null;
+  }
+  return user;
 }
 
 export function hasGlobalSalesAccess(
   user: { role: string; hasGlobalAccess?: boolean | null; allowGlobalSalesView?: boolean | null } | null | undefined,
 ) {
-  if (!user) {
-    return false;
-  }
-
-  return user.role === "ADMIN" || Boolean(user.hasGlobalAccess ?? user.allowGlobalSalesView);
+  return hasGlobalSalesVisibility(user);
 }
