@@ -14,6 +14,7 @@ async function main() {
       status: true,
       totalAmount: true,
       paidAmount: true,
+      writtenOffAmount: true,
       debtAmount: true,
     },
   });
@@ -23,8 +24,9 @@ async function main() {
     if (!isInvoiceBalanced(inv)) {
       const total = toDecimal(inv.totalAmount);
       const paid = toDecimal(inv.paidAmount);
+      const writtenOff = toDecimal(inv.writtenOffAmount);
       const debt = toDecimal(inv.debtAmount);
-      const diff = total.sub(paid.add(debt)).abs().toFixed(3);
+      const diff = total.sub(paid.add(debt).add(writtenOff)).abs().toFixed(3);
       violations.push({
         id: inv.id,
         invoiceNumber: inv.invoiceNumber,

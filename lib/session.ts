@@ -2,6 +2,7 @@ import { jwtVerify } from "jose/jwt/verify";
 import { cookies } from "next/headers";
 import type { SessionPayload } from "@/lib/auth";
 import { getJwtSecret, sessionCookieName } from "@/lib/auth";
+import { hasGlobalSalesVisibility } from "@/lib/global-access";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@/generated/prisma/client";
 
@@ -60,9 +61,5 @@ export async function getCurrentUser() {
 export function hasGlobalSalesAccess(
   user: { role: string; hasGlobalAccess?: boolean | null; allowGlobalSalesView?: boolean | null } | null | undefined,
 ) {
-  if (!user) {
-    return false;
-  }
-
-  return user.role === "ADMIN" || user.role === "GENERAL_MANAGER" || Boolean(user.hasGlobalAccess ?? user.allowGlobalSalesView);
+  return hasGlobalSalesVisibility(user);
 }

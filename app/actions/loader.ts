@@ -8,6 +8,12 @@ import { Permissions } from "@/lib/permissions";
 import { requirePermission } from "@/lib/permission-guard";
 import { prisma } from "@/lib/prisma";
 import { businessDate, businessDayRange } from "@/lib/business-date";
+import {
+  calculateRouteReturn,
+  canHandleReconciliationBranch,
+  canReplaceMorningLoad,
+  parseCylinderQuantity,
+} from "@/lib/reconciliation";
 
 function text(formData: FormData, key: string) {
   const value = formData.get(key);
@@ -31,9 +37,9 @@ function parseRows(formData: FormData, morningKey: string, returnedFullKey?: str
   return productIds
     .map((productId, index) => ({
       productId,
-      morningFull: Number.parseInt(morningValues[index] || "0", 10) || 0,
-      eveningReturnedFull: Number.parseInt(fullValues[index] || "0", 10) || 0,
-      eveningReturnedEmpty: Number.parseInt(emptyValues[index] || "0", 10) || 0,
+      morningFull: parseCylinderQuantity(morningValues[index]),
+      eveningReturnedFull: parseCylinderQuantity(fullValues[index]),
+      eveningReturnedEmpty: parseCylinderQuantity(emptyValues[index]),
     }))
     .filter((item) => item.productId);
 }
@@ -64,27 +70,6 @@ function normalizeProductRows<T extends { productId: string; morningFull: number
 function validationRedirect(basePath: string, salesmanId: string, message: string) {
   const params = new URLSearchParams({ error: message });
   redirect(`${basePath}/${encodeURIComponent(salesmanId)}?${params.toString()}`);
-}
-
-function canHandleRoute(
-  currentUser: {
-    role: string;
-    branchId: string | null;
-    hasGlobalAccess?: boolean | null;
-  },
-  salesman: {
-    branchId: string | null;
-  },
-) {
-  if (currentUser.role === "ADMIN" || currentUser.hasGlobalAccess) {
-    return true;
-  }
-
-  if (!currentUser.branchId || !salesman.branchId) {
-    return false;
-  }
-
-  return currentUser.branchId === salesman.branchId;
 }
 
 async function resolveSalesmanContext(salesmanId: string) {
@@ -127,14 +112,12 @@ export async function processMorningLoad(formData: FormData) {
 
   const { user: currentUser } = await requirePermission(Permissions.Logistics_Update);
   const salesman = await resolveSalesmanContext(salesmanId);
-
-  if (!canHandleRoute(currentUser, salesman)) {
-    validationRedirect("/loader/load", salesmanId, "You can only hand off routes within your own branch.");
-  }
-
   const branchId = salesman.branchId ?? currentUser.branchId;
   if (!branchId) {
     throw new Error("Salesman must belong to a branch.");
+  }
+  if (!canHandleReconciliationBranch(currentUser, branchId)) {
+    validationRedirect("/loader/load", salesmanId, "You can only hand off routes within your own branch.");
   }
 
   const rows = normalizeProductRows(
@@ -152,6 +135,10 @@ export async function processMorningLoad(formData: FormData) {
   const reconciliationDate = dayOnly();
 
   await prisma.$transaction(async (tx) => {
+    await tx.$queryRaw<Array<{ lock_acquired: number }>>`
+      SELECT 1::int AS lock_acquired
+      FROM (SELECT pg_advisory_xact_lock(hashtext(${`morning-load:${salesmanId}`}), hashtext(${reconciliationDate.toISOString()})) AS acquired) AS lock_row
+    `;
     const existing = await tx.dailyReconciliation.findUnique({
       where: {
         salesmanId_reconciliationDate: {
@@ -164,8 +151,18 @@ export async function processMorningLoad(formData: FormData) {
       },
     });
 
-    if (existing?.status === ReconciliationStatus.EVENING_RECONCILED) {
-      throw new Error("This salesman already has a completed route for today.");
+    if (existing) {
+      const { start, end } = businessDayRange(existing.reconciliationDate);
+      const invoiceCount = await tx.invoice.count({
+        where: {
+          salesmanId,
+          status: "ISSUED",
+          createdAt: { gte: start, lt: end },
+        },
+      });
+      if (!canReplaceMorningLoad({ status: existing.status, invoiceCount })) {
+        throw new Error("Morning load cannot be changed after sales or evening reconciliation have started.");
+      }
     }
 
     if (existing) {
@@ -291,11 +288,6 @@ export async function processEveningReturn(formData: FormData) {
   }
 
   const { user: currentUser } = await requirePermission(Permissions.Logistics_Update);
-  const salesman = await resolveSalesmanContext(salesmanId);
-
-  if (!canHandleRoute(currentUser, salesman)) {
-    validationRedirect("/loader/return", salesmanId, "You can only close routes within your own branch.");
-  }
 
   const reconciliationDate = dayOnly();
   const normalizedList = normalizeProductRows(
@@ -309,6 +301,10 @@ export async function processEveningReturn(formData: FormData) {
   }
 
   await prisma.$transaction(async (tx) => {
+    await tx.$queryRaw<Array<{ lock_acquired: number }>>`
+      SELECT 1::int AS lock_acquired
+      FROM (SELECT pg_advisory_xact_lock(hashtext(${`evening-return:${salesmanId}`}), hashtext(${reconciliationDate.toISOString()})) AS acquired) AS lock_row
+    `;
     const reconciliation = reconciliationId
       ? await tx.dailyReconciliation.findUniqueOrThrow({
           where: { id: reconciliationId },
@@ -334,12 +330,15 @@ export async function processEveningReturn(formData: FormData) {
           },
         });
 
-    if (reconciliation.salesmanId !== salesmanId || !canHandleRoute(currentUser, reconciliation.salesman)) {
+    if (
+      reconciliation.salesmanId !== salesmanId ||
+      !canHandleReconciliationBranch(currentUser, reconciliation.branchId)
+    ) {
       throw new Error("Unauthorized reconciliation access.");
     }
 
-    if (reconciliation.status === ReconciliationStatus.EVENING_RECONCILED) {
-      throw new Error("This route has already been completed.");
+    if (reconciliation.status !== ReconciliationStatus.MORNING_RECORDED) {
+      throw new Error("This route is no longer open for evening return entry.");
     }
 
     const itemMap = new Map<string, (typeof reconciliation.items)[number]>(
@@ -384,15 +383,11 @@ export async function processEveningReturn(formData: FormData) {
         throw new Error("Evening reconciliation must include the morning load products.");
       }
 
-      const soldFull = item.morningFull - row.eveningReturnedFull;
-      const missingEmpty = item.morningFull - row.eveningReturnedFull - row.eveningReturnedEmpty;
-      if (soldFull < 0) {
-        throw new Error("Returned full cylinders cannot exceed morning load.");
-      }
-
-      if (missingEmpty < 0) {
-        throw new Error("Returned cylinders cannot exceed morning load.");
-      }
+      calculateRouteReturn({
+        morningFull: item.morningFull,
+        eveningReturnedFull: row.eveningReturnedFull,
+        eveningReturnedEmpty: row.eveningReturnedEmpty,
+      });
     }
     const hasDiscrepancy = normalizedList.some((row) => {
       const currentItem = itemMap.get(row.productId)!;
@@ -420,7 +415,11 @@ export async function processEveningReturn(formData: FormData) {
       const currentItem = itemMap.get(row.productId)!;
       const invoiceSoldFull = invoiceMap.get(row.productId)?.fullCylindersDelivered ?? 0;
       const invoiceEmptyReturned = invoiceMap.get(row.productId)?.emptyCylindersReturned ?? 0;
-      const missingEmpty = currentItem.morningFull - row.eveningReturnedFull - row.eveningReturnedEmpty;
+      const { missingEmpty } = calculateRouteReturn({
+        morningFull: currentItem.morningFull,
+        eveningReturnedFull: row.eveningReturnedFull,
+        eveningReturnedEmpty: row.eveningReturnedEmpty,
+      });
       const updatedItem = await tx.dailyReconciliationItem.update({
         where: {
           reconciliationId_productId: {

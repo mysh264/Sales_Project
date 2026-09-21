@@ -1,11 +1,11 @@
 "use server";
 
-import { randomBytes } from "crypto";
 import { redirect } from "next/navigation";
 import { Permissions } from "@/lib/permissions";
 import { requirePermission } from "@/lib/permission-guard";
 import { prisma } from "@/lib/prisma";
 import { branchWhere, getBranchScope } from "@/lib/branch-scope";
+import { mintStatementToken } from "@/lib/statement-token";
 
 const TOKEN_TTL_DAYS = 30;
 
@@ -20,11 +20,11 @@ export async function generateStatementShareToken(formData: FormData) {
   });
   if (!customer) redirect("/finance/statements");
 
-  const token = randomBytes(24).toString("hex");
+  const { token, tokenHash } = mintStatementToken();
   const expires = new Date(Date.now() + TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000);
   await prisma.customer.update({
     where: { id: customerId },
-    data: { shareToken: token, shareTokenExpires: expires },
+    data: { shareToken: tokenHash, shareTokenExpires: expires },
   });
 
   return token;

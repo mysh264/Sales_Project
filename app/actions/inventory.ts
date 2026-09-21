@@ -1,6 +1,6 @@
 "use server";
 
-import { CylinderMovementType } from "@/generated/prisma/client";
+import { CylinderMovementType, type InventoryBalance } from "@/generated/prisma/client";
 import { revalidatePath } from "next/cache";
 import { auditSnapshot, logAction } from "@/lib/audit";
 import { getBranchScope, requireBranchAccess } from "@/lib/branch-scope";
@@ -35,21 +35,29 @@ export async function adjustInventory(formData: FormData) {
   requireBranchAccess(scope, branchId);
 
   await prisma.$transaction(async (tx) => {
-    await tx.$queryRaw<Array<{ lock_acquired: number }>>`
-      SELECT 1::int AS lock_acquired
-      FROM (SELECT pg_advisory_xact_lock(hashtext('inventory-adjustment'), hashtext(${`${branchId}:${productId}`}))) AS acquired
-    `;
-    const before = await tx.inventoryBalance.findUnique({
+    await tx.inventoryBalance.upsert({
       where: { branchId_productId: { branchId, productId } },
+      create: { branchId, productId, fullCount: 0, emptyCount: 0 },
+      update: {},
     });
-    const nextFull = (before?.fullCount ?? 0) + fullDelta;
-    const nextEmpty = (before?.emptyCount ?? 0) + emptyDelta;
+    const [before] = await tx.$queryRaw<InventoryBalance[]>`
+      SELECT *
+      FROM "InventoryBalance"
+      WHERE "branchId" = ${branchId} AND "productId" = ${productId}
+      FOR UPDATE
+    `;
+    if (!before) throw new Error("Inventory balance could not be loaded.");
+
+    const nextFull = before.fullCount + fullDelta;
+    const nextEmpty = before.emptyCount + emptyDelta;
     if (nextFull < 0 || nextEmpty < 0) throw new Error("Adjustment cannot make inventory negative.");
 
-    const after = await tx.inventoryBalance.upsert({
-      where: { branchId_productId: { branchId, productId } },
-      update: { fullCount: nextFull, emptyCount: nextEmpty },
-      create: { branchId, productId, fullCount: nextFull, emptyCount: nextEmpty },
+    const after = await tx.inventoryBalance.update({
+      where: { id: before.id },
+      data: {
+        fullCount: { increment: fullDelta },
+        emptyCount: { increment: emptyDelta },
+      },
     });
     await tx.cylinderMovement.create({
       data: { branchId, productId, type: CylinderMovementType.STOCK_ADJUSTMENT, fullDelta, emptyDelta, note: reason },

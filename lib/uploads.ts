@@ -9,6 +9,44 @@ const ALLOWED_UPLOAD_TYPES = new Map([
   ["image/png", ".png"],
 ]);
 
+type MagicRule = { mime: string; extension: string; test: (bytes: Buffer) => boolean };
+
+const MAGIC_RULES: MagicRule[] = [
+  {
+    mime: "application/pdf",
+    extension: ".pdf",
+    test: (bytes) => bytes.length >= 5 && bytes.subarray(0, 5).toString("ascii") === "%PDF-",
+  },
+  {
+    mime: "image/jpeg",
+    extension: ".jpg",
+    test: (bytes) => bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff,
+  },
+  {
+    mime: "image/png",
+    extension: ".png",
+    test: (bytes) =>
+      bytes.length >= 8 &&
+      bytes[0] === 0x89 &&
+      bytes[1] === 0x50 &&
+      bytes[2] === 0x4e &&
+      bytes[3] === 0x47 &&
+      bytes[4] === 0x0d &&
+      bytes[5] === 0x0a &&
+      bytes[6] === 0x1a &&
+      bytes[7] === 0x0a,
+  },
+];
+
+export function detectUploadKind(bytes: Buffer): { mime: string; extension: string } | null {
+  for (const rule of MAGIC_RULES) {
+    if (rule.test(bytes)) {
+      return { mime: rule.mime, extension: rule.extension };
+    }
+  }
+  return null;
+}
+
 export function uploadRoot() {
   return path.resolve(process.env.UPLOAD_DIR || path.join(process.cwd(), "storage", "uploads"));
 }
@@ -22,16 +60,25 @@ export async function storePrivateUpload(file: FormDataEntryValue | null, folder
     throw new Error("Attachment must not exceed 5 MB.");
   }
 
-  const extension = ALLOWED_UPLOAD_TYPES.get(file.type);
-  if (!extension) {
+  const declaredExtension = ALLOWED_UPLOAD_TYPES.get(file.type);
+  if (!declaredExtension) {
     throw new Error("Attachment must be a PDF, JPEG, or PNG file.");
   }
 
+  const bytes = Buffer.from(await file.arrayBuffer());
+  const detected = detectUploadKind(bytes);
+  if (!detected) {
+    throw new Error("Attachment content does not match a supported PDF, JPEG, or PNG signature.");
+  }
+  if (detected.extension !== declaredExtension) {
+    throw new Error("Attachment content does not match the declared file type.");
+  }
+
   const safeFolder = folder.replace(/[^a-zA-Z0-9_-]/g, "");
-  const fileName = `${randomUUID()}${extension}`;
+  const fileName = `${randomUUID()}${detected.extension}`;
   const directory = path.join(uploadRoot(), safeFolder);
   await mkdir(directory, { recursive: true });
-  await writeFile(path.join(directory, fileName), Buffer.from(await file.arrayBuffer()), { flag: "wx", mode: 0o600 });
+  await writeFile(path.join(directory, fileName), bytes, { flag: "wx", mode: 0o600 });
   return `/api/attachments/${safeFolder}/${fileName}`;
 }
 

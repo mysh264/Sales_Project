@@ -1,6 +1,7 @@
 import { Prisma } from "@/generated/prisma/client";
 import { headers } from "next/headers";
 import { prisma } from "@/lib/prisma";
+import { getSessionPayload } from "@/lib/session";
 
 type AuditClient = {
   auditLog: {
@@ -16,8 +17,34 @@ type AuditContext = {
 
 type JsonRecord = Record<string, unknown>;
 
+export function resolveAuditIdentity(input: {
+  submittedUserId: string;
+  sessionUserId?: string;
+  impersonatorId?: string;
+}) {
+  if (input.impersonatorId && input.sessionUserId) {
+    return { actorUserId: input.impersonatorId, effectiveUserId: input.sessionUserId };
+  }
+
+  return { actorUserId: input.submittedUserId, effectiveUserId: null as string | null };
+}
+
 function isPlainObject(value: unknown): value is JsonRecord {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function isSensitiveAuditKey(key: string) {
+  const normalized = key.replace(/[^a-z0-9]/gi, "").toLowerCase();
+  return (
+    normalized.includes("password") ||
+    normalized.includes("secret") ||
+    normalized.includes("recoverycode") ||
+    normalized.endsWith("token") ||
+    normalized.endsWith("tokenhash") ||
+    normalized.includes("apikey") ||
+    normalized.includes("privatekey") ||
+    normalized.includes("credential")
+  );
 }
 
 function normalizeJson(value: unknown): unknown {
@@ -43,7 +70,12 @@ function normalizeJson(value: unknown): unknown {
 
   if (isPlainObject(value)) {
     const record = value as JsonRecord;
-    return Object.fromEntries(Object.entries(record).map(([key, entry]) => [key, normalizeJson(entry)]));
+    return Object.fromEntries(
+      Object.entries(record).map(([key, entry]) => [
+        key,
+        isSensitiveAuditKey(key) ? "[REDACTED]" : normalizeJson(entry),
+      ]),
+    );
   }
 
   return value;
@@ -110,6 +142,19 @@ async function resolveContext(context?: AuditContext) {
   }
 }
 
+async function resolveRequestAuditIdentity(submittedUserId: string) {
+  try {
+    const session = await getSessionPayload();
+    return resolveAuditIdentity({
+      submittedUserId,
+      sessionUserId: session?.userId,
+      impersonatorId: session?.impersonatorId,
+    });
+  } catch {
+    return resolveAuditIdentity({ submittedUserId });
+  }
+}
+
 export async function logAction(
   userId: string,
   action: string,
@@ -120,7 +165,10 @@ export async function logAction(
   context?: AuditContext,
 ) {
   const client = (context?.tx ?? prisma) as AuditClient;
-  const resolvedContext = await resolveContext(context);
+  const [resolvedContext, identity] = await Promise.all([
+    resolveContext(context),
+    resolveRequestAuditIdentity(userId),
+  ]);
   const normalizedOldValue = normalizeJson(oldValue);
   const normalizedNewValue = normalizeJson(newValue);
   const diff = buildJsonDiff(oldValue, newValue);
@@ -134,7 +182,8 @@ export async function logAction(
 
   await client.auditLog.create({
     data: {
-      userId,
+      userId: identity.actorUserId,
+      effectiveUserId: identity.effectiveUserId,
       action,
       targetModel,
       targetId,

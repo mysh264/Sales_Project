@@ -46,6 +46,14 @@ async function readSession(request: NextRequest) {
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
+
+  // Health probes must reach the real route handler so a failed database
+  // check returns 503. Requiring a session here turns the probe into a login
+  // redirect, which wget follows and incorrectly reports as healthy.
+  if (pathname === "/api/health") {
+    return NextResponse.next();
+  }
+
   const session = await readSession(request);
 
   if (!session) {

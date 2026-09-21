@@ -14,6 +14,9 @@ import { Permissions } from "@/lib/permissions";
 import { requirePermission } from "@/lib/permission-guard";
 import { prisma } from "@/lib/prisma";
 import { getBranchScope, requireBranchAccess } from "@/lib/branch-scope";
+import { loadAfterLock } from "@/lib/debt-lock";
+import { priceRuleLockKeys } from "@/lib/price-rule";
+import { assertWriteOffAuthorized } from "@/lib/write-off-policy";
 
 function text(formData: FormData, key: string) {
   const value = formData.get(key);
@@ -72,8 +75,18 @@ export async function updatePriceRule(formData: FormData) {
     let previousRule = null;
 
     if (ruleId) {
-      previousRule = await tx.productPriceRule.findUniqueOrThrow({ where: { id: ruleId } });
-      requireBranchAccess(scope, previousRule.branchId);
+      const candidateRule = await tx.productPriceRule.findUniqueOrThrow({ where: { id: ruleId } });
+      requireBranchAccess(scope, candidateRule.branchId);
+      const [lockNamespace, lockResource] = priceRuleLockKeys(candidateRule.branchId, candidateRule.productId);
+      previousRule = await loadAfterLock(
+        async () => {
+          await tx.$queryRaw<Array<{ lock_acquired: number }>>`
+            SELECT 1::int AS lock_acquired
+            FROM (SELECT pg_advisory_xact_lock(hashtext(${lockNamespace}), hashtext(${lockResource}))) AS acquired
+          `;
+        },
+        () => tx.productPriceRule.findUniqueOrThrow({ where: { id: ruleId } }),
+      );
       await tx.productPriceRule.updateMany({
         where: {
           branchId: previousRule.branchId,
@@ -100,9 +113,10 @@ export async function updatePriceRule(formData: FormData) {
 
       // Serialize price-rule changes per branch+product so two concurrent saves cannot
       // both close the prior rule and commit two overlapping active (endsAt: null) rules.
+      const [lockNamespace, lockResource] = priceRuleLockKeys(branchId, productId);
       await tx.$queryRaw<Array<{ lock_acquired: number }>>`
         SELECT 1::int AS lock_acquired
-        FROM (SELECT pg_advisory_xact_lock(hashtext('price-rule'), hashtext(${branchId}), hashtext(${productId}))) AS acquired
+        FROM (SELECT pg_advisory_xact_lock(hashtext(${lockNamespace}), hashtext(${lockResource}))) AS acquired
       `;
 
       previousRule = await tx.productPriceRule.findFirst({
@@ -164,23 +178,24 @@ export async function collectDebt(formData: FormData) {
   const scope = await getBranchScope();
 
   await prisma.$transaction(async (tx) => {
-    const debt = await tx.customerDebt.findUniqueOrThrow({
-      where: { id: debtId },
-      include: {
-        customer: true,
-        invoice: true,
+    const debt = await loadAfterLock(
+      async () => {
+        await tx.$queryRaw<Array<{ lock_acquired: number }>>`
+          SELECT 1::int AS lock_acquired
+          FROM (SELECT pg_advisory_xact_lock(hashtext('debt-collection'), hashtext(${debtId})) AS acquired) AS lock_row
+        `;
       },
-    });
+      () => tx.customerDebt.findUniqueOrThrow({
+        where: { id: debtId },
+        include: {
+          customer: true,
+          invoice: true,
+        },
+      }),
+    );
     const debtBefore = auditSnapshot(debt);
     const invoiceBefore = auditSnapshot(debt.invoice);
     requireBranchAccess(scope, debt.customer.branchId);
-
-    // Serialize collections on the same debt so two concurrent payments cannot both
-    // validate against the old balance and double-apply, which would drive debtAmount negative.
-    await tx.$queryRaw<Array<{ lock_acquired: number }>>`
-      SELECT 1::int AS lock_acquired
-      FROM (SELECT pg_advisory_xact_lock(hashtext('debt-collection'), hashtext(${debtId})) AS acquired
-    )`;
 
     if (debt.balanceAmount.lessThanOrEqualTo(0)) {
       throw new Error("Debt is already paid.");
@@ -268,13 +283,21 @@ export async function writeOffDebt(formData: FormData) {
   const scope = await getBranchScope();
 
   await prisma.$transaction(async (tx) => {
-    const debt = await tx.customerDebt.findUniqueOrThrow({
-      where: { id: debtId },
-      include: {
-        customer: true,
-        invoice: true,
+    const debt = await loadAfterLock(
+      async () => {
+        await tx.$queryRaw<Array<{ lock_acquired: number }>>`
+          SELECT 1::int AS lock_acquired
+          FROM (SELECT pg_advisory_xact_lock(hashtext('debt-collection'), hashtext(${debtId})) AS acquired) AS lock_row
+        `;
       },
-    });
+      () => tx.customerDebt.findUniqueOrThrow({
+        where: { id: debtId },
+        include: {
+          customer: true,
+          invoice: true,
+        },
+      }),
+    );
     const debtBefore = auditSnapshot(debt);
     const invoiceBefore = auditSnapshot(debt.invoice);
     requireBranchAccess(scope, debt.customer.branchId);
@@ -284,6 +307,7 @@ export async function writeOffDebt(formData: FormData) {
     }
 
     const writtenOffAmount = debt.balanceAmount;
+    assertWriteOffAuthorized(actor.role, writtenOffAmount);
     const updatedDebt = await tx.customerDebt.update({
       where: { id: debt.id },
       data: {
@@ -306,7 +330,7 @@ export async function writeOffDebt(formData: FormData) {
     const updatedInvoice = await tx.invoice.update({
       where: { id: debt.invoiceId },
       data: {
-        paidAmount: { increment: writtenOffAmount },
+        writtenOffAmount: { increment: writtenOffAmount },
         debtAmount: { decrement: writtenOffAmount },
       },
     });

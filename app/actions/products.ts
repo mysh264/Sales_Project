@@ -6,6 +6,7 @@ import { logAction, auditSnapshot } from "@/lib/audit";
 import { Permissions } from "@/lib/permissions";
 import { requirePermission } from "@/lib/permission-guard";
 import { prisma } from "@/lib/prisma";
+import { toggledState } from "@/lib/toggle-state";
 
 function text(formData: FormData, key: string) {
   const value = formData.get(key);
@@ -110,7 +111,6 @@ export async function saveProduct(formData: FormData) {
 
 export async function toggleProductStatus(formData: FormData) {
   const productId = text(formData, "productId");
-  const currentStatus = text(formData, "currentStatus") === "true";
 
   if (!productId) {
     throw new Error("Missing product.");
@@ -120,14 +120,15 @@ export async function toggleProductStatus(formData: FormData) {
 
   await prisma.$transaction(async (tx) => {
     const existing = await tx.product.findUniqueOrThrow({ where: { id: productId } });
+    const nextStatus = toggledState(existing.isActive);
     const updated = await tx.product.update({
       where: { id: productId },
-      data: { isActive: !existing.isActive },
+      data: { isActive: nextStatus },
     });
 
     await logAction(
       actor.id,
-      currentStatus ? "DELETE_PRODUCT" : "RESTORE_PRODUCT",
+      existing.isActive ? "DELETE_PRODUCT" : "RESTORE_PRODUCT",
       "Product",
       updated.id,
       auditSnapshot(existing),

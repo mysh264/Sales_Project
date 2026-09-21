@@ -18,20 +18,22 @@ Self-contained HTML slide deck. Open `index.html` in any modern browser.
 
 ## Assets
 - `hero/` — 10 generated concept images (title, roles, salesman, loader, manager, admin, mobile, money, gm, closing)
-- `desktop/` — 32 real screenshots of every key route across 5 roles (1280×800 viewport)
-- `mobile/` — 16 real screenshots of high-value pages on phone viewport (375×812)
+- `desktop/` — 32 real screenshots of every key route across 5 roles (1920×938 viewport)
+- `mobile/` — 16 real screenshots of high-value pages on phone viewport (375×812 at 2× pixel density)
 
 ## Source
-Screenshots captured live from `https://sales.mahmoudbox.com` (Cloudflare tunnel) on the
-production deployment after all rounds of bug fixes and the recovery-code login field.
-Hero imagery generated with the project's image-generation tool.
+Screenshots captured live from `https://sales.mahmoudbox.com` after the deployment
+passed its health check. Hero imagery was generated with the project's image-generation tool.
 
 ## Regenerating screenshots
-Re-run the scan from the project's host:
+Run the capture from the project host while the `sales_nextjs` container is healthy:
 ```
-bash scripts/prescan.sh    # see commit message for details
+node scripts/capture-presentation.mjs
 ```
-then copy `desktop/*.png` and `mobile/*.png` into this folder.
+The script uses active canonical test users from the running container, mints short-lived
+sessions without printing credentials or tokens, and overwrites only the known files in
+`present/desktop/` and `present/mobile/`. It aborts on non-200 or unauthorized routes so
+tunnel error pages cannot silently become presentation assets.
 
 ## Regenerating hero images
 The prompts are in the commit that introduced this folder. The image generator

@@ -1,9 +1,18 @@
-import type { Prisma, User, UserRole } from "@/generated/prisma/client";
+import type { Prisma, Role, User, UserRole } from "@/generated/prisma/client";
+import { hasAnyPermission, Permissions } from "@/lib/permissions";
 
 type InvoiceViewer = Pick<
   User,
   "id" | "role" | "branchId" | "hasGlobalAccess" | "allowGlobalSalesView"
-> | null | undefined;
+> & { roleProfile?: Pick<Role, "permissions"> | null } | null | undefined;
+
+type AttachmentViewer = Pick<User, "role"> & {
+  roleProfile?: Pick<Role, "permissions"> | null;
+} | null | undefined;
+
+export function canReadPaymentAttachment(user: AttachmentViewer): boolean {
+  return hasAnyPermission(user, [Permissions.Sales_Read, Permissions.Finance_Read]);
+}
 
 export function invoiceAccessWhere(user: InvoiceViewer): Prisma.InvoiceWhereInput {
   if (!user) {

@@ -35,15 +35,15 @@ test("truck tables are absent from the deployed schema", async () => {
   assert.deepEqual(rows, []);
 });
 
-test("session revocation and login protection fields have safe defaults", async () => {
+test("session revocation and login protection fields stay in valid ranges", async () => {
   const users = await prisma.user.findMany({
     select: { sessionVersion: true, failedLoginAttempts: true, lockedUntil: true },
   });
   assert.ok(users.length > 0);
   for (const user of users) {
-    assert.equal(user.sessionVersion, 1);
-    assert.equal(user.failedLoginAttempts, 0);
-    assert.equal(user.lockedUntil, null);
+    assert.ok(Number.isInteger(user.sessionVersion) && user.sessionVersion >= 1);
+    assert.ok(Number.isInteger(user.failedLoginAttempts) && user.failedLoginAttempts >= 0);
+    assert.ok(user.lockedUntil === null || user.lockedUntil instanceof Date);
   }
 });
 

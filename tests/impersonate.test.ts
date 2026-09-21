@@ -6,10 +6,11 @@
 // wiring, and the impersonation gate from lib/impersonate.ts.
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFile } from "node:fs/promises";
 import { DEFAULT_ROLE_PERMISSIONS, Permissions, hasPermission } from "../lib/permissions";
 import { roleHome, allowedForPath } from "../lib/auth";
 import { UserRole } from "../generated/prisma/client";
-import { canImpersonate } from "../lib/impersonate";
+import { canAccessMasterTester, canImpersonate } from "../lib/impersonate";
 
 test("the TESTER role is a distinct, narrow identity", () => {
   // The tester is NOT an admin-equivalent. Its only permission is
@@ -34,6 +35,20 @@ test("the tester is the only role that holds Testers_Impersonate by default", ()
       assert.equal(holdsIt, false, `${role} must NOT hold Testers_Impersonate by default`);
     }
   }
+});
+
+test("hasPermission denies Testers_Impersonate to ADMIN", () => {
+  assert.equal(
+    hasPermission({ role: UserRole.ADMIN, roleProfile: null }, Permissions.Testers_Impersonate),
+    false,
+  );
+});
+
+test("allowedForPath denies the tester launchpad to ADMIN", () => {
+  assert.equal(
+    allowedForPath(UserRole.ADMIN, "/tester", DEFAULT_ROLE_PERMISSIONS[UserRole.ADMIN]),
+    false,
+  );
 });
 
 test("the tester cannot access any normal business area", () => {
@@ -93,4 +108,37 @@ test("canImpersonate: refuses when actor has no impersonation permission (even i
     canImpersonate({ actorHasImpersonate: false, targetIsTestUser: true, targetIsActive: true }),
     false,
   );
+});
+
+test("canAccessMasterTester denies exported actions to callers without the tester permission", () => {
+  assert.equal(
+    canAccessMasterTester({
+      featureEnabled: true,
+      actorActive: true,
+      actorHasImpersonate: false,
+      actorIsTesterRole: true,
+      actorIsTestUser: true,
+    }),
+    false,
+  );
+});
+
+test("canAccessMasterTester requires the dedicated seeded tester identity", () => {
+  const base = {
+    featureEnabled: true,
+    actorActive: true,
+    actorHasImpersonate: true,
+    actorIsTesterRole: true,
+    actorIsTestUser: true,
+  };
+  assert.equal(canAccessMasterTester(base), true);
+  assert.equal(canAccessMasterTester({ ...base, actorIsTesterRole: false }), false);
+  assert.equal(canAccessMasterTester({ ...base, actorIsTestUser: false }), false);
+});
+
+test("startImpersonation validates the current revocable session", async () => {
+  const source = await readFile(new URL("../app/actions/impersonate.ts", import.meta.url), "utf8");
+  const startSource = source.split("export async function startImpersonation")[1]?.split("export async function stopImpersonation")[0] ?? "";
+  assert.match(startSource, /const tester = await requireMasterTesterActor\(\)/);
+  assert.doesNotMatch(startSource, /where: \{ id: current\.userId \}/);
 });

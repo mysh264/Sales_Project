@@ -1,13 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readdirSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { invoiceAccessWhere } from "../lib/invoice-access";
+import { canReadPaymentAttachment, invoiceAccessWhere } from "../lib/invoice-access";
 import { canAccessBranch } from "../lib/branch-scope";
 import { allowedForPath, protectedPrefixes, roleHome } from "../lib/auth";
 import { DEFAULT_ROLE_PERMISSIONS } from "../lib/permissions";
 import { UserRole } from "@/generated/prisma/client";
 import { businessDate, businessDayRange } from "../lib/business-date";
+import { hasGlobalSalesVisibility, hasGlobalWriteScope } from "../lib/global-access";
 
 test("invoice access is restricted to a salesman's own invoices", () => {
   assert.deepEqual(
@@ -35,6 +37,12 @@ test("branch staff are restricted to their assigned branch", () => {
   );
 });
 
+test("payment attachments require Sales or Finance read permission", () => {
+  assert.equal(canReadPaymentAttachment({ role: "LOADER" }), false);
+  assert.equal(canReadPaymentAttachment({ role: "SALESMAN" }), true);
+  assert.equal(canReadPaymentAttachment({ role: "MANAGER" }), true);
+});
+
 test("global and admin access are intentionally unscoped", () => {
   assert.deepEqual(
     invoiceAccessWhere({
@@ -59,6 +67,23 @@ test("branch access denies missing and cross-branch assignments", () => {
   assert.equal(canAccessBranch(scope, "branch-a"), true);
   assert.equal(canAccessBranch(scope, "branch-b"), false);
   assert.equal(canAccessBranch(scope, null), false);
+});
+
+test("global-sales visibility does not grant cross-branch write scope", () => {
+  const readOnlyGlobal = {
+    role: "MANAGER" as const,
+    hasGlobalAccess: false,
+    allowGlobalSalesView: true,
+  };
+  assert.equal(hasGlobalSalesVisibility(readOnlyGlobal), true);
+  assert.equal(hasGlobalWriteScope(readOnlyGlobal), false);
+});
+
+test("the Global Sales toggle changes only read visibility", async () => {
+  const source = await readFile(new URL("../app/actions/users.ts", import.meta.url), "utf8");
+  const toggleSource = source.split("export async function toggleGlobalSalesView")[1] ?? "";
+  assert.match(toggleSource, /allowGlobalSalesView: nextStatus/);
+  assert.doesNotMatch(toggleSource, /hasGlobalAccess: nextStatus/);
 });
 
 test("every account type has an authorized home route", () => {

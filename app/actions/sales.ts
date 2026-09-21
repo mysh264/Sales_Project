@@ -13,7 +13,11 @@ import { getCurrentUser } from "@/lib/session";
 import { deletePrivateUpload, storePrivateUpload } from "@/lib/uploads";
 import { businessDate, businessDayRange } from "@/lib/business-date";
 import { logEvent } from "@/lib/logger";
-import { moneyToFixed } from "@/lib/money";
+import { moneyToFixed, roundMoney, roundRate } from "@/lib/money";
+import { assertDebtCollectionAvailable } from "@/lib/debt-collection";
+import { loadAfterLock } from "@/lib/debt-lock";
+import { sumFullQuantitiesByProduct } from "@/lib/invoice-lines";
+import { resolveInvoiceCurrency } from "@/lib/accounting-currency";
 
 function text(formData: FormData, key: string) {
   const value = formData.get(key);
@@ -26,7 +30,7 @@ function moneyValue(formData: FormData, key: string) {
   if (amount.isNegative()) {
     throw new Error("Payment and collection amounts cannot be negative.");
   }
-  return amount;
+  return roundMoney(amount);
 }
 
 function parseDate(value: string) {
@@ -75,10 +79,9 @@ export async function createOrder(formData: FormData) {
     const customerPhone = text(formData, "customerPhone");
     const customerAddress = text(formData, "customerAddress");
     const customerVatNumber = text(formData, "customerVatNumber");
-    const autoInvoiceSerial = buildInvoiceSerial();
     // invoiceSerial is the server-generated unique key; the salesman may also provide a
     // human-facing invoice number via the "Invoice Serial" field, which we store as invoiceNumber.
-    const invoiceSerial = text(formData, "invoiceSerial") || autoInvoiceSerial;
+    const invoiceSerial = text(formData, "invoiceSerial") || buildInvoiceSerial();
     const submittedInvoiceNumber = text(formData, "manualSerial").trim();
     const invoiceNumber = submittedInvoiceNumber || invoiceSerial;
     const submissionToken = text(formData, "submissionToken");
@@ -89,19 +92,16 @@ export async function createOrder(formData: FormData) {
     // silently inconsistent. (See report item B5.)
     const invoiceDate = now;
 
-    // Currency: honour the submitted value only when it is a known currency, otherwise fall
-    // back to the branch default. This keeps the invoice_currency in sync with what the user saw.
-    const ALLOWED_CURRENCIES = new Set(["OMR", "USD", "AED"]);
+    // Currency candidate from the form; final accounting currency is resolved inside the
+    // transaction after the customer row (and any open debts) is known.
     const submittedCurrency = text(formData, "currency").toUpperCase();
-    const currency = ALLOWED_CURRENCIES.has(submittedCurrency) ? submittedCurrency : (branch?.defaultCurrency || "OMR");
 
     // VAT rate: the form may override the branch default within a sane band (0–25%).
-    const branchTaxRate = branch?.defaultTaxRate && branch.defaultTaxRate.greaterThan(0)
-      ? branch.defaultTaxRate
-      : new Prisma.Decimal("5.0000");
-    const submittedTaxRate = moneyValue(formData, "taxRate");
+    const branchTaxRate = roundRate(branch?.defaultTaxRate ?? new Prisma.Decimal("5.00"));
+    const submittedTaxRateRaw = text(formData, "taxRate");
+    const submittedTaxRate = submittedTaxRateRaw ? roundRate(submittedTaxRateRaw) : null;
     const taxRate =
-      submittedTaxRate.greaterThanOrEqualTo(0) && submittedTaxRate.lessThanOrEqualTo(25)
+      submittedTaxRate && submittedTaxRate.greaterThanOrEqualTo(0) && submittedTaxRate.lessThanOrEqualTo(25)
         ? submittedTaxRate
         : branchTaxRate;
     const applyDebtCollection = text(formData, "applyDebtCollection") === "true";
@@ -175,13 +175,27 @@ export async function createOrder(formData: FormData) {
         }));
     }
 
+    const openDebtRows = await tx.customerDebt.findMany({
+      where: {
+        customerId: customer.id,
+        status: { in: [DebtStatus.OPEN, DebtStatus.PARTIALLY_PAID] },
+      },
+      select: { invoice: { select: { currency: true } } },
+    });
+    const currency = resolveInvoiceCurrency({
+      submittedCurrency,
+      branchDefaultCurrency: branchRow.defaultCurrency,
+      creditBalance: customer.creditBalance,
+      openDebtCurrencies: openDebtRows.map((row) => row.invoice.currency),
+    });
+
     const lines = [];
 
     for (let index = 0; index < rowProductIds.length; index += 1) {
       const productId = rowProductIds[index];
       const fullQty = nonNegativeInteger(rowFulls[index] || "0", "Delivered quantity");
       const emptyQty = nonNegativeInteger(rowEmpties[index] || "0", "Returned quantity");
-      const unitPrice = new Prisma.Decimal(rowPrices[index] || "0");
+      const unitPrice = roundMoney(rowPrices[index] || "0");
       if (unitPrice.isNegative()) {
         throw new Error("Sale price cannot be negative.");
       }
@@ -218,7 +232,7 @@ export async function createOrder(formData: FormData) {
         fullQty,
         emptyQty,
         unitPrice,
-        lineSubtotal: unitPrice.mul(fullQty),
+        lineSubtotal: roundMoney(unitPrice.mul(fullQty)),
       });
     }
 
@@ -257,15 +271,16 @@ export async function createOrder(formData: FormData) {
       _sum: { fullCylindersDelivered: true },
     });
     const soldByProduct = new Map(existingSales.map((row) => [row.productId, row._sum.fullCylindersDelivered ?? 0]));
-    for (const line of lines) {
-      if ((soldByProduct.get(line.productId) ?? 0) + line.fullQty > (loadedByProduct.get(line.productId) ?? 0)) {
+    const requestedFullByProduct = sumFullQuantitiesByProduct(lines);
+    for (const [productId, fullQty] of requestedFullByProduct) {
+      if ((soldByProduct.get(productId) ?? 0) + fullQty > (loadedByProduct.get(productId) ?? 0)) {
         throw new Error("Sale quantity exceeds this salesman's remaining morning load.");
       }
     }
 
-    const subtotal = lines.reduce((sum, line) => sum.add(line.lineSubtotal), new Prisma.Decimal(0));
-    const taxAmount = subtotal.mul(percentRate(taxRate));
-    const totalAmount = subtotal.add(taxAmount);
+    const subtotal = roundMoney(lines.reduce((sum, line) => sum.add(line.lineSubtotal), new Prisma.Decimal(0)));
+    const taxAmount = roundMoney(subtotal.mul(percentRate(taxRate)));
+    const totalAmount = roundMoney(subtotal.add(taxAmount));
     logEvent("info", "invoice.calculate", {
       subtotal: moneyToFixed(subtotal),
       vatAmount: moneyToFixed(taxAmount),
@@ -274,7 +289,7 @@ export async function createOrder(formData: FormData) {
     const cashAmount = moneyValue(formData, "cashAmount");
     const checkAmount = moneyValue(formData, "checkAmount");
     const transferAmount = moneyValue(formData, "bankTransferAmount");
-    const externalPaidAmount = cashAmount.add(checkAmount).add(transferAmount);
+    const externalPaidAmount = roundMoney(cashAmount.add(checkAmount).add(transferAmount));
     const debtCollectionAmount = applyDebtCollection ? requestedDebtCollection : new Prisma.Decimal(0);
     if (checkAmount.greaterThan(0) && !text(formData, "checkNumber")) {
       throw new Error("Cheque number is required for cheque payments.");
@@ -290,27 +305,29 @@ export async function createOrder(formData: FormData) {
       FROM (SELECT pg_advisory_xact_lock(hashtext('customer-credit'), hashtext(${customer.id}))) AS acquired
     `;
     const lockedCustomer = await tx.customer.findUniqueOrThrow({ where: { id: customer.id } });
-    const amountDueAfterExternalPayment = decimalMax(totalAmount.sub(externalPaidAmount), new Prisma.Decimal(0));
+    const amountDueAfterExternalPayment = roundMoney(decimalMax(totalAmount.sub(externalPaidAmount), new Prisma.Decimal(0)));
     const creditApplied = lockedCustomer.creditBalance.greaterThan(amountDueAfterExternalPayment)
       ? amountDueAfterExternalPayment
       : lockedCustomer.creditBalance;
-    const rawPaidAmount = externalPaidAmount.add(creditApplied);
+    const rawPaidAmount = roundMoney(externalPaidAmount.add(creditApplied));
     // An overpayment (cash/cheque/transfer exceeding the invoice total) must not make
     // paidAmount exceed totalAmount: the invoice is fully paid and the excess is held as
     // customer credit (see customerCredit below). This keeps "paid vs total" reports honest.
-    const paidAmount = rawPaidAmount.greaterThan(totalAmount) ? totalAmount : rawPaidAmount;
-    const debtAmount = decimalMax(totalAmount.sub(paidAmount), new Prisma.Decimal(0));
-    const customerCredit = decimalMax(externalPaidAmount.sub(totalAmount), new Prisma.Decimal(0));
+    const paidAmount = roundMoney(rawPaidAmount.greaterThan(totalAmount) ? totalAmount : rawPaidAmount);
+    const debtAmount = roundMoney(decimalMax(totalAmount.sub(paidAmount), new Prisma.Decimal(0)));
+    const customerCredit = roundMoney(decimalMax(externalPaidAmount.sub(totalAmount), new Prisma.Decimal(0)));
 
     const currentDebt = await tx.customerDebt.aggregate({
       where: {
         customerId: customer.id,
         status: { in: [DebtStatus.OPEN, DebtStatus.PARTIALLY_PAID] },
+        invoice: { currency },
       },
       _sum: { balanceAmount: true },
     });
     const outstandingDebt = currentDebt._sum.balanceAmount ?? new Prisma.Decimal(0);
-    const projectedDebt = outstandingDebt.add(debtAmount);
+    assertDebtCollectionAvailable(debtCollectionAmount, outstandingDebt);
+    const projectedDebt = roundMoney(outstandingDebt.sub(debtCollectionAmount).add(debtAmount));
 
     if (lockedCustomer.creditLimit && projectedDebt.greaterThan(lockedCustomer.creditLimit)) {
       throw new Error("Credit Limit Exceeded");
@@ -332,7 +349,7 @@ export async function createOrder(formData: FormData) {
         totalAmount,
         paidAmount,
         debtAmount,
-        debtCollectionAmount,
+        debtCollectionAmount: new Prisma.Decimal(0),
         customerCredit,
         creditApplied,
         createdAt: invoiceDate,
@@ -405,13 +422,29 @@ export async function createOrder(formData: FormData) {
         where: {
           customerId: customer.id,
           balanceAmount: { gt: 0 },
+          status: { in: [DebtStatus.OPEN, DebtStatus.PARTIALLY_PAID] },
+          invoice: { currency },
         },
         orderBy: { createdAt: "asc" },
+        select: { id: true },
       });
 
-      for (const debt of openDebts) {
+      for (const candidate of openDebts) {
         if (remainingCollection.lessThanOrEqualTo(0)) {
           break;
+        }
+
+        const debt = await loadAfterLock(
+          async () => {
+            await tx.$queryRaw<Array<{ lock_acquired: number }>>`
+              SELECT 1::int AS lock_acquired
+              FROM (SELECT pg_advisory_xact_lock(hashtext('debt-collection'), hashtext(${candidate.id})) AS acquired) AS lock_row
+            `;
+          },
+          () => tx.customerDebt.findUniqueOrThrow({ where: { id: candidate.id } }),
+        );
+        if (debt.balanceAmount.lessThanOrEqualTo(0)) {
+          continue;
         }
 
         const appliedToDebt = remainingCollection.greaterThan(debt.balanceAmount) ? debt.balanceAmount : remainingCollection;
@@ -426,6 +459,14 @@ export async function createOrder(formData: FormData) {
           },
         });
 
+        await tx.payment.create({
+          data: {
+            invoiceId: debt.invoiceId,
+            method: PaymentMethod.CASH,
+            amount: appliedToDebt,
+          },
+        });
+
         await tx.customerDebt.update({
           where: { id: debt.id },
           data: {
@@ -435,28 +476,28 @@ export async function createOrder(formData: FormData) {
         });
 
         // Keep the source invoice's paid/debt totals consistent (mirrors manager.collectDebt).
-        if (debt.invoiceId) {
-          await tx.invoice.update({
-            where: { id: debt.invoiceId },
-            data: {
-              paidAmount: { increment: appliedToDebt },
-              debtAmount: { decrement: appliedToDebt },
-            },
-          });
-        }
+        await tx.invoice.update({
+          where: { id: debt.invoiceId },
+          data: {
+            paidAmount: { increment: appliedToDebt },
+            debtAmount: { decrement: appliedToDebt },
+          },
+        });
 
         remainingCollection = remainingCollection.sub(appliedToDebt);
         appliedCollection = appliedCollection.add(appliedToDebt);
       }
 
-      if (appliedCollection.greaterThan(0)) {
-        await tx.invoice.update({
-          where: { id: createdInvoice.id },
-          data: {
-            debtCollectionAmount: appliedCollection,
-          },
-        });
+      if (remainingCollection.greaterThan(0)) {
+        throw new Error("Debt balance changed while collecting. Review the current balance and try again.");
       }
+
+      await tx.invoice.update({
+        where: { id: createdInvoice.id },
+        data: {
+          debtCollectionAmount: appliedCollection,
+        },
+      });
     }
 
     if (debtAmount.greaterThan(0)) {

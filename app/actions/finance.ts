@@ -6,6 +6,7 @@ import { requirePermission } from "@/lib/permission-guard";
 import { Permissions } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { businessDayRange } from "@/lib/business-date";
+import { debtCollectionsByCurrency } from "@/lib/finance";
 
 function startOfDay() {
   return businessDayRange().start;
@@ -90,21 +91,20 @@ export async function getFinancialSummary(filters: FinancialSummaryFilters = {})
     },
   };
 
-  const [invoiceGroups, debts, debtPaymentSum] = await Promise.all([
+  const [invoiceGroups, debts, debtPayments] = await Promise.all([
     prisma.invoice.groupBy({
       by: ["currency"],
       where: invoiceWhere,
       _sum: {
         subtotalAmount: true,
         taxAmount: true,
-        debtCollectionAmount: true,
       },
     }),
     prisma.customerDebt.findMany({
       where: debtWhere,
       include: { invoice: { select: { currency: true } } },
     }),
-    prisma.debtPayment.aggregate({
+    prisma.debtPayment.findMany({
       where: {
         createdAt: { gte: dayStart, lt: dayEnd },
         method: { not: PaymentMethod.WRITE_OFF },
@@ -118,7 +118,10 @@ export async function getFinancialSummary(filters: FinancialSummaryFilters = {})
               : undefined,
         },
       },
-      _sum: { amount: true },
+      select: {
+        amount: true,
+        debt: { select: { invoice: { select: { currency: true } } } },
+      },
     }),
   ]);
 
@@ -128,7 +131,7 @@ export async function getFinancialSummary(filters: FinancialSummaryFilters = {})
     byCurrency[currency] = {
       sales: decimalToString(group._sum.subtotalAmount),
       vat: decimalToString(group._sum.taxAmount),
-      debtCollected: decimalToString(group._sum.debtCollectionAmount),
+      debtCollected: "0.000",
       outstandingDebt: "0.000",
     };
   }
@@ -136,6 +139,22 @@ export async function getFinancialSummary(filters: FinancialSummaryFilters = {})
     const currency = debt.invoice.currency || "OMR";
     const existing = byCurrency[currency] ?? { sales: "0.000", vat: "0.000", debtCollected: "0.000", outstandingDebt: "0.000" };
     existing.outstandingDebt = decimalToString(new Prisma.Decimal(existing.outstandingDebt).add(debt.balanceAmount));
+    byCurrency[currency] = existing;
+  }
+  const debtCollections = debtCollectionsByCurrency(
+    debtPayments.map((payment) => ({
+      currency: payment.debt.invoice.currency || "OMR",
+      amount: payment.amount,
+    })),
+  );
+  for (const [currency, amount] of Object.entries(debtCollections)) {
+    const existing = byCurrency[currency] ?? {
+      sales: "0.000",
+      vat: "0.000",
+      debtCollected: "0.000",
+      outstandingDebt: "0.000",
+    };
+    existing.debtCollected = amount;
     byCurrency[currency] = existing;
   }
 
@@ -154,6 +173,6 @@ export async function getFinancialSummary(filters: FinancialSummaryFilters = {})
     totalSalesToday: primary.sales,
     totalVatToday: primary.vat,
     totalOutstandingDebt: primary.outstandingDebt,
-    debtCollectedToday: decimalToString(debtPaymentSum._sum.amount),
+    debtCollectedToday: primary.debtCollected,
   };
 }

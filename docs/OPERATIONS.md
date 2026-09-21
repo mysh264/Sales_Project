@@ -56,3 +56,42 @@ Monitor container restarts, `/api/health`, HTTP 5xx responses, failed logins,
 `SECURITY_BREACH` audit entries, inventory adjustments, reconciliation failures,
 database storage, and backup age. Forward structured container output to the
 deployment logging platform and connect an error tracker before public rollout.
+
+### Health smoke (cron-friendly)
+
+```sh
+# every 5 minutes
+APP_ORIGIN=https://sales.mahmoudbox.com /opt/Sales_Project/scripts/health-smoke.sh
+```
+
+Expect HTTP 200 and JSON `"status":"ok"`. Non-zero exit means alert.
+
+### Post-deploy smoke checklist
+
+1. `docker compose ps` — `web` healthy
+2. `APP_ORIGIN=… ./scripts/health-smoke.sh`
+3. Browser login as salesman / loader
+4. Confirm response CSP on HTTPS has no `unsafe-eval`
+
+### Off-host backup reminder
+
+Compose `backup` writes dumps into the `backup_data` volume. That is not DR.
+
+```sh
+# After mounting or syncing dumps to an off-host path:
+BACKUP_DIR=/mnt/offhost/sales-backups MAX_AGE_HOURS=36 \
+  ./scripts/offhost-backup-reminder.sh
+```
+
+Copy dumps with rsync/SCP on a schedule (daily). Restore drills remain mandatory.
+
+### CI secrets for E2E
+
+GitHub Actions job `e2e` seeds demo users. Optionally set repository secrets:
+
+| Secret | Purpose |
+| --- | --- |
+| `SEED_ADMIN_PASSWORD` | Admin seed (≥12 chars) |
+| `SEED_DEMO_PASSWORD` | Demo role passwords for Playwright |
+
+Fallbacks exist for CI only; never reuse them in production `.env`.

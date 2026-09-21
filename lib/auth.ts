@@ -47,6 +47,7 @@ export const routePermissionMap: Array<{ prefix: string; permissions: Permission
   { prefix: "/general-manager/finance", permissions: [Permissions.Finance_Read] },
   { prefix: "/general-manager/reconciliation", permissions: [Permissions.Finance_Read] },
   { prefix: "/general-manager/inventory", permissions: [Permissions.Inventory_Update] },
+  { prefix: "/general-manager/audit-logs", permissions: [Permissions.Audit_Read] },
   { prefix: "/general-manager/products", permissions: [Permissions.Products_Update] },
   { prefix: "/general-manager/roles", permissions: [Permissions.Roles_Update] },
   { prefix: "/general-manager/branches", permissions: [Permissions.Branches_Update] },
@@ -85,12 +86,8 @@ export function allowedForPath(role: UserRole, pathname: string, permissions: Pe
     return true;
   }
 
-  if (role === "ADMIN") {
-    return true;
-  }
-
   if (pathname.startsWith("/admin-console")) {
-    return false;
+    return role === "ADMIN";
   }
 
   // /profile is self-service (e.g. MFA enrolment) available to any authenticated user,

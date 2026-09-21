@@ -1,4 +1,5 @@
 import type { UserRole } from "@/generated/prisma/client";
+import { hasGlobalWriteScope } from "@/lib/global-access";
 import { getCurrentUser } from "@/lib/session";
 
 export type BranchScope = {
@@ -17,8 +18,7 @@ export async function getBranchScope() {
   }
 
   const isAdmin = user.role === "ADMIN";
-  const canSeeAllBranches =
-    isAdmin || user.role === "GENERAL_MANAGER" || Boolean(user.hasGlobalAccess ?? user.allowGlobalSalesView);
+  const canSeeAllBranches = hasGlobalWriteScope(user);
 
   return {
     userId: user.id,

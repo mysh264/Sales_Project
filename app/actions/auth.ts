@@ -8,6 +8,7 @@ import { getJwtSecret, sessionCookieName, type SessionPayload } from "@/lib/auth
 import { getEffectivePermissions } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { logAction } from "@/lib/audit";
+import { canUseTestAccount } from "@/lib/tester-boundary";
 import { verifyTotp, consumeRecoveryCode } from "@/lib/totp";
 
 function text(formData: FormData, key: string) {
@@ -31,6 +32,13 @@ export async function login(formData: FormData) {
   });
 
   if (!user || !user.isActive || !user.passwordHash) {
+    throw new Error("Invalid login.");
+  }
+  if (!canUseTestAccount({
+    featureEnabled: process.env.MASTERTESTER_ENABLED === "true",
+    isTestUser: user.isTestUser,
+    role: user.role,
+  })) {
     throw new Error("Invalid login.");
   }
   if (user.lockedUntil && user.lockedUntil > new Date()) {
@@ -57,32 +65,41 @@ export async function login(formData: FormData) {
   if (!mfaValid && recoveryCodeCandidate && passwordOk) {
     const result = await consumeRecoveryCode(user.mfaRecoveryCodes, recoveryCodeCandidate);
     if (result.ok && result.remaining !== null) {
-      mfaValid = true;
-      usedRecoveryCode = true;
-      await prisma.user.update({
-        where: { id: user.id },
+      const consumed = await prisma.user.updateMany({
+        where: {
+          id: user.id,
+          mfaRecoveryCodes: user.mfaRecoveryCodes,
+          sessionVersion: user.sessionVersion,
+        },
         data: { mfaRecoveryCodes: result.remaining, sessionVersion: { increment: 1 } },
       });
-      const refreshed = await prisma.user.findUniqueOrThrow({
-        where: { id: user.id },
-        include: { roleProfile: true },
-      });
-      user.sessionVersion = refreshed.sessionVersion;
-      user.roleProfile = refreshed.roleProfile;
-      user.mfaRecoveryCodes = result.remaining;
+      if (consumed.count === 1) {
+        mfaValid = true;
+        usedRecoveryCode = true;
+        user.sessionVersion += 1;
+        user.mfaRecoveryCodes = result.remaining;
+      }
     }
   }
 
   const invalidMfa = !mfaValid;
   if (!passwordOk || invalidMfa) {
-    const failedLoginAttempts = user.failedLoginAttempts + 1;
-    await prisma.user.update({
-      where: { id: user.id },
-      data: {
-        failedLoginAttempts,
-        lockedUntil: failedLoginAttempts >= 5 ? new Date(Date.now() + 15 * 60 * 1000) : null,
-      },
-    });
+    const lockUntil = new Date(Date.now() + 15 * 60 * 1000);
+    const [failure] = await prisma.$queryRaw<
+      Array<{ failedLoginAttempts: number; lockedUntil: Date | null }>
+    >`
+      UPDATE "User"
+      SET
+        "failedLoginAttempts" = "failedLoginAttempts" + 1,
+        "lockedUntil" = CASE
+          WHEN "failedLoginAttempts" + 1 >= 5 THEN ${lockUntil}
+          ELSE NULL
+        END
+      WHERE "id" = ${user.id}
+      RETURNING "failedLoginAttempts", "lockedUntil"
+    `;
+    const failedLoginAttempts = failure?.failedLoginAttempts ?? 0;
+    const locked = failure?.lockedUntil != null;
     // Record failed login attempts in the audit log so brute-force attempts are visible.
     try {
       const headerStore = await headers();
@@ -94,7 +111,7 @@ export async function login(formData: FormData) {
         "User",
         user.id,
         null,
-        { reason: !passwordOk ? "invalid_password" : "invalid_mfa", failedLoginAttempts, locked: failedLoginAttempts >= 5 },
+        { reason: !passwordOk ? "invalid_password" : "invalid_mfa", failedLoginAttempts, locked },
         { ipAddress, userAgent },
       );
     } catch {

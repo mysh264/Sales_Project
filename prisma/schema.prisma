@@ -128,7 +128,8 @@ model User {
   salesmanReconciliations DailyReconciliation[] @relation("SalesmanReconciliations")
   approvedReconciliations DailyReconciliation[] @relation("ReconciliationApprovals")
   debtPayments          DebtPayment[]
-  auditLogs             AuditLog[]
+  auditLogs             AuditLog[]          @relation("AuditActor")
+  effectiveAuditLogs    AuditLog[]          @relation("AuditEffectiveUser")
   cylinderEvents        CylinderEvent[]
   createdAt             DateTime           @default(now())
   updatedAt             DateTime           @updatedAt
@@ -151,19 +152,22 @@ model Role {
 }
 
 model AuditLog {
-  id          String   @id @default(uuid())
-  userId      String
-  action      String
-  targetModel String
-  targetId    String
-  oldValue    Json?
-  newValue    Json?
-  timestamp   DateTime @default(now())
-  ipAddress   String
-  userAgent   String
-  user        User     @relation(fields: [userId], references: [id])
+  id              String   @id @default(uuid())
+  userId          String
+  effectiveUserId String?
+  action          String
+  targetModel     String
+  targetId        String
+  oldValue        Json?
+  newValue        Json?
+  timestamp       DateTime @default(now())
+  ipAddress       String
+  userAgent       String
+  user            User     @relation("AuditActor", fields: [userId], references: [id])
+  effectiveUser   User?    @relation("AuditEffectiveUser", fields: [effectiveUserId], references: [id])
 
   @@index([userId, timestamp])
+  @@index([effectiveUserId, timestamp])
   @@index([targetModel, targetId])
 }
 
@@ -252,6 +256,7 @@ model Invoice {
   taxAmount         Decimal       @db.Decimal(12, 3)
   totalAmount       Decimal       @db.Decimal(12, 3)
   paidAmount        Decimal       @default(0) @db.Decimal(12, 3)
+  writtenOffAmount  Decimal       @default(0) @db.Decimal(12, 3)
   debtAmount        Decimal       @default(0) @db.Decimal(12, 3)
   debtCollectionAmount Decimal?    @default(0) @db.Decimal(12, 3)
   customerCredit    Decimal       @default(0) @db.Decimal(12, 3)

@@ -1,12 +1,10 @@
 // Deterministic UI route-permission test: exercises the EXACT function the
 // Next.js middleware uses to gate every page (allowedForPath in lib/auth.ts).
 // This is the authoritative UI route-access contract (no flaky browser cookies).
-import { register } from "node:module";
-register("/tmp/stub-loader.mjs", import.meta.url);
 const { allowedForPath, roleHome, protectedPrefixes } = await import("@/lib/auth");
 const { DEFAULT_ROLE_PERMISSIONS } = await import("@/lib/permissions");
 
-const ROLES = ["ADMIN", "GENERAL_MANAGER", "MANAGER", "LOADER", "SALESMAN"];
+const ROLES = ["ADMIN", "GENERAL_MANAGER", "MANAGER", "LOADER", "SALESMAN", "TESTER"];
 function perms(role) { return DEFAULT_ROLE_PERMISSIONS[role] ?? []; }
 
 // Every mapped route prefix; build representative paths (base + /sub).
@@ -24,8 +22,7 @@ const { routePermissionMap } = await import("@/lib/auth").then((m) => m);
 function expectedAllowed(role, path) {
   if (path === "/") return true;
   if (path.startsWith("/api")) return true;
-  if (role === "ADMIN") return true;
-  if (path.startsWith("/admin-console")) return false;
+  if (path.startsWith("/admin-console")) return role === "ADMIN";
   if (path === "/profile" || path.startsWith("/profile/")) return true;
   const m = routePermissionMap.find(({ prefix }) => path === prefix || path.startsWith(prefix + "/"));
   if (!m) return false;

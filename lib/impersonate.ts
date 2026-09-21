@@ -20,6 +20,24 @@ export type ImpersonationGateInput = {
   targetIsActive: boolean;
 };
 
+export type MasterTesterAccessInput = {
+  featureEnabled: boolean;
+  actorActive: boolean;
+  actorHasImpersonate: boolean;
+  actorIsTesterRole: boolean;
+  actorIsTestUser: boolean;
+};
+
+export function canAccessMasterTester(input: MasterTesterAccessInput): boolean {
+  return Boolean(
+    input.featureEnabled &&
+    input.actorActive &&
+    input.actorHasImpersonate &&
+    input.actorIsTesterRole &&
+    input.actorIsTestUser,
+  );
+}
+
 export function canImpersonate(input: ImpersonationGateInput): boolean {
   return Boolean(
     input.actorHasImpersonate &&

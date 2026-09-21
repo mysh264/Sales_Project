@@ -4,10 +4,19 @@ import { UserRole } from "@/generated/prisma/client";
 import bcrypt from "bcryptjs";
 import { revalidatePath } from "next/cache";
 import { logAction, auditSnapshot } from "@/lib/audit";
-import { DEFAULT_ROLE_PERMISSIONS, Permissions, canAssignProfile, getEffectivePermissions, normalizePermissions, type Permission } from "@/lib/permissions";
+import {
+  Permissions,
+  builtInRoleProfileUpsertData,
+  canAssignProfile,
+  getEffectivePermissions,
+  normalizePermissions,
+  type Permission,
+} from "@/lib/permissions";
 import { requirePermission } from "@/lib/permission-guard";
 import { prisma } from "@/lib/prisma";
 import { getBranchScope, requireBranchAccess } from "@/lib/branch-scope";
+import { canManageUserRole } from "@/lib/tester-boundary";
+import { toggledState } from "@/lib/toggle-state";
 
 function text(formData: FormData, key: string) {
   const value = formData.get(key);
@@ -46,26 +55,16 @@ async function resolvePermissionProfileId(
   // adapter and silently dropped the user row — see resolvePermissionProfileId callers.
   const builtInRole = await prisma.role.upsert({
     where: { name: role },
-    update: {
-      permissions: DEFAULT_ROLE_PERMISSIONS[role],
-    },
-    create: {
-      name: role,
-      permissions: DEFAULT_ROLE_PERMISSIONS[role],
-    },
+    ...builtInRoleProfileUpsertData(role),
   });
 
   return builtInRole.id;
 }
 
 function requireRoleManagement(actorRole: UserRole, targetRole: UserRole) {
-  if (actorRole === "ADMIN") return;
-  if (actorRole === "GENERAL_MANAGER" && targetRole !== "ADMIN") return;
-  if (
-    actorRole === "MANAGER" &&
-    (targetRole === "LOADER" || targetRole === "SALESMAN")
-  ) return;
-  throw new Error("You cannot assign or manage this account type.");
+  if (!canManageUserRole(actorRole, targetRole)) {
+    throw new Error("You cannot assign or manage this account type.");
+  }
 }
 
 export async function createUser(formData: FormData) {
@@ -103,46 +102,48 @@ export async function createUser(formData: FormData) {
     await prisma.branch.findUniqueOrThrow({ where: { id: branchId } });
   }
 
-  // Create the user and write the audit record with the OUTER prisma client. The interactive
-  // (callback) transaction form `prisma.$transaction(async tx => …)` does not reliably commit
-  // under the PrismaPg driver adapter in this runtime, which silently dropped the created user.
-  // Sequential outer writes commit deterministically (the user row is the source of truth; the
-  // audit entry is best-effort and also written via the outer client).
+  // Resolve the built-in/custom profile outside the transaction (upsert is safe on the outer
+  // client). User create + audit must share one transaction so a failed audit cannot leave an
+  // unaudited mutation. Role profile resolution stays outside to avoid the historical PrismaPg
+  // interactive-tx upsert drop.
   const permissionProfileId = await resolvePermissionProfileId(role, roleId, actor.role, getEffectivePermissions(actor));
-  const user = await prisma.user.create({
-    data: {
-      fullName,
-      phone: phone || null,
-      email,
-      passwordHash,
-      role,
-      branchId,
-      roleId: permissionProfileId,
-      isActive: true,
-      hasGlobalAccess: false,
-      allowGlobalSalesView: false,
-    },
-  });
+  await prisma.$transaction(async (tx) => {
+    const user = await tx.user.create({
+      data: {
+        fullName,
+        phone: phone || null,
+        email,
+        passwordHash,
+        role,
+        branchId,
+        roleId: permissionProfileId,
+        isActive: true,
+        hasGlobalAccess: false,
+        allowGlobalSalesView: false,
+      },
+    });
 
-  await logAction(
-    actor.id,
-    "CREATE_USER",
-    "User",
-    user.id,
-    null,
-    auditSnapshot({
-      id: user.id,
-      fullName: user.fullName,
-      phone: user.phone,
-      email: user.email,
-      role: user.role,
-      roleId: user.roleId,
-      branchId: user.branchId,
-      isActive: user.isActive,
-      hasGlobalAccess: user.hasGlobalAccess,
-      allowGlobalSalesView: user.allowGlobalSalesView,
-    }),
-  );
+    await logAction(
+      actor.id,
+      "CREATE_USER",
+      "User",
+      user.id,
+      null,
+      auditSnapshot({
+        id: user.id,
+        fullName: user.fullName,
+        phone: user.phone,
+        email: user.email,
+        role: user.role,
+        roleId: user.roleId,
+        branchId: user.branchId,
+        isActive: user.isActive,
+        hasGlobalAccess: user.hasGlobalAccess,
+        allowGlobalSalesView: user.allowGlobalSalesView,
+      }),
+      { tx },
+    );
+  });
 
   revalidatePath("/general-manager/users");
   revalidatePath("/manager/users");
@@ -152,7 +153,6 @@ export async function createUser(formData: FormData) {
 
 export async function toggleUserStatus(formData: FormData) {
   const userId = text(formData, "userId");
-  const currentStatus = text(formData, "currentStatus") === "true";
 
   if (!userId) {
     throw new Error("Missing user.");
@@ -161,27 +161,29 @@ export async function toggleUserStatus(formData: FormData) {
   const { user: actor } = await requirePermission(Permissions.Users_Update);
   const scope = await getBranchScope();
 
-  // Sequential outer writes (see createUser): interactive callback transactions do not reliably
-  // commit under the PrismaPg adapter.
-  const user = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
-  if (user.id === actor.id) {
-    throw new Error("You cannot deactivate your own account.");
-  }
-  requireRoleManagement(actor.role, user.role);
-  if (user.branchId) requireBranchAccess(scope, user.branchId);
-  const updatedUser = await prisma.user.update({
-    where: { id: userId },
-    data: { isActive: !currentStatus, sessionVersion: { increment: 1 } },
-  });
+  await prisma.$transaction(async (tx) => {
+    const user = await tx.user.findUniqueOrThrow({ where: { id: userId } });
+    if (user.id === actor.id) {
+      throw new Error("You cannot deactivate your own account.");
+    }
+    requireRoleManagement(actor.role, user.role);
+    if (user.branchId) requireBranchAccess(scope, user.branchId);
+    const nextStatus = toggledState(user.isActive);
+    const updatedUser = await tx.user.update({
+      where: { id: userId },
+      data: { isActive: nextStatus, sessionVersion: { increment: 1 } },
+    });
 
-  await logAction(
-    actor.id,
-    "UPDATE_USER_STATUS",
-    "User",
-    userId,
-    auditSnapshot(user),
-    auditSnapshot(updatedUser),
-  );
+    await logAction(
+      actor.id,
+      "UPDATE_USER_STATUS",
+      "User",
+      userId,
+      auditSnapshot(user),
+      auditSnapshot(updatedUser),
+      { tx },
+    );
+  });
 
   revalidatePath("/general-manager/users");
   revalidatePath("/manager/users");
@@ -217,31 +219,31 @@ export async function updateUserRole(formData: FormData) {
     await prisma.branch.findUniqueOrThrow({ where: { id: branchId } });
   }
 
-  // Sequential outer writes (see createUser): the interactive callback transaction does not
-  // reliably commit under the PrismaPg adapter, so we write the user update and audit with the
-  // outer client instead.
-  const user = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
-  requireRoleManagement(actor.role, user.role);
-  if (user.branchId) requireBranchAccess(scope, user.branchId);
   const permissionProfileId = await resolvePermissionProfileId(role, roleId, actor.role, getEffectivePermissions(actor));
-  const updatedUser = await prisma.user.update({
-    where: { id: userId },
-    data: {
-      role,
-      branchId,
-      roleId: permissionProfileId,
-      sessionVersion: { increment: 1 },
-    },
-  });
+  await prisma.$transaction(async (tx) => {
+    const user = await tx.user.findUniqueOrThrow({ where: { id: userId } });
+    requireRoleManagement(actor.role, user.role);
+    if (user.branchId) requireBranchAccess(scope, user.branchId);
+    const updatedUser = await tx.user.update({
+      where: { id: userId },
+      data: {
+        role,
+        branchId,
+        roleId: permissionProfileId,
+        sessionVersion: { increment: 1 },
+      },
+    });
 
-  await logAction(
-    actor.id,
-    "UPDATE_PERMISSION",
-    "User",
-    userId,
-    auditSnapshot(user),
-    auditSnapshot(updatedUser),
-  );
+    await logAction(
+      actor.id,
+      "UPDATE_PERMISSION",
+      "User",
+      userId,
+      auditSnapshot(user),
+      auditSnapshot(updatedUser),
+      { tx },
+    );
+  });
 
   revalidatePath("/general-manager/users");
   revalidatePath("/manager/users");
@@ -253,7 +255,6 @@ export async function updateUserRole(formData: FormData) {
 
 export async function toggleGlobalSalesView(formData: FormData) {
   const userId = text(formData, "userId");
-  const currentStatus = text(formData, "currentStatus") === "true";
 
   if (!userId) {
     throw new Error("Missing user.");
@@ -267,11 +268,11 @@ export async function toggleGlobalSalesView(formData: FormData) {
   await prisma.$transaction(async (tx) => {
     const user = await tx.user.findUniqueOrThrow({ where: { id: userId } });
     requireRoleManagement(actor.role, user.role);
+    const nextStatus = toggledState(user.allowGlobalSalesView);
     const updatedUser = await tx.user.update({
       where: { id: userId },
       data: {
-        hasGlobalAccess: !currentStatus,
-        allowGlobalSalesView: !currentStatus,
+        allowGlobalSalesView: nextStatus,
         sessionVersion: { increment: 1 },
       },
     });

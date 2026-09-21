@@ -2,6 +2,7 @@ import { PrismaClient, UserRole } from "@/generated/prisma/client";
 import bcrypt from "bcryptjs";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { DEFAULT_ROLE_PERMISSIONS } from "../lib/permissions";
+import { assertSafeTestIdentity, requireTestPassword } from "../lib/test-user-seed";
 
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) throw new Error("DATABASE_URL is required.");
@@ -11,8 +12,16 @@ const demoSeedPassword = process.env.SEED_DEMO_PASSWORD ?? "";
 const seedDemoUsers = process.env.SEED_DEMO_USERS === "true";
 const masterTesterEnabled = process.env.MASTERTESTER_ENABLED === "true";
 const masterTesterEmail = process.env.MASTERTESTER_EMAIL ?? "tester@mahmoudbox.com";
-const masterTesterPassword = process.env.MASTERTESTER_PASSWORD ?? "TestPass-tester-2026!!";
-const testUserPassword = process.env.TESTER_CANNONICAL_PASSWORD ?? "TestPass-canon-2026!!";
+const masterTesterPassword = requireTestPassword(
+  masterTesterEnabled,
+  process.env.MASTERTESTER_PASSWORD,
+  "MASTERTESTER_PASSWORD",
+);
+const testUserPassword = requireTestPassword(
+  masterTesterEnabled,
+  process.env.TESTER_CANNONICAL_PASSWORD,
+  "TESTER_CANNONICAL_PASSWORD",
+);
 
 const companyData = {
   name: "NATIONAL INDUSTRIAL GAS PLANT - OMAN",
@@ -360,15 +369,25 @@ async function main() {
   if (masterTesterEnabled) {
     // The master tester account itself. Only the tester holds
     // Testers_Impersonate; everyone else has zero impersonation rights.
+    const existingTester = await prisma.user.findUnique({
+      where: { email: masterTesterEmail },
+      select: { isTestUser: true },
+    });
+    assertSafeTestIdentity(existingTester, masterTesterEmail);
+
     const testerHash = await bcrypt.hash(masterTesterPassword, 12);
     const testerRecord = await prisma.user.upsert({
       where: { email: masterTesterEmail },
       update: {
-        // Never demote an existing real account into a tester.
-        // If a row with this email already exists and is a real human, skip.
+        fullName: "Master Tester",
+        phone: "+968****0000",
+        role: UserRole.TESTER,
+        roleId: roleRecords[UserRole.TESTER],
         isActive: true,
         isTestUser: true,
+        allowGlobalSalesView: false,
         passwordHash: testerHash,
+        branchId: branch.id,
       },
       create: {
         email: masterTesterEmail,
@@ -398,13 +417,15 @@ async function main() {
         : t.branchCode === "BRANCH_B"
         ? branchB
         : branch; // SUHAR_MAIN default for branch-independent roles
+      const existingCanonicalUser = await prisma.user.findUnique({
+        where: { email: t.email },
+        select: { isTestUser: true },
+      });
+      assertSafeTestIdentity(existingCanonicalUser, t.email);
+
       await prisma.user.upsert({
         where: { email: t.email },
         update: {
-          // Never overwrite a real human account with the same email.
-          // isTestUser=false is the existing-human marker; the update
-          // sets it true only if the row was already a test user (or
-          // doesn't exist, in which case create runs).
           isTestUser: true,
           isActive: true,
           passwordHash: canonHash,

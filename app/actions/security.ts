@@ -9,22 +9,20 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
 import { createTotpSecret, generateRecoveryCodes, verifyTotp } from "@/lib/totp";
 import { getBranchScope, requireBranchAccess } from "@/lib/branch-scope";
+import { verifyPasswordStepUp } from "@/lib/security";
+import { canManageUserRole } from "@/lib/tester-boundary";
 
 function text(formData: FormData, key: string) {
   const value = formData.get(key);
   return typeof value === "string" ? value.trim() : "";
 }
 
-export async function beginMfaSetup(formData?: FormData) {
+export async function beginMfaSetup(formData: FormData) {
+  const password = text(formData, "password");
   const user = await getCurrentUser();
   if (!user) throw new Error("Unauthorized");
-  // Re-enrolling (MFA already enabled) must be step-up authenticated: otherwise a stolen/left-open
-  // session could silently disable the victim's MFA. For first-time enrollment no password is needed.
-  if (user.mfaEnabled) {
-    const password = formData ? text(formData, "password") : "";
-    if (!user.passwordHash || !(await bcrypt.compare(password, user.passwordHash))) {
-      throw new Error("Current password is required to re-enroll two-factor authentication.");
-    }
+  if (!(await verifyPasswordStepUp(password, user.passwordHash))) {
+    throw new Error("Current password is incorrect.");
   }
   const before = auditSnapshot({ id: user.id, mfaEnabled: user.mfaEnabled, mfaRecoveryCodes: user.mfaRecoveryCodes });
   await prisma.user.update({
@@ -54,7 +52,7 @@ export async function enableMfa(formData: FormData) {
 export async function disableMfa(formData: FormData) {
   const password = text(formData, "password");
   const user = await getCurrentUser();
-  if (!user?.passwordHash || !(await bcrypt.compare(password, user.passwordHash))) {
+  if (!user || !(await verifyPasswordStepUp(password, user.passwordHash))) {
     throw new Error("Current password is incorrect.");
   }
   const before = auditSnapshot({ id: user.id, mfaEnabled: user.mfaEnabled, mfaRecoveryCodes: user.mfaRecoveryCodes });
@@ -68,11 +66,15 @@ export async function disableMfa(formData: FormData) {
 
 // Generate recovery codes for an already-enabled MFA account. Returns plaintext codes that are
 // shown to the user exactly once; existing codes are invalidated.
-export async function regenerateMfaRecoveryCodes() {
+export async function regenerateMfaRecoveryCodes(formData: FormData) {
+  const password = text(formData, "password");
   const user = await getCurrentUser();
   if (!user) throw new Error("Unauthorized");
   if (!user.mfaEnabled) {
     throw new Error("Enable two-factor authentication before generating recovery codes.");
+  }
+  if (!(await verifyPasswordStepUp(password, user.passwordHash))) {
+    throw new Error("Current password is incorrect.");
   }
   const { codes, stored } = await generateRecoveryCodes();
   const before = auditSnapshot({ id: user.id, mfaRecoveryCodes: user.mfaRecoveryCodes });
@@ -94,8 +96,7 @@ export async function resetUserPassword(formData: FormData) {
 
   await prisma.$transaction(async (tx) => {
     const target = await tx.user.findUniqueOrThrow({ where: { id: userId } });
-    if (actor.role !== "ADMIN" && target.role === "ADMIN") throw new Error("You cannot reset this account.");
-    if (actor.role === "MANAGER" && target.role !== "LOADER" && target.role !== "SALESMAN") {
+    if (!canManageUserRole(actor.role, target.role)) {
       throw new Error("You cannot reset this account.");
     }
     if (target.branchId) requireBranchAccess(scope, target.branchId);

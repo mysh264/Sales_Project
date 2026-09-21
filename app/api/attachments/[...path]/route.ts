@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { invoiceAccessWhere } from "@/lib/invoice-access";
+import { canReadPaymentAttachment, invoiceAccessWhere } from "@/lib/invoice-access";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
 import { readPrivateUpload } from "@/lib/uploads";
@@ -11,6 +11,9 @@ export async function GET(
   const currentUser = await getCurrentUser();
   if (!currentUser) {
     return new NextResponse("Unauthorized", { status: 401 });
+  }
+  if (!canReadPaymentAttachment(currentUser)) {
+    return new NextResponse("Forbidden", { status: 403 });
   }
 
   const { path } = await params;

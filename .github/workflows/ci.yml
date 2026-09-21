@@ -38,14 +38,62 @@ jobs:
       - name: Build
         run: npm run build
 
-  # End-to-end tests require a running Postgres + the app; run locally or in a
-  # dedicated workflow with services. Left out of the default CI to keep it fast.
-  # e2e:
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - uses: actions/checkout@v4
-  #     - uses: actions/setup-node@v4
-  #       with: { node-version: 22, cache: npm }
-  #     - run: npm ci
-  #     - run: npx playwright install --with-deps
-  #     - run: npm run test:e2e
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: sales_ci
+          POSTGRES_PASSWORD: sales_ci_password
+          POSTGRES_DB: sales_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sales_ci -d sales_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://sales_ci:sales_ci_password@127.0.0.1:5432/sales_ci
+      JWT_SECRET: ci-jwt-secret-at-least-32-characters-long
+      APP_ORIGIN: http://127.0.0.1:3200
+      # CI-only seed passwords (override via repo secrets when desired).
+      SEED_ADMIN_PASSWORD: CiAdminPassword12!
+      SEED_DEMO_PASSWORD: CiDemoPassword12!
+      SEED_DEMO_USERS: "true"
+      MASTERTESTER_ENABLED: "false"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Apply optional seed password secrets
+        env:
+          SECRET_ADMIN: ${{ secrets.SEED_ADMIN_PASSWORD }}
+          SECRET_DEMO: ${{ secrets.SEED_DEMO_PASSWORD }}
+        run: |
+          if [ -n "$SECRET_ADMIN" ]; then echo "SEED_ADMIN_PASSWORD=$SECRET_ADMIN" >> "$GITHUB_ENV"; fi
+          if [ -n "$SECRET_DEMO" ]; then echo "SEED_DEMO_PASSWORD=$SECRET_DEMO" >> "$GITHUB_ENV"; fi
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npm run prisma:generate
+
+      - name: Migrate and seed
+        run: |
+          npx prisma migrate deploy
+          npm run prisma:seed
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: End-to-end smoke
+        run: npx playwright test tests/e2e/accounts.spec.ts tests/e2e/operational-quality.spec.ts tests/e2e/backoffice-wave.spec.ts

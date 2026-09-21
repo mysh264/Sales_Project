@@ -4,5 +4,5 @@ import { defineConfig, globalIgnores } from "eslint/config";
 const compat = new FlatCompat({ baseDirectory: import.meta.dirname });
 export default defineConfig([
   ...compat.extends("next/core-web-vitals", "next/typescript"),
-  globalIgnores([".next/**", "node_modules/**", "next-env.d.ts"]),
+  globalIgnores([".next/**", "node_modules/**", "tests/_live/**", "next-env.d.ts"]),
 ]);

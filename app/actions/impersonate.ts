@@ -8,7 +8,8 @@ import { getJwtSecret, sessionCookieName, type SessionPayload } from "@/lib/auth
 import { getEffectivePermissions, Permissions, hasPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { logAction } from "@/lib/audit";
-import { canImpersonate } from "@/lib/impersonate";
+import { canAccessMasterTester, canImpersonate } from "@/lib/impersonate";
+import { getCurrentUser } from "@/lib/session";
 
 function envFlag(name: string): boolean {
   return process.env[name] === "true";
@@ -65,6 +66,22 @@ export async function isMasterTesterEnabled(): Promise<boolean> {
   return envFlag("MASTERTESTER_ENABLED");
 }
 
+async function requireMasterTesterActor() {
+  const actor = await getCurrentUser();
+  if (
+    !canAccessMasterTester({
+      featureEnabled: envFlag("MASTERTESTER_ENABLED"),
+      actorActive: actor?.isActive ?? false,
+      actorHasImpersonate: hasPermission(actor, Permissions.Testers_Impersonate),
+      actorIsTesterRole: actor?.role === "TESTER",
+      actorIsTestUser: actor?.isTestUser ?? false,
+    })
+  ) {
+    throw new Error("Not authorized to use master-tester actions.");
+  }
+  return actor!;
+}
+
 export async function startImpersonation(formData: FormData) {
   if (!envFlag("MASTERTESTER_ENABLED")) {
     throw new Error("Master tester feature is disabled.");
@@ -75,21 +92,11 @@ export async function startImpersonation(formData: FormData) {
     throw new Error("Missing targetUserId.");
   }
 
+  // getCurrentUser() inside this gate verifies the JWT, active status, and
+  // sessionVersion before any impersonation session can be issued.
+  const tester = await requireMasterTesterActor();
   const current = await readRawPayload();
-  if (!current) {
-    redirect("/login");
-  }
-
-  // Resolve the tester's effective permissions (the tester might have lost
-  // the Testers_Impersonate permission since the cookie was issued, in which
-  // case we refuse — re-login).
-  const tester = await prisma.user.findUnique({
-    where: { id: current.userId },
-    include: { roleProfile: true },
-  });
-  if (!tester || !hasPermission(tester, Permissions.Testers_Impersonate)) {
-    throw new Error("Not authorized to impersonate.");
-  }
+  if (!current) redirect("/login");
 
   const target = await prisma.user.findUnique({
     where: { id: targetUserId },
@@ -117,11 +124,7 @@ export async function startImpersonation(formData: FormData) {
     role: target.role,
     permissions: getEffectivePermissions(target),
     sessionVersion: target.sessionVersion,
-    // Carry the tester (or whoever started the chain) forward so the banner
-    // and audit log know the origin even if the tester nests impersonations
-    // later. If the caller is already inside an impersonation, keep the
-    // original tester as the canonical impersonator.
-    impersonatorId: current.impersonatorId ?? tester.id,
+    impersonatorId: tester.id,
   };
 
   await issueSession(targetPayload);
@@ -138,7 +141,7 @@ export async function startImpersonation(formData: FormData) {
       targetRole: target.role,
       targetBranchId: target.branchId,
       impersonatedFromSessionUserId: current.userId,
-      nested: current.impersonatorId ? true : false,
+      nested: false,
     },
     ctx,
   );
@@ -174,7 +177,16 @@ export async function stopImpersonation() {
     where: { id: current.impersonatorId },
     include: { roleProfile: true },
   });
-  if (!originalTester || !hasPermission(originalTester, Permissions.Testers_Impersonate)) {
+  if (
+    !originalTester ||
+    !canAccessMasterTester({
+      featureEnabled: true,
+      actorActive: originalTester.isActive,
+      actorHasImpersonate: hasPermission(originalTester, Permissions.Testers_Impersonate),
+      actorIsTesterRole: originalTester.role === "TESTER",
+      actorIsTestUser: originalTester.isTestUser,
+    })
+  ) {
     // The original tester was deleted or stripped of the permission.
     // Invalidate the session by deleting the cookie and sending to login.
     const cookieStore = await cookies();
@@ -214,9 +226,7 @@ export async function stopImpersonation() {
 // have to know about the gate. Excludes the tester itself (impersonating
 // yourself is meaningless).
 export async function listImpersonationTargets() {
-  if (!envFlag("MASTERTESTER_ENABLED")) {
-    return [];
-  }
+  await requireMasterTesterActor();
   const users = await prisma.user.findMany({
     where: { isTestUser: true },
     orderBy: [{ role: "asc" }, { email: "asc" }],
@@ -247,22 +257,15 @@ export async function listImpersonationTargets() {
 // Helper used by the audit page to show the recent impersonation events
 // for the current tester. Read-only.
 export async function listMyImpersonationEvents(limit = 100) {
-  if (!envFlag("MASTERTESTER_ENABLED")) {
-    return [];
-  }
-  const current = await readRawPayload();
-  if (!current) {
-    return [];
-  }
-  // The "real" tester is the impersonator if set, else the current user.
-  const testerId = current.impersonatorId ?? current.userId;
+  const tester = await requireMasterTesterActor();
+  const safeLimit = Math.min(100, Math.max(1, Math.floor(limit)));
   const events = await prisma.auditLog.findMany({
     where: {
-      userId: testerId,
+      userId: tester.id,
       action: { in: ["IMPERSONATE_START", "IMPERSONATE_STOP"] },
     },
     orderBy: { timestamp: "desc" },
-    take: limit,
+    take: safeLimit,
   });
   return events.map((e) => ({
     id: e.id,
